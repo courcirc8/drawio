@@ -1,0 +1,16 @@
+{
+  "name": "drawio-api-server",
+  "version": "0.1.0",
+  "description": "REST API server exposing the drawio fork for programmatic schematic editing (EDA layer: SPICE netlist import, LVS, ERC, libavoid autorouting, headless export)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.6",
+    "express": "^4.21.2",
+    "puppeteer-core": "^24.0.0"
+  }
+}
