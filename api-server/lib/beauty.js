@@ -50,6 +50,11 @@ function structuralMetrics(model) {
       if (a === b) continue;
       const eb = ends(b);
       if (eb == null || ea.bot !== eb.top || (netDeg.get(ea.bot) || 0) !== 2) continue;
+      // les chaînes purement passives (tank L/2+L/2, diviseurs) sont
+      // conventionnellement horizontales : seules les piles à transistor
+      // doivent couler du haut vers le bas
+      const hasMos = 'MQ'.includes(a.prefix) || 'MQ'.includes(b.prefix);
+      if (!hasMos) continue;
       const pa = pos(a.ref), pb = pos(b.ref);
       if (pa == null || pb == null) continue;
       series++;
