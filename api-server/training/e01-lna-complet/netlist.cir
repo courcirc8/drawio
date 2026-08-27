@@ -1,0 +1,21 @@
+* Shaeffer-Lee JSSC97 Fig.13 - LNA complet avec elements off-chip
+* (Tm modelisee en inductance faute d'element ligne de transmission)
+V1 in0 0 AC Vs
+RS in0 n1 50
+CB1 n1 n2 Cb1
+LB1 vbias n2 Lb1
+LT n2 n3 Tm
+CM n3 0 Cm
+LG n3 g Lg
+M1 x g s1 0 NMOS
+LS s1 0 Ls
+M2 y ncas x 0 NMOS
+LD ncas y Ld
+LV vdd ncas Lvdd
+M4 ncas ncas 0 0 NMOS
+M3 o2 y s3 0 NMOS
+LO nb o2 Lout
+LN s3 0 Lgnd
+LB2 vdd nb Lb2
+CB2 nb sa Cb2
+.end

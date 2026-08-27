@@ -54,5 +54,4 @@ wire '{"from":{"cell":"M3","pin":"W"},"to":{"cell":"M4","pin":"SE"},"style":"'$S
 wire '{"from":{"cell":"M4","pin":"W"},"to":{"cell":"M3","pin":"SE"},"style":"'$STRAIGHT'"}'
 wire '{"from":{"cell":"M1","pin":"W"},"to":{"cell":"M2","pin":"NE"},"style":"'$STRAIGHT'"}'
 wire '{"from":{"cell":"M2","pin":"W"},"to":{"cell":"M1","pin":"NE"},"style":"'$STRAIGHT'"}'
-  -d '{"wires":["w1","w2","w3","w4","w5","w6","w7","w8","w9","w10","w11","w16","w17","w18","w19","w20"]}' >/dev/null
 echo "$DOC"

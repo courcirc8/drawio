@@ -16,8 +16,14 @@ import sys, json, math, xml.etree.ElementTree as ET
 
 WEIGHTS = {
     'crossing': 6.0,        # par croisement fil-fil
-    'through': 10.0,        # par segment traversant un composant
-    'bend': 0.8,            # par coude au-delà de 2 par fil
+    'through': 14.0,        # par segment traversant un composant sans s'y connecter
+    'bend': 0.15,           # par angle droit (léger : un L est parfois inévitable)
+    'excess_bend': 1.4,     # par coude AU-DELÀ du minimum géométrique du fil
+                            # (0 si pins alignés, 1 sinon) : les évitements
+                            # inutiles du routeur coûtent cher
+    'too_close': 5.0,       # par paire de composants trop proches
+    'label_on_wire': 3.0,   # par label barré par un fil
+    'label_overlap': 4.0,   # par paire de labels qui se chevauchent
     'length': 1.5,          # par tranche de 1000 px de fil au-delà du minimum
     'misalign': 12.0,       # (1 - part de composants alignés)
     'unbalance': 8.0,       # écart-type normalisé de la densité d'encre
@@ -50,7 +56,9 @@ def load(xml_path):
             for tok in style.split(';'):
                 if tok.startswith('rotation='):
                     rot = float(tok.split('=')[1])
-            verts[cid] = {'x': float(g.get('x', 0)), 'y': float(g.get('y', 0)),
+            verts[cid] = {'value': c.get('value') or '',
+                          'vlp': next((tok.split('=')[1] for tok in style.split(';') if tok.startswith('verticalLabelPosition=')), None),
+                          'x': float(g.get('x', 0)), 'y': float(g.get('y', 0)),
                           'w': float(g.get('width', 0)), 'h': float(g.get('height', 0)),
                           'rot': rot, 'junction': 'drawioApiJunction' in style,
                           'flipH': 'flipH=1' in style, 'flipV': 'flipV=1' in style}
@@ -61,7 +69,8 @@ def load(xml_path):
                 arr = g.find("Array[@as='points']")
                 if arr is not None:
                     pts = [(float(p.get('x')), float(p.get('y'))) for p in arr.findall('mxPoint')]
-            edges.append({'src': c.get('source'), 'tgt': c.get('target'), 'pts': pts, 'st': st})
+            edges.append({'src': c.get('source'), 'tgt': c.get('target'), 'pts': pts, 'st': st,
+                          'straight': st.get('edgeStyle') == 'none'})
     return verts, edges
 
 def anchor(verts, cid, st, pref):
@@ -115,7 +124,10 @@ def polylines(verts, edges):
         if a is None or b is None:
             continue
         pl = [a] + e['pts'] + [b]
-        out.append(orthogonalize(pl, exit_axis(e['st'], 'exit')))
+        if e.get('straight'):
+            out.append(pl)  # fil diagonal volontaire : rendu en ligne droite
+        else:
+            out.append(orthogonalize(pl, exit_axis(e['st'], 'exit')))
     return out
 
 def seg_inter(p1, p2, p3, p4):
@@ -139,8 +151,8 @@ def near_junction(pt, verts, r=9):
 def xml_metrics(verts, edges):
     polys = polylines(verts, edges)
     m = {}
-    # coudes + longueur
-    bends, length = 0, 0.0
+    # coudes + longueur + coudes excédentaires (vs minimum géométrique)
+    bends, excess, length = 0, 0, 0.0
     for pl in polys:
         dirs = []
         for (x1, y1), (x2, y2) in zip(pl, pl[1:]):
@@ -148,13 +160,21 @@ def xml_metrics(verts, edges):
             if abs(x2-x1) < 0.5 and abs(y2-y1) < 0.5:
                 continue
             dirs.append('h' if abs(x2-x1) >= abs(y2-y1) else 'v')
-        bends += max(0, sum(1 for a, b in zip(dirs, dirs[1:]) if a != b))
+        wb = max(0, sum(1 for a, b in zip(dirs, dirs[1:]) if a != b))
+        bends += wb
+        a, z = pl[0], pl[-1]
+        needed = 0 if (abs(a[0]-z[0]) < 1 or abs(a[1]-z[1]) < 1) else 1
+        excess += max(0, wb - needed)
     m['bends'] = bends
+    m['excess_bends'] = excess
     m['wire_length'] = round(length, 1)
     # croisements fil-fil (hors jonctions et hors extrémités partagées)
     crossings = 0
     for i in range(len(polys)):
         for j in range(i+1, len(polys)):
+            if edges[i].get('straight') or edges[j].get('straight'):
+                continue  # diagonale volontaire : ses croisements sont assumés
+                          # (les figures publiées font pareil pour le cross-couplage)
             for s1 in zip(polys[i], polys[i][1:]):
                 for s2 in zip(polys[j], polys[j][1:]):
                     p = seg_inter(s1[0], s1[1], s2[0], s2[1])
@@ -181,7 +201,14 @@ def xml_metrics(verts, edges):
                 lo_y, hi_y = min(y1, y2), max(y1, y2)
                 if hi_x < bx0 or lo_x > bx1 or hi_y < by0 or lo_y > by1:
                     continue
-                # segment orthogonal : chevauchement suffit
+                # intersection RÉELLE segment-rectangle (les diagonales ne
+                # doivent compter que si la ligne traverse vraiment le corps)
+                inside = (bx0 <= x1 <= bx1 and by0 <= y1 <= by1) or                          (bx0 <= x2 <= bx1 and by0 <= y2 <= by1)
+                if not inside:
+                    rect_edges = [((bx0, by0), (bx1, by0)), ((bx1, by0), (bx1, by1)),
+                                  ((bx1, by1), (bx0, by1)), ((bx0, by1), (bx0, by0))]
+                    if not any(seg_inter((x1, y1), (x2, y2), a, b) for a, b in rect_edges):
+                        continue
                 through += 1
     m['through_component'] = through
     # alignement : part des composants partageant un axe (centre x ou y) avec un autre
@@ -201,6 +228,67 @@ def xml_metrics(verts, edges):
         m['min_length'] = round(sum(math.hypot(0, 0) for _ in comps), 1)
     else:
         m['sprawl'] = 0.0
+    # labels : près du device (ancré par drawio), mais JAMAIS sur un fil ni
+    # sur un autre label
+    def label_box(v):
+        txt = v.get('value', '')
+        if not txt:
+            return None
+        lw, lh = 7.2*len(txt)+6, 16
+        cx = v['x'] + v['w']/2
+        vlp = v.get('vlp')
+        if vlp == 'top':
+            cy = v['y'] - lh/2 - 2
+        elif vlp == 'bottom' or vlp is None and False:
+            cy = v['y'] + v['h'] + lh/2 + 2
+        else:
+            cy = v['y'] + v['h'] + lh/2 + 2 if vlp == 'bottom' else v['y'] + v['h']/2
+        return (cx-lw/2, cy-lh/2, cx+lw/2, cy+lh/2)
+    lboxes = []
+    for cid, v in verts.items():
+        lb = label_box(v)
+        if lb is not None:
+            lboxes.append((cid, lb))
+    lab_wire = 0
+    for cid, lb in lboxes:
+        hit = False
+        for e, pl in zip(edges, polys):
+            if cid in (e['src'], e['tgt']):
+                pass  # même son propre fil ne doit pas barrer le label
+            for (x1, y1), (x2, y2) in zip(pl, pl[1:]):
+                if max(x1, x2) < lb[0] or min(x1, x2) > lb[2] or max(y1, y2) < lb[1] or min(y1, y2) > lb[3]:
+                    continue
+                hit = True
+                break
+            if hit:
+                break
+        if hit:
+            lab_wire += 1
+    m['label_on_wire'] = lab_wire
+    lab_overlap = 0
+    for i in range(len(lboxes)):
+        a = lboxes[i][1]
+        for j in range(i+1, len(lboxes)):
+            bb = lboxes[j][1]
+            if a[0] < bb[2] and a[2] > bb[0] and a[1] < bb[3] and a[3] > bb[1]:
+                lab_overlap += 1
+    m['label_overlap'] = lab_overlap
+    # promiscuité : paires de composants dont les AABB (gonflées de 12 px)
+    # se chevauchent — un schéma humain respire
+    def aabb(v, margin):
+        t = math.radians(v['rot'] or 0)
+        w = abs(v['w']*math.cos(t)) + abs(v['h']*math.sin(t))
+        h = abs(v['w']*math.sin(t)) + abs(v['h']*math.cos(t))
+        cx, cy = v['x']+v['w']/2, v['y']+v['h']/2
+        return (cx-w/2-margin, cy-h/2-margin, cx+w/2+margin, cy+h/2+margin)
+    close = 0
+    for i in range(len(comps)):
+        a = aabb(comps[i][1], 6)
+        for j in range(i+1, len(comps)):
+            bb = aabb(comps[j][1], 6)
+            if a[0] < bb[2] and a[2] > bb[0] and a[1] < bb[3] and a[3] > bb[1]:
+                close += 1
+    m['too_close'] = close
     m['n_wires'] = len(polys)
     m['n_components'] = len(comps)
     return m
@@ -245,8 +333,11 @@ def score(m):
     s = 100.0
     s -= WEIGHTS['crossing'] * m.get('crossings', 0)
     s -= WEIGHTS['through'] * m.get('through_component', 0)
-    nb = max(0, m.get('bends', 0) - 2*m.get('n_wires', 0))
-    s -= WEIGHTS['bend'] * nb
+    s -= WEIGHTS['bend'] * m.get('bends', 0)
+    s -= WEIGHTS['excess_bend'] * m.get('excess_bends', 0)
+    s -= WEIGHTS['too_close'] * m.get('too_close', 0)
+    s -= WEIGHTS['label_on_wire'] * m.get('label_on_wire', 0)
+    s -= WEIGHTS['label_overlap'] * m.get('label_overlap', 0)
     s -= WEIGHTS['length'] * max(0.0, m.get('wire_length', 0) - 300*m.get('n_wires', 0)/3) / 1000
     s -= WEIGHTS['misalign'] * (1 - m.get('align_ratio', 1))
     s -= WEIGHTS['unbalance'] * m.get('ink_balance', 0)

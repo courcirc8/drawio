@@ -79,14 +79,24 @@ export function importNetlist2(model, parsed, opts = {}) {
   // passifs flottants : R/C/L entre deux nets de signal (ni VDD ni 0) -> hors piles
   const floating = new Set();
 
+  // nets de conduction MOS (drain/source)
+  const dsNets = new Set();
+  for (const c of comps) {
+    if (c.prefix !== 'M' && c.prefix !== 'Q') continue;
+    const ci = info.get(c.ref);
+    if (ci != null) { dsNets.add(ci.top); dsNets.add(ci.bot); }
+  }
+
   function markFloating(vdd) {
+    // un L ou R touchant un net de conduction fait partie d'une pile ;
+    // seuls les C (bloquants DC) et les L/R purement « signal » sont flottants
     for (const c of comps) {
       const ci = info.get(c.ref);
       if (ci == null || !'RCL'.includes(c.prefix)) continue;
-      if (ci.top !== vdd && ci.top !== '0' && ci.bot !== vdd && ci.bot !== '0') {
-        floating.add(c.ref);
-        unplaced.delete(c.ref);
-      }
+      if (ci.top === vdd || ci.top === '0' || ci.bot === vdd || ci.bot === '0') continue;
+      if (c.prefix !== 'C' && (dsNets.has(ci.top) || dsNets.has(ci.bot))) continue;
+      floating.add(c.ref);
+      unplaced.delete(c.ref);
     }
   }
 
@@ -116,6 +126,74 @@ export function importNetlist2(model, parsed, opts = {}) {
   }
 
   markFloating(vddNet);
+  // ---- chaînes de signal : suites d'éléments série (passifs flottants)
+  //      aboutissant à une gate ; posées horizontalement dans l'ordre du flux,
+  //      dérivations shunt vers la masse en bas, branches de polarisation en
+  //      haut, source V terminale en bas à gauche (règle E1, LNA Fig.13)
+  const chains = []; // {anchorRef, anchorPinName, elems:[{c, hangers:[{c, up}]}], endV}
+  const chainRefs = new Set();
+  {
+    const onNet = (net) => comps.filter((k) => k.nodes.includes(net));
+    const otherNet = (c, net) => {
+      const ci = info.get(c.ref);
+      return ci.top === net ? ci.bot : ci.top;
+    };
+    for (const dev of comps) {
+      if (dev.prefix !== 'M' && dev.prefix !== 'Q') continue;
+      const ci = info.get(dev.ref);
+      let net = ci.gate;
+      if (net === '0' || net === vddNet || dsNets.has(net)) continue;
+      const elems = [];
+      let endV = null;
+      let guard2 = comps.length + 2;
+      while (guard2-- > 0) {
+        const cands = onNet(net).filter((k) => floating.has(k.ref) &&
+          !chains.some((ch) => ch.elems.some((e) => e.c === k)) &&
+          !elems.some((e) => e.c === k));
+        if (cands.length === 0) {
+          // source V terminale ?
+          const v = onNet(net).find((k) => k.prefix === 'V' && unplaced.has(k.ref));
+          if (v != null) endV = v;
+          break;
+        }
+        // série = le candidat dont l'autre net continue (ou le premier)
+        const next = cands.find((k) => {
+          const on = otherNet(k, net);
+          return on !== '0' && on !== vddNet;
+        }) || cands[0];
+        const hangers = [];
+        for (const h of cands) {
+          if (h === next) continue;
+          hangers.push({ c: h, up: otherNet(h, net) !== '0' });
+        }
+        // shunts rail-connectés sur le net (ex: C d'adaptation vers la masse)
+        for (const h of onNet(net)) {
+          if (!unplaced.has(h.ref) || !'RCL'.includes(h.prefix)) continue;
+          if (hangers.some((g) => g.c === h)) continue;
+          const on = otherNet(h, net);
+          if (on === '0' || on === vddNet) hangers.push({ c: h, up: on === vddNet, shunt: true });
+        }
+        // dérivations non-flottantes déjà en piles (ex: shunt C vers 0)
+        elems.push({ c: next, hangers, net });
+        net = otherNet(next, net);
+        if (net === '0' || net === vddNet) break;
+      }
+      if (elems.length >= 2 || (elems.length >= 1 && endV != null)) {
+        chains.push({ anchorRef: dev.ref, elems, endV });
+        for (const e of elems) {
+          floating.delete(e.c.ref);
+          chainRefs.add(e.c.ref);
+          for (const h of e.hangers) {
+            floating.delete(h.c.ref);
+            unplaced.delete(h.c.ref);
+            chainRefs.add(h.c.ref);
+          }
+        }
+        if (endV != null) { unplaced.delete(endV.ref); chainRefs.add(endV.ref); }
+      }
+    }
+  }
+
   let roots = (byTopNet.get(vddNet) || []).map((c) => c.ref);
   // heuristique : la pile de polarisation (source de courant en racine) à gauche
   roots.sort((a, b) => (comps.find((c) => c.ref === b).prefix === 'I' ? 1 : 0) -
@@ -241,8 +319,9 @@ export function importNetlist2(model, parsed, opts = {}) {
       ci = { shapeKey: map.shape, po: map.pinOrder };
       info.set(c.ref, ci);
     }
-    if (ci == null || floating.has(c.ref)) continue;
+    if (ci == null || floating.has(c.ref) || chainRefs.has(c.ref)) continue;
     const s = slots.get(c.ref);
+    if (s == null) continue;
     const shape = getShape(ci.shapeKey);
     const flip = P.flip[c.ref] ? -1 : 1;
     // dipôles verticaux : rotation 90 (in en haut) ; MOS natifs (déjà verticaux)
@@ -263,6 +342,50 @@ export function importNetlist2(model, parsed, opts = {}) {
     for (let i = 0; i < ci.po.length; i++) {
       const pin = getPin(ci.shapeKey, ci.po[i]);
       term(c.nodes[i], c.ref, ci.po[i], pin);
+    }
+  }
+
+  // chaînes de signal : à gauche de la gate d'ancrage, dans l'ordre du flux
+  for (const ch of chains) {
+    const anchor = placed.get(ch.anchorRef);
+    if (anchor == null) continue;
+    const ai = info.get(ch.anchorRef);
+    const gpin = getPin(ai.shapeKey, ai.gatePin || ai.po[1]);
+    const ga = pinAbs(anchor, gpin);
+    let k = 0;
+    for (const e of ch.elems) {
+      const ci = info.get(e.c.ref);
+      const shape = getShape(ci.shapeKey);
+      const cx = ga.x - 130 - k * 160;
+      const cy = ga.y;
+      addVertex(model, { id: e.c.ref, shape: ci.shapeKey, x: cx - shape.w / 2, y: cy - shape.h / 2, w: shape.w, h: shape.h, rotation: 0, value: e.c.value || '' });
+      placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y: cy - shape.h / 2, w: shape.w, h: shape.h, rotation: 0 });
+      for (let i = 0; i < ci.po.length; i++) term(e.c.nodes[i], e.c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
+      // dérivations : bias en haut (vertical), shunt masse en bas (vertical)
+      for (const h of e.hangers) {
+        const hi = info.get(h.c.ref);
+        const hs = getShape(hi.shapeKey);
+        const hx = cx + 85;
+        const hy = h.up ? cy - 80 - hs.w / 2 : cy + 80 + hs.w / 2;
+        addVertex(model, { id: h.c.ref, shape: hi.shapeKey, x: hx - hs.w / 2, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: h.up ? -90 : 90, value: h.c.value || '' });
+        placed.set(h.c.ref, { id: h.c.ref, x: hx - hs.w / 2, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: h.up ? -90 : 90 });
+        for (let i = 0; i < hi.po.length; i++) term(h.c.nodes[i], h.c.ref, hi.po[i], getPin(hi.shapeKey, hi.po[i]));
+      }
+      k++;
+    }
+    if (ch.endV != null) {
+      const vi = info.get(ch.endV.ref) || (() => {
+        const map = SPICE_MAP[ch.endV.prefix];
+        const o = { shapeKey: map.shape, po: map.pinOrder, top: ch.endV.nodes[0], bot: ch.endV.nodes[1] };
+        info.set(ch.endV.ref, o);
+        return o;
+      })();
+      const vs = getShape(vi.shapeKey);
+      const cx = ga.x - 130 - k * 160;
+      const cy = ga.y + 90;
+      addVertex(model, { id: ch.endV.ref, shape: vi.shapeKey, x: cx - vs.w / 2, y: cy - vs.h / 2, w: vs.w, h: vs.h, rotation: 0, value: ch.endV.value || '' });
+      placed.set(ch.endV.ref, { id: ch.endV.ref, x: cx - vs.w / 2, y: cy - vs.h / 2, w: vs.w, h: vs.h, rotation: 0 });
+      for (let i = 0; i < vi.po.length; i++) term(ch.endV.nodes[i], ch.endV.ref, vi.po[i], getPin(vi.shapeKey, vi.po[i]));
     }
   }
 
