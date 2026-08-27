@@ -19,15 +19,12 @@ export function check(model) {
       }
     }
   }
-  // grounds without connection
-  for (const { cell, cls } of conn.grounds) {
-    const pins = activePins(cls);
-    const key = cell.id + ':' + (pins[0] && pins[0].name);
-    // a ground's terminal was folded into net '0'; check it reached the uf via some wire:
-    let connected = false;
-    for (const c of conn.nets.get('0') || []) { connected = true; break; }
-    if (!connected) findings.push({ severity: 'warning', code: 'floating-ground',
-      message: `ground symbol ${cell.id} is not connected`, cells: [cell.id] });
+  // grounds without connection: no wire references the ground cell at all
+  for (const { cell } of conn.grounds) {
+    if (!conn.wiredCells.has(cell.id)) {
+      findings.push({ severity: 'warning', code: 'floating-ground',
+        message: `ground symbol ${cell.id} is not connected`, cells: [cell.id] });
+    }
   }
   // single-terminal nets
   for (const [name, terms] of conn.nets) {

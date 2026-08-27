@@ -31,22 +31,35 @@ function loadAvoid() {
   return avoidPromise;
 }
 
-/** Rotate a relative (0..1) anchor around the shape centre by rotation degrees. */
-function rotateRel(x, y, rotation) {
-  const t = ((rotation || 0) * Math.PI) / 180;
-  const cx = x - 0.5, cy = y - 0.5;
-  return {
-    x: 0.5 + cx * Math.cos(t) - cy * Math.sin(t),
-    y: 0.5 + cx * Math.sin(t) + cy * Math.cos(t),
-  };
+/**
+ * Absolute position of a relative (0..1) anchor on a possibly-rotated shape.
+ * mxGraph rotates shapes around their centre in ABSOLUTE space, so relative
+ * coordinates cannot simply be rotated in the unit square (wrong for w≠h).
+ */
+function pinAbsOf(cell, relX, relY) {
+  const t = ((cell.rotation || 0) * Math.PI) / 180;
+  const cx = cell.x + cell.w / 2, cy = cell.y + cell.h / 2;
+  const px = cell.x + relX * cell.w, py = cell.y + relY * cell.h;
+  const dx = px - cx, dy = py - cy;
+  return { x: cx + dx * Math.cos(t) - dy * Math.sin(t), y: cy + dx * Math.sin(t) + dy * Math.cos(t) };
 }
 
-function anchorConstraint(styleMap, prefix, rotation) {
+/** Axis-aligned bounding box of a rotated cell (the obstacle libavoid sees). */
+function rotatedAabb(cell) {
+  const t = ((cell.rotation || 0) * Math.PI) / 180;
+  const w = Math.abs(cell.w * Math.cos(t)) + Math.abs(cell.h * Math.sin(t));
+  const h = Math.abs(cell.w * Math.sin(t)) + Math.abs(cell.h * Math.cos(t));
+  return { x: cell.x + cell.w / 2 - w / 2, y: cell.y + cell.h / 2 - h / 2, w, h };
+}
+
+function anchorConstraint(styleMap, prefix, cell, aabb) {
   const x = styleMap.get(prefix + 'X');
   const y = styleMap.get(prefix + 'Y');
   if (x == null || y == null) return null;
-  const r = rotateRel(parseFloat(x), parseFloat(y), rotation);
-  return globalThis.AvoidRouting.constraintForPoint(r.x, r.y);
+  const p = pinAbsOf(cell, parseFloat(x), parseFloat(y));
+  return globalThis.AvoidRouting.constraintForPoint(
+    AvoidRouting.clamp01((p.x - aabb.x) / (aabb.w || 1)),
+    AvoidRouting.clamp01((p.y - aabb.y) / (aabb.h || 1)));
 }
 
 /**
@@ -57,7 +70,7 @@ export async function routePage(model, edgeIds, opts) {
   const Avoid = await loadAvoid();
   const cells = allCells(model).map(cellInfo);
   const vertices = cells.filter((c) => c.kind === 'vertex' && c.x != null)
-    .map((c) => ({ id: c.id, x: c.x, y: c.y, w: c.w || 0, h: c.h || 0 }));
+    .map((c) => { const b = rotatedAabb(c); return { id: c.id, x: b.x, y: b.y, w: b.w, h: b.h }; });
   const byId = new Map(cells.map((c) => [c.id, c]));
   const wanted = edgeIds != null ? new Set(edgeIds.map(String)) : null;
   const edges = [];
@@ -70,8 +83,8 @@ export async function routePage(model, edgeIds, opts) {
     if (src == null || tgt == null) continue;
     edges.push({
       id: c.id, source: c.source, target: c.target,
-      sourceConstraint: anchorConstraint(c.style.map, 'exit', src.rotation),
-      targetConstraint: anchorConstraint(c.style.map, 'entry', tgt.rotation),
+      sourceConstraint: anchorConstraint(c.style.map, 'exit', src, rotatedAabb(src)),
+      targetConstraint: anchorConstraint(c.style.map, 'entry', tgt, rotatedAabb(tgt)),
       sourceJetty: 10, targetJetty: 10,
     });
   }
@@ -90,8 +103,5 @@ export async function routePage(model, edgeIds, opts) {
 
 /** Absolute position of a shape pin, rotation-aware. Used by netlist wiring/extraction. */
 export function pinAbs(cell, pin) {
-  const r = rotateRel(pin.x, pin.y, cell.rotation);
-  return { x: cell.x + r.x * cell.w, y: cell.y + r.y * cell.h };
+  return pinAbsOf(cell, pin.x, pin.y);
 }
-
-export { rotateRel };

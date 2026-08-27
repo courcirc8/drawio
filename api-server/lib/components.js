@@ -18,7 +18,27 @@ export const SPICE_MAP = {
   // SPICE M: drain gate source bulk model — NE=drain, W=gate, SE=source (bulk ignored)
   M: { shape: 'mxgraph.electrical.transistors.nmos', pinOrder: ['NE', 'W', 'SE'], label: 'MOSFET',
        variants: { PMOS: 'mxgraph.electrical.transistors.pmos' }, dropNodes: [3] },
+  // SPICE G (VCCS, used for OTA symbols): out+ out- in+ in- gm — the single-ended
+  // OTA symbol has no out- pin, so node 1 (out-) is dropped on both sides.
+  G: { shape: 'mxgraph.electrical.abstract.ota_1', pinOrder: ['out', 'in+', 'in-'], dropNodes: [1], label: 'OTA (VCCS)' },
 };
+
+/**
+ * The stencil pin names (NE/SE/W) are positional; visually verified renders
+ * show the PMOS stencil is drawn SOURCE-UP (arrow at NE), so its SPICE pin
+ * order differs from the NMOS stencil. Per-shape overrides win over the
+ * prefix mapping.
+ */
+export const PIN_ORDER_OVERRIDES = {
+  'mxgraph.electrical.transistors.pmos': ['SE', 'W', 'NE'],      // D=SE(bottom), G=W, S=NE(top)
+  'mxgraph.electrical.transistors.pmos_bulk': ['SE', 'W', 'NE'],
+};
+
+/** Effective SPICE pin order for a classified component. */
+export function pinOrderFor(cls) {
+  if (cls.shape != null && PIN_ORDER_OVERRIDES[cls.shape.key] != null) return PIN_ORDER_OVERRIDES[cls.shape.key];
+  return cls.mapping != null ? cls.mapping.pinOrder : null;
+}
 
 export const GROUND_SHAPE = 'mxgraph.electrical.signal_sources.signal_ground';
 export const GROUND_PIN = 'N';
@@ -62,7 +82,7 @@ function inferPrefix(id) {
 export function activePins(cls) {
   if (cls.role === 'ground') return [getPin(cls.shape.key, GROUND_PIN) || cls.shape.pins[0]].filter(Boolean);
   if (cls.mapping != null) {
-    return cls.mapping.pinOrder.map((n) => getPin(cls.shape.key, n)).filter(Boolean);
+    return pinOrderFor(cls).map((n) => getPin(cls.shape.key, n)).filter(Boolean);
   }
   return cls.shape != null ? cls.shape.pins : [];
 }

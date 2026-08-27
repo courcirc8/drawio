@@ -27,10 +27,15 @@ export function compare(extracted, golden) {
   // structural net matching over common components:
   // terminal = "REF.pinIndex" -> net name on each side; nets correspond when
   // their terminal sets are equal.
+  // Symmetric two-terminal elements (R, C, L) are electrically identical
+  // with swapped pins: canonicalize their terminal index so a reversed
+  // resistor still matches.
+  const SYMMETRIC = new Set(['R', 'C', 'L']);
+  const termId = (c, ref, i) => SYMMETRIC.has(c.prefix) ? ref + '.x' : ref + '.' + i;
   const termsA = new Map(), termsB = new Map(); // net -> Set(terms)
   for (const ref of common) {
-    ex.get(ref).nodes.forEach((netName, i) => addTerm(termsA, netName, ref + '.' + i));
-    go.get(ref).nodes.forEach((netName, i) => addTerm(termsB, netName, ref + '.' + i));
+    ex.get(ref).nodes.forEach((netName, i) => addTerm(termsA, netName, termId(ex.get(ref), ref, i)));
+    go.get(ref).nodes.forEach((netName, i) => addTerm(termsB, netName, termId(go.get(ref), ref, i)));
   }
   const sigA = signatures(termsA), sigB = signatures(termsB);
   for (const [sig, nets] of sigA) {
@@ -62,7 +67,23 @@ export function compare(extracted, golden) {
   return report;
 }
 
-function norm(v) { return String(v).replace(/\s+/g, ' ').trim().toLowerCase(); }
+const SUFFIX = { t: 1e12, g: 1e9, meg: 1e6, k: 1e3, m: 1e-3, u: 1e-6, n: 1e-9, p: 1e-12, f: 1e-15 };
+
+/** Parse a SPICE number with scale suffix (10k, 0.1u, 3meg, 2.2E-6F) -> number|null. */
+export function spiceNumber(tok) {
+  const m = /^([+-]?\d*\.?\d+(?:e[+-]?\d+)?)(meg|[tgkmunpf])?[a-z]*$/i.exec(String(tok).trim());
+  if (m == null) return null;
+  const scale = m[2] != null ? SUFFIX[m[2].toLowerCase()] : 1;
+  return parseFloat(m[1]) * scale;
+}
+
+/** Token-wise normalization: numeric tokens compare by value, others by lowercase text. */
+function norm(v) {
+  return String(v).trim().toLowerCase().split(/\s+/).map((tok) => {
+    const n = spiceNumber(tok);
+    return n != null ? String(parseFloat(n.toPrecision(10))) : tok;
+  }).join(' ');
+}
 function addTerm(map, net, term) {
   if (!map.has(net)) map.set(net, new Set());
   map.get(net).add(term);

@@ -5,7 +5,7 @@
  * terminals get a junction dot (star wiring). Run routePage() afterwards.
  */
 import { addVertex, addWire, httpError } from './model.js';
-import { SPICE_MAP, GROUND_SHAPE, GROUND_PIN } from './components.js';
+import { SPICE_MAP, PIN_ORDER_OVERRIDES, GROUND_SHAPE, GROUND_PIN } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs } from './route.js';
 
@@ -70,7 +70,7 @@ export function importNetlist(model, parsed) {
   for (const c of comps) {
     const p = placed.get(c.ref);
     c.nodes.forEach((node, i) => {
-      const pinName = p.map.pinOrder[i];
+      const pinName = (PIN_ORDER_OVERRIDES[p.shapeKey] || p.map.pinOrder)[i];
       const pin = getPin(p.shapeKey, pinName);
       if (!netTerms.has(node)) netTerms.set(node, []);
       netTerms.get(node).push({ ref: c.ref, pinName, pin });

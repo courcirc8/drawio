@@ -67,6 +67,18 @@ grounded 2-terminal parts are rotated vertical, every ground terminal gets
 its own ground symbol, >2-terminal nets get a junction dot (star wiring),
 then all wires are autorouted.
 
+## Pin catalog
+
+`node tools/dump-pins.js` regenerates `data/electrical-pins.json` — the exact
+terminal coordinates (relative and absolute) of all 529 electrical shapes.
+Stencil pin names are positional (NE/SE/W); functional overrides (e.g. the
+PMOS stencil is drawn source-up) live in `lib/components.js`
+(`PIN_ORDER_OVERRIDES`).
+
+`examples/ota-biquad.sh` builds a complete 2nd-order Gm-C biquad (two OTA
+symbols mapped to SPICE `G` elements) and passes LVS against its reference
+netlist.
+
 ## Tests
 
 ```bash

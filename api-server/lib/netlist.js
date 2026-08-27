@@ -2,7 +2,7 @@
  * netlist.js — SPICE netlist parsing and netlist extraction from a schematic.
  */
 import { allCells, cellInfo, httpError } from './model.js';
-import { classify, activePins, SPICE_MAP } from './components.js';
+import { classify, activePins, pinOrderFor, SPICE_MAP } from './components.js';
 import { pinAbs } from './route.js';
 
 // ---------------------------------------------------------------- SPICE parse
@@ -133,8 +133,11 @@ export function connectivity(model) {
     return cellId + ':' + best.name;
   };
 
+  const wiredCells = new Set();
   for (const c of cells) {
     if (c.kind !== 'edge') continue;
+    if (c.source != null) wiredCells.add(String(c.source));
+    if (c.target != null) wiredCells.add(String(c.target));
     const a = endpointKey(c, 'source');
     const b = endpointKey(c, 'target');
     if (a == null || b == null) {
@@ -173,7 +176,7 @@ export function connectivity(model) {
     }
   }
   // merge all nets named 0 (multiple ground symbols)
-  return { components: comps, grounds, junctions, termInfo, netOf, nets, issues };
+  return { components: comps, grounds, junctions, termInfo, netOf, nets, issues, wiredCells };
 }
 
 /** Extract a SPICE netlist string + structured form from a page. */
@@ -186,7 +189,7 @@ export function extractNetlist(model) {
       conn.issues.push({ code: 'unmapped-component', message: `cell ${cell.id} (${cls.shape ? cls.shape.name : '?'}) has no SPICE mapping`, cells: [cell.id] });
       continue;
     }
-    const nodes = cls.mapping.pinOrder.map((pinName) => conn.netOf.get(cell.id + ':' + pinName) || '?');
+    const nodes = pinOrderFor(cls).map((pinName) => conn.netOf.get(cell.id + ':' + pinName) || '?');
     const value = cell.value || '';
     structured.push({ ref: cell.id, prefix: cls.prefix, nodes, value });
     out.push([cell.id, ...nodes, value].join(' ').trim());

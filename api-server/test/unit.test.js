@@ -144,3 +144,53 @@ test('bom: rows sorted with type labels', () => {
   assert.deepEqual(rows.map((r) => r.ref), ['C1', 'R1', 'V1']);
   assert.equal(rows.find((r) => r.ref === 'R1').type, 'resistor');
 });
+
+test('LVS: swapped pins of a symmetric element still match; polarized does not', () => {
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  importNetlist(m, parseSpice(RC));
+  const swapped = parseSpice('V1 in 0 DC 5\nR1 out in 10k\nC1 0 out 100n\n');
+  const r = compare(extractNetlist(m), swapped);
+  assert.equal(r.match, true, JSON.stringify(r.net_mismatches));
+  const vSwapped = parseSpice('V1 0 in DC 5\nR1 in out 10k\nC1 out 0 100n\n');
+  assert.equal(compare(extractNetlist(m), vSwapped).match, false);
+});
+
+test('LVS: SPICE unit equivalence (10k=10000, 100n=0.1u, DC 5=dc 5.0)', () => {
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  importNetlist(m, parseSpice(RC));
+  const eq = parseSpice('V1 in 0 dc 5.0\nR1 in out 10000\nC1 out 0 0.1u\n');
+  const r = compare(extractNetlist(m), eq);
+  assert.equal(r.values_match, true, JSON.stringify(r.value_mismatches));
+  const neq = parseSpice('V1 in 0 DC 5\nR1 in out 12k\nC1 out 0 100n\n');
+  assert.equal(compare(extractNetlist(m), neq).values_match, false);
+});
+
+test('ERC: floating ground symbol detected, connected one is not', () => {
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  importNetlist(m, parseSpice(RC));
+  model.addVertex(m, { id: 'GNDX', shape: 'mxgraph.electrical.signal_sources.signal_ground', x: 700, y: 300, w: 30, h: 20 });
+  const r = ercCheck(m);
+  const floating = r.findings.filter((f) => f.code === 'floating-ground');
+  assert.equal(floating.length, 1, JSON.stringify(floating));
+  assert.deepEqual(floating[0].cells, ['GNDX']);
+});
+
+test('routing: rotated non-square shape uses true rotated pin position', async () => {
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  // 100x20 resistor rotated 90 at (100,100): centre (150,110); rotated "out"
+  // pin (right-middle) must land at (150,160), i.e. the bottom of the
+  // rotated body — not at (150,120) as the unit-square rotation would say.
+  model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: 100, y: 100, w: 100, h: 20, rotation: 90 });
+  model.addVertex(m, { id: 'B', shape: 'mxgraph.electrical.resistors.resistor_2', x: 130, y: 300, w: 100, h: 20 });
+  model.addWire(m, { id: 'w', source: 'R1', target: 'B', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 } });
+  const res = await routePage(m, null, {});
+  assert.deepEqual(res.ids, ['w']);
+  const { pinAbs } = await import('../lib/route.js');
+  const p = pinAbs({ x: 100, y: 100, w: 100, h: 20, rotation: 90 }, { x: 1, y: 0.5 });
+  assert.equal(Math.round(p.x), 150);
+  assert.equal(Math.round(p.y), 160);
+});
