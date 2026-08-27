@@ -43,6 +43,20 @@ export function pinOrderFor(cls) {
 export const GROUND_SHAPE = 'mxgraph.electrical.signal_sources.signal_ground';
 export const GROUND_PIN = 'N';
 
+/**
+ * Supply taps: single-pin symbols that NAME their net globally (all taps with
+ * the same net name merge, like ground). Net name = cell value, else default.
+ */
+export const POWER_SHAPES = {
+  'mxgraph.electrical.signal_sources.vdd': { pin: 'N', defaultNet: 'VDD' },
+  'mxgraph.electrical.signal_sources.vss2': { pin: 'S', defaultNet: 'VSS' },
+};
+
+/** Port markers: single-pin symbols that label their net (net = value || id). */
+export const PORT_SHAPES = {
+  'mxgraph.electrical.signal_sources.equipotential': { pin: 'N' },
+};
+
 /** shape key -> SPICE prefix (reverse map incl. variants). */
 const reverse = new Map();
 for (const [prefix, m] of Object.entries(SPICE_MAP)) {
@@ -63,6 +77,15 @@ export function classify(cellInfo) {
   const key = shapeKeyOf(cellInfo);
   if (cellInfo.style.map.has('drawioApiJunction')) return { role: 'junction' };
   if (key == null) return { role: 'other' };
+  if (POWER_SHAPES[key] != null) {
+    const p = POWER_SHAPES[key];
+    return { role: 'power', shape: getShape(key), pinName: p.pin,
+      net: String(cellInfo.value || '').trim() || p.defaultNet };
+  }
+  if (PORT_SHAPES[key] != null) {
+    return { role: 'port', shape: getShape(key), pinName: PORT_SHAPES[key].pin,
+      net: String(cellInfo.value || '').trim() || String(cellInfo.id) };
+  }
   if (key === GROUND_SHAPE || /ground|earth/.test(key)) {
     return { role: 'ground', shape: getShape(key) };
   }
@@ -81,6 +104,9 @@ function inferPrefix(id) {
 /** Pins that carry connectivity for a classified component (SPICE pin order if known, else all). */
 export function activePins(cls) {
   if (cls.role === 'ground') return [getPin(cls.shape.key, GROUND_PIN) || cls.shape.pins[0]].filter(Boolean);
+  if (cls.role === 'power' || cls.role === 'port') {
+    return [getPin(cls.shape.key, cls.pinName) || cls.shape.pins[0]].filter(Boolean);
+  }
   if (cls.mapping != null) {
     return pinOrderFor(cls).map((n) => getPin(cls.shape.key, n)).filter(Boolean);
   }

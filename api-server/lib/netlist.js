@@ -90,6 +90,7 @@ export function connectivity(model) {
   const comps = [];       // classified vertices with pins
   const grounds = [];
   const junctions = [];
+  const taps = [];        // power + port symbols (net-naming single-pin cells)
   const termInfo = new Map();
 
   for (const c of cells) {
@@ -97,6 +98,7 @@ export function connectivity(model) {
     const cls = classify(c);
     if (cls.role === 'junction') { junctions.push(c); continue; }
     if (cls.role === 'ground') { grounds.push({ cell: c, cls }); }
+    else if (cls.role === 'power' || cls.role === 'port') { taps.push({ cell: c, cls }); }
     else if (cls.role === 'component') { comps.push({ cell: c, cls }); }
     else continue;
     for (const pin of activePins(cls)) {
@@ -157,14 +159,19 @@ export function connectivity(model) {
   };
   for (const key of termInfo.keys()) add(key);
 
-  // name nets: ground → 0; labeled wires → label; else n1..
+  // name nets: ground → 0; power/port taps → their net name; labeled wires → label; else n1..
   const netOf = new Map();
   const nets = new Map();
   let n = 0;
   const groundIds = new Set(grounds.map((g) => g.cell.id));
+  const tapNetOf = new Map(taps.map((t) => [t.cell.id, t.cls.net]));
   for (const [root, keys] of groups) {
     let name = null;
     for (const k of keys) if (groundIds.has(k.split(':')[0])) name = '0';
+    if (name == null) for (const k of keys) {
+      const tn = tapNetOf.get(k.split(':')[0]);
+      if (tn != null) { name = tn; break; }
+    }
     if (name == null) for (const [k, lbl] of labelOf) if (uf.find(k) === root) { name = lbl; break; }
     if (name == null) name = 'n' + (++n);
     for (const k of keys) {
@@ -176,7 +183,7 @@ export function connectivity(model) {
     }
   }
   // merge all nets named 0 (multiple ground symbols)
-  return { components: comps, grounds, junctions, termInfo, netOf, nets, issues, wiredCells };
+  return { components: comps, grounds, junctions, taps, termInfo, netOf, nets, issues, wiredCells };
 }
 
 /** Extract a SPICE netlist string + structured form from a page. */

@@ -19,11 +19,17 @@ export function check(model) {
       }
     }
   }
-  // grounds without connection: no wire references the ground cell at all
+  // grounds and taps without connection: no wire references the cell at all
   for (const { cell } of conn.grounds) {
     if (!conn.wiredCells.has(cell.id)) {
       findings.push({ severity: 'warning', code: 'floating-ground',
         message: `ground symbol ${cell.id} is not connected`, cells: [cell.id] });
+    }
+  }
+  for (const { cell, cls } of conn.taps) {
+    if (!conn.wiredCells.has(cell.id)) {
+      findings.push({ severity: 'warning', code: 'floating-tap',
+        message: `${cls.role} symbol ${cell.id} (net ${cls.net}) is not connected`, cells: [cell.id] });
     }
   }
   // single-terminal nets
