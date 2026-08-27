@@ -16,8 +16,11 @@ import * as lvs from './lib/lvs.js';
 import * as erc from './lib/erc.js';
 import * as bomLib from './lib/bom.js';
 import * as place from './lib/place.js';
+import * as place2 from './lib/place2.js';
+import * as optimize from './lib/optimize.js';
 import * as route from './lib/route.js';
 import * as render from './lib/render.js';
+import * as beauty from './lib/beauty.js';
 
 const argPort = process.argv.indexOf('--port');
 const PORT = argPort > -1 ? parseInt(process.argv[argPort + 1], 10)
@@ -143,11 +146,22 @@ app.post('/documents/:id/route', wrap(async (req, res) => {
 
 // ------------------------------------------------------------- EDA
 app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
-  const { model: m } = pageOf(req);
+  const entry = documents.getDoc(req.params.id);
+  const m = model.getPage(entry.doc, req.query.page);
   const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
   if (spice == null || spice === '') throw model.httpError(400, 'SPICE netlist required (text body or {"spice": …})');
   const parsed = netlist.parseSpice(spice);
-  const placed = place.importNetlist(m, parsed);
+  const engine = req.query.engine || 'v1';
+  const iters = parseInt(req.query.optimize || '0', 10);
+  if (iters > 0) {
+    const { best, history } = await optimize.optimizeNetlist(parsed,
+      { iterations: iters, reference: req.query.reference || null });
+    entry.doc = best.doc;
+    return res.status(201).json({ engine: 'place2+optimize', score: best.score,
+      metrics: best.metrics, params: best.params, history,
+      components: best.placed.components, wires: best.placed.wires });
+  }
+  const placed = engine === 'v2' ? place2.importNetlist2(m, parsed) : place.importNetlist(m, parsed);
   const routed = await route.routePage(m, placed.wires, {});
   res.status(201).json({ ...placed, routed: routed.ids.length });
 }));
@@ -179,6 +193,12 @@ app.get('/documents/:id/bom', wrap((req, res) => {
   const rows = bomLib.bom(m);
   if ((req.query.format || 'json') === 'csv') return res.type('text/csv').send(bomLib.bomCsv(rows));
   res.json(rows);
+}));
+
+app.post('/documents/:id/beauty', wrap(async (req, res) => {
+  const { entry, model: m } = pageOf(req);
+  const b = req.body || {};
+  res.json(await beauty.scoreDocument(entry.doc, m, { reference: b.reference }));
 }));
 
 // ------------------------------------------------------------- export

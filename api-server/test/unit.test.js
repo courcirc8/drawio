@@ -194,3 +194,34 @@ test('routing: rotated non-square shape uses true rotated pin position', async (
   assert.equal(Math.round(p.x), 150);
   assert.equal(Math.round(p.y), 160);
 });
+
+test('place2: round-trip LVS matches on all benchmark netlists', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { importNetlist2 } = await import('../lib/place2.js');
+  const dir = new URL('../benchmark/netlists/', import.meta.url).pathname;
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.cir'))) {
+    const parsed = parseSpice(fs.readFileSync(path.join(dir, f), 'utf8'));
+    const doc = model.newDocument();
+    const m = model.getPage(doc);
+    const placed = importNetlist2(m, parsed);
+    await routePage(m, placed.wires, {});
+    const report = compare(extractNetlist(m), parsed);
+    assert.equal(report.match, true, f + ': ' + JSON.stringify(report).slice(0, 300));
+  }
+});
+
+test('place2: conduction stacks align drain/source pins vertically (LNA)', async () => {
+  const fs = await import('node:fs');
+  const { importNetlist2 } = await import('../lib/place2.js');
+  const dir = new URL('../benchmark/netlists/', import.meta.url).pathname;
+  const parsed = parseSpice(fs.readFileSync(dir + 'lna-shaeffer-lee.cir', 'utf8'));
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  importNetlist2(m, parsed);
+  const cells = model.allCells(m).map(model.cellInfo);
+  const m1 = cells.find((c) => c.id === 'M1');
+  const m2 = cells.find((c) => c.id === 'M2');
+  assert.equal(m1.x, m2.x, 'cascode M1/M2 must share the same column');
+  assert.ok(m2.y < m1.y, 'cascode M2 stacked above M1');
+});

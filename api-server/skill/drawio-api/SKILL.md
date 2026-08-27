@@ -59,6 +59,17 @@ curl -s -X POST :8770/documents/doc1/wires -H 'Content-Type: application/json' \
 curl -s -X POST :8770/documents/doc1/route -d '{}' -H 'Content-Type: application/json'
 ```
 
+### Génération automatique netlist → beau schéma
+```bash
+# moteur v2 (piles de conduction) + optimisation locale scorée (gate LVS)
+curl -s -X POST ':8770/documents/doc1/netlist/import?optimize=14' -H 'Content-Type: text/plain' --data-binary @c.cir
+# score de qualité visuelle (géométrie XML + OpenCV ; "reference" optionnelle = PNG à imiter)
+curl -s -X POST :8770/documents/doc1/beauty -H 'Content-Type: application/json' -d '{}'
+```
+`?engine=v1|v2` force un moteur sans optimisation. Le score /100 pénalise
+croisements, traversées de composants, coudes, longueur, désalignement,
+déséquilibre. Benchmark rejouable : `tools/run-benchmark.sh`.
+
 ### Vérification
 ```bash
 curl -s :8770/documents/doc1/netlist            # netlist SPICE extraite

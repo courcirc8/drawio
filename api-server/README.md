@@ -79,6 +79,22 @@ PMOS stencil is drawn source-up) live in `lib/components.js`
 symbols mapped to SPICE `G` elements) and passes LVS against its reference
 netlist.
 
+## Netlist → schematic quality loop
+
+`lib/place2.js` places components as vertical **conduction stacks**
+(VDD→ground paths) with pattern rules (bias column left, shared tails
+centred, floating passives between columns, bus nets distributed along the
+bottom). `POST /documents/:id/netlist/import?optimize=N` wraps it in a local
+search: each candidate is re-routed, **gated by round-trip LVS**, scored by
+`tools/beauty.py` (XML geometry + OpenCV: crossings, component overlaps,
+bends, wire length, alignment, ink balance, optional SSIM/ORB against a
+reference image; `POST …/beauty`). `tools/run-benchmark.sh` compares the
+naive v1 engine, place2 and place2+optimize on `benchmark/netlists/`.
+
+`tools/extract-figures.py` (PyMuPDF) crops the figures of a PDF library by
+caption anchoring — used to build the 3900+-figure reference corpus that
+feeds the visual comparison.
+
 ## Tests
 
 ```bash

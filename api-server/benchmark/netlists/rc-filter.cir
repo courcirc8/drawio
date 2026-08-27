@@ -1,0 +1,5 @@
+* RC low-pass filter
+V1 in 0 DC 5
+R1 in out 10k
+C1 out 0 100n
+.end

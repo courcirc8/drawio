@@ -1,0 +1,70 @@
+/**
+ * optimize.js — recherche locale sur les paramètres de place2 : chaque
+ * candidat est régénéré (placement + routage), rejeté si le LVS round-trip ne
+ * matche pas (gate de correction), puis noté par beauty.py ; on garde le
+ * meilleur (hill-climbing avec redémarrages aléatoires légers).
+ */
+import { newDocument, getPage } from './model.js';
+import { importNetlist2 } from './place2.js';
+import { routePage } from './route.js';
+import { extractNetlist } from './netlist.js';
+import { compare } from './lvs.js';
+import { scoreDocument } from './beauty.js';
+
+function mulberry(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+async function evaluate(parsed, params, reference) {
+  const doc = newDocument();
+  const m = getPage(doc);
+  const placed = importNetlist2(m, parsed, params);
+  await routePage(m, placed.wires, {});
+  const lvs = compare(extractNetlist(m), parsed);
+  if (!lvs.match) return { ok: false, reason: 'lvs', lvs };
+  const b = await scoreDocument(doc, m, { reference });
+  return { ok: true, doc, placed, score: b.score, metrics: b.metrics, params };
+}
+
+function perturb(rnd, base, placedInfo) {
+  const p = { ...base, order: [...(base.order || [])], flip: { ...(base.flip || {}) } };
+  const roots = placedInfo.roots || [];
+  const flippable = placedInfo.flippable || [];
+  const move = Math.floor(rnd() * 4);
+  if (move === 0 && roots.length > 1) {
+    const order = p.order.length ? p.order : [...roots];
+    const i = Math.floor(rnd() * order.length);
+    const j = Math.floor(rnd() * order.length);
+    [order[i], order[j]] = [order[j], order[i]];
+    p.order = order;
+  } else if (move === 1 && flippable.length) {
+    const r = flippable[Math.floor(rnd() * flippable.length)];
+    p.flip[r] = !p.flip[r];
+  } else if (move === 2) {
+    p.colW = Math.max(150, Math.min(260, (p.colW || 190) + (rnd() < 0.5 ? -20 : 20)));
+  } else {
+    p.rowH = Math.max(150, Math.min(240, (p.rowH || 180) + (rnd() < 0.5 ? -20 : 20)));
+  }
+  return p;
+}
+
+export async function optimizeNetlist(parsed, { iterations = 10, reference = null, seed = 42 } = {}) {
+  const rnd = mulberry(seed);
+  const history = [];
+  let best = await evaluate(parsed, {}, reference);
+  if (!best.ok) throw new Error('placement initial rejeté par le LVS: ' + JSON.stringify(best.lvs).slice(0, 300));
+  history.push({ iter: 0, score: best.score, accepted: true });
+  for (let i = 1; i <= iterations; i++) {
+    const cand = await evaluate(parsed, perturb(rnd, best.params, best.placed), reference);
+    const accepted = cand.ok && cand.score > best.score;
+    history.push({ iter: i, score: cand.ok ? cand.score : null, accepted, rejected: cand.ok ? undefined : cand.reason });
+    if (accepted) best = cand;
+  }
+  return { best, history };
+}
