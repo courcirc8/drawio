@@ -88,7 +88,12 @@ bottom). `POST /documents/:id/netlist/import?optimize=N` wraps it in a local
 search: each candidate is re-routed, **gated by round-trip LVS**, scored by
 `tools/beauty.py` (XML geometry + OpenCV: crossings, component overlaps,
 bends, wire length, alignment, ink balance, optional SSIM/ORB against a
-reference image; `POST …/beauty`). `tools/run-benchmark.sh` compares the
+reference image; `POST …/beauty`) plus **structural legibility metrics**
+computed from the recognized structures (lib/patterns.js): top-down
+conduction flow with x-aligned series stacks, grounds at the bottom / VDD
+taps at the top, differential pairs on the same row, mirror members aligned
+with their diode — so a flat netlist dump can no longer outscore a properly
+structured schematic. `tools/run-benchmark.sh` compares the
 naive v1 engine, place2 and place2+optimize on `benchmark/netlists/`.
 
 `tools/extract-figures.py` (PyMuPDF) crops the figures of a PDF library by

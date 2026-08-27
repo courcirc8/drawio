@@ -22,6 +22,11 @@ WEIGHTS = {
     'misalign': 12.0,       # (1 - part de composants alignés)
     'unbalance': 8.0,       # écart-type normalisé de la densité d'encre
     'sprawl': 6.0,          # aire de la bbox vs aire "idéale"
+    # structure (lisibilité humaine) — calculée côté JS (lib/beauty.js)
+    'flow': 22.0,           # (1 - part des chaînes série haut->bas alignées)
+    'rails': 10.0,          # (1 - part des masses en bas / taps VDD en haut)
+    'pair_sym': 8.0,        # (1 - paires diff à la même hauteur)
+    'mirror_row': 6.0,      # (1 - miroirs alignés sur leur diode)
 }
 
 def rot_pt(px, py, cx, cy, deg):
@@ -246,12 +251,18 @@ def score(m):
     s -= WEIGHTS['misalign'] * (1 - m.get('align_ratio', 1))
     s -= WEIGHTS['unbalance'] * m.get('ink_balance', 0)
     s -= WEIGHTS['sprawl'] * m.get('sprawl', 0)
+    s -= WEIGHTS['flow'] * (1 - m.get('flow_ok', 1))
+    s -= WEIGHTS['rails'] * (1 - m.get('rails_ok', 1))
+    s -= WEIGHTS['pair_sym'] * (1 - m.get('pair_sym', 1))
+    s -= WEIGHTS['mirror_row'] * (1 - m.get('mirror_row', 1))
     return round(max(0.0, min(100.0, s)), 1)
 
 if __name__ == '__main__':
     xml_path, png_path = sys.argv[1], sys.argv[2]
-    ref = sys.argv[3] if len(sys.argv) > 3 else None
+    ref = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] != '-' else None
     verts, edges = load(xml_path)
     m = xml_metrics(verts, edges)
     m.update(cv_metrics(png_path, ref))
+    if len(sys.argv) > 4:
+        m.update(json.load(open(sys.argv[4])))
     print(json.dumps({'score': score(m), 'metrics': m, 'weights': WEIGHTS}))
