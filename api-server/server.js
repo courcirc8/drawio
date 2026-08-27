@@ -136,6 +136,13 @@ app.post('/documents/:id/wires', wrap((req, res) => {
   res.status(201).json(cellJson(model.cellInfo(cell)));
 }));
 
+app.post('/structures', wrap(async (req, res) => {
+  const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
+  if (spice == null || spice === '') throw model.httpError(400, 'SPICE netlist required');
+  const { detectStructures } = await import('./lib/patterns.js');
+  res.json(detectStructures(netlist.parseSpice(spice)));
+}));
+
 // ------------------------------------------------------------- routing
 app.post('/documents/:id/route', wrap(async (req, res) => {
   const { model: m } = pageOf(req);

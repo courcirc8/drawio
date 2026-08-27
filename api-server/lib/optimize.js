@@ -33,10 +33,12 @@ async function evaluate(parsed, params, reference) {
 }
 
 function perturb(rnd, base, placedInfo) {
-  const p = { ...base, order: [...(base.order || [])], flip: { ...(base.flip || {}) } };
+  const p = { ...base, order: [...(base.order || [])], flip: { ...(base.flip || {}) },
+    flipPairs: [...(base.flipPairs || [])] };
   const roots = placedInfo.roots || [];
   const flippable = placedInfo.flippable || [];
-  const move = Math.floor(rnd() * 4);
+  const pairs = placedInfo.pairs || [];
+  const move = Math.floor(rnd() * (pairs.length ? 5 : 4));
   if (move === 0 && roots.length > 1) {
     const order = p.order.length ? p.order : [...roots];
     const i = Math.floor(rnd() * order.length);
@@ -48,8 +50,13 @@ function perturb(rnd, base, placedInfo) {
     p.flip[r] = !p.flip[r];
   } else if (move === 2) {
     p.colW = Math.max(150, Math.min(260, (p.colW || 190) + (rnd() < 0.5 ? -20 : 20)));
-  } else {
+  } else if (move === 3) {
     p.rowH = Math.max(150, Math.min(240, (p.rowH || 180) + (rnd() < 0.5 ? -20 : 20)));
+  } else {
+    // symétriser/désymétriser une paire différentielle (flip miroir)
+    const key = pairs[Math.floor(rnd() * pairs.length)];
+    const i = p.flipPairs.indexOf(key);
+    if (i >= 0) p.flipPairs.splice(i, 1); else p.flipPairs.push(key);
   }
   return p;
 }

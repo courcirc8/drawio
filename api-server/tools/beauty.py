@@ -47,7 +47,8 @@ def load(xml_path):
                     rot = float(tok.split('=')[1])
             verts[cid] = {'x': float(g.get('x', 0)), 'y': float(g.get('y', 0)),
                           'w': float(g.get('width', 0)), 'h': float(g.get('height', 0)),
-                          'rot': rot, 'junction': 'drawioApiJunction' in style}
+                          'rot': rot, 'junction': 'drawioApiJunction' in style,
+                          'flipH': 'flipH=1' in style, 'flipV': 'flipV=1' in style}
         elif c.get('edge') == '1':
             st = dict(tok.split('=', 1) for tok in style.split(';') if '=' in tok)
             pts = []
@@ -65,6 +66,8 @@ def anchor(verts, cid, st, pref):
     ax, ay = st.get(pref + 'X'), st.get(pref + 'Y')
     rx = float(ax) if ax is not None else 0.5
     ry = float(ay) if ay is not None else 0.5
+    if v.get('flipH'): rx = 1 - rx
+    if v.get('flipV'): ry = 1 - ry
     cx, cy = v['x'] + v['w'] / 2, v['y'] + v['h'] / 2
     return rot_pt(v['x'] + rx * v['w'], v['y'] + ry * v['h'], cx, cy, v['rot'])
 

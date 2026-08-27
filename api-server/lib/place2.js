@@ -18,6 +18,7 @@ import { addVertex, addWire, httpError } from './model.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES, GROUND_SHAPE, GROUND_PIN } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs } from './route.js';
+import { detectStructures } from './patterns.js';
 
 const JCT = 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;';
 const VDD_TAP = 'mxgraph.electrical.signal_sources.vss2';
@@ -123,6 +124,7 @@ export function importNetlist2(model, parsed, opts = {}) {
   for (const r of roots) if (unplaced.has(r)) place(r, nextCol++, 0);
 
   // éléments partagés : centrés sous leurs colonnes, un niveau sous le plus profond
+  const sharedParents = new Map(); // ref -> cols parents (pour re-calcul après permutation)
   let guard = comps.length;
   while (colOf.size && guard-- > 0) {
     for (const [ref, cols] of [...colOf]) {
@@ -130,6 +132,7 @@ export function importNetlist2(model, parsed, opts = {}) {
       const deepest = Math.max(...cols.map((cl) =>
         Math.max(...[...slots.values()].filter((s) => s.col === cl).map((s) => s.level))));
       const mid = cols.reduce((a, b) => a + b, 0) / cols.length;
+      sharedParents.set(ref, [...cols]);
       place(ref, mid, deepest + 1);
       colOf.delete(ref);
     }
@@ -145,6 +148,83 @@ export function importNetlist2(model, parsed, opts = {}) {
     if (!unplaced.has(c.ref) || SPICE_MAP[c.prefix] == null) continue;
     slots.set(c.ref, { col: nextCol++, level: 0 });
     unplaced.delete(c.ref);
+  }
+
+  // ---- regroupement de colonnes par structures (paires adjacentes,
+  //      miroirs adjacents diode en tête)
+  const structures = detectStructures(parsed);
+  {
+    const colOfRef = (ref) => {
+      const sl = slots.get(ref);
+      return sl != null && Number.isInteger(sl.col) ? sl.col : null;
+    };
+    const intCols = [...new Set([...slots.values()].map((s) => s.col).filter(Number.isInteger))].sort((a, b) => a - b);
+    // union-find de colonnes à coller
+    const parent = new Map(intCols.map((c) => [c, c]));
+    const find = (c) => { while (parent.get(c) !== c) c = parent.get(c); return c; };
+    const union = (a, b) => { if (a != null && b != null) parent.set(find(a), find(b)); };
+    const firstOf = new Map(); // cluster -> colonne à mettre en tête (diode de miroir)
+    for (const m of structures.mirrors) {
+      // ne coller que les miroirs de CHARGE : tous les membres au même niveau
+      // (les miroirs de distribution de bias traversent le schéma — les
+      // regrouper casserait le flux du signal)
+      const lvls = m.refs.map((r) => slots.get(r)).filter(Boolean).map((sl) => sl.level);
+      if (new Set(lvls).size !== 1) continue;
+      const cols = m.refs.map(colOfRef).filter((c) => c != null);
+      for (let i = 1; i < cols.length; i++) union(cols[0], cols[i]);
+      const dc = colOfRef(m.diode);
+      if (dc != null) firstOf.set(find(dc), dc);
+    }
+    for (const p of [...structures.diffPairs, ...structures.crossCoupled]) {
+      const lvls = p.refs.map((r) => slots.get(r)).filter(Boolean).map((sl) => sl.level);
+      if (new Set(lvls).size !== 1) continue;
+      const cols = p.refs.map(colOfRef).filter((c) => c != null);
+      for (let i = 1; i < cols.length; i++) union(cols[0], cols[i]);
+    }
+    // ordre final : clusters dans l'ordre de leur plus petite colonne ;
+    // à l'intérieur : diode d'abord, puis ordre d'origine
+    const clusters = new Map();
+    for (const c of intCols) {
+      const r = find(c);
+      if (!clusters.has(r)) clusters.set(r, []);
+      clusters.get(r).push(c);
+    }
+    const orderedClusters = [...clusters.entries()]
+      .sort((a, b) => Math.min(...a[1]) - Math.min(...b[1]));
+    const newOf = new Map();
+    let k = 0;
+    for (const [root, cols] of orderedClusters) {
+      cols.sort((a, b) => a - b);
+      const head = firstOf.get(find(root));
+      if (head != null && cols.includes(head)) {
+        cols.splice(cols.indexOf(head), 1);
+        cols.unshift(head);
+      }
+      for (const c of cols) newOf.set(c, k++);
+    }
+    for (const [ref, sl] of slots) {
+      if (Number.isInteger(sl.col)) sl.col = newOf.get(sl.col);
+    }
+    for (const [ref, cols] of sharedParents) {
+      const sl = slots.get(ref);
+      sl.col = cols.map((c) => newOf.get(c)).reduce((a, b) => a + b, 0) / cols.length;
+    }
+  }
+
+  // ---- flips de symétrie, propagés à toute la colonne. Par défaut :
+  //      seulement les paires cross-couplées (gain net) ; les paires diff
+  //      sont flippées à la demande de l'optimiseur (P.flipPairs).
+  const flipRefs = new Set();
+  const wantFlip = (pr) => structures.crossCoupled.includes(pr) ||
+    (P.flipPairs || []).includes(pr.refs.join('/'));
+  for (const pr of [...structures.diffPairs, ...structures.crossCoupled]) {
+    if (!wantFlip(pr)) continue;
+    const [a, b] = pr.refs;
+    const ca = slots.get(a), cb = slots.get(b);
+    if (ca == null || cb == null) continue;
+    const right = ca.col <= cb.col ? b : a;
+    const rc = slots.get(right).col;
+    for (const [ref, sl] of slots) if (sl.col === rc) flipRefs.add(ref);
   }
 
   // ---- géométrie
@@ -172,10 +252,12 @@ export function importNetlist2(model, parsed, opts = {}) {
     const cx = P.x0 + s.col * P.colW;
     const cy = P.y0 + s.level * P.rowH;
     // centre la BOÎTE TOURNÉE sur (cx, cy) : le canal (pins NE/SE x=1) des MOS est à +w/2-? — aligner le canal sur l'axe
+    const flipped = flipRefs.has(c.ref);
     let x = cx - w / 2, y = cy - h / 2;
-    if (c.prefix === 'M') x = cx - w + 15; // canal (x+70) proche de l'axe cx+15
-    addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w, h, rotation, value: c.value || '' });
-    const pc = { id: c.ref, x, y, w, h, rotation };
+    if (c.prefix === 'M' || c.prefix === 'Q') x = flipped ? cx - 15 : cx - w + 15; // canal proche de l'axe
+    const cell = addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w, h, rotation, value: c.value || '' });
+    if (flipped) cell.setAttribute('style', cell.getAttribute('style') + 'flipH=1;');
+    const pc = { id: c.ref, x, y, w, h, rotation, flipH: flipped };
     placed.set(c.ref, pc);
     // enregistrer les terminaux
     for (let i = 0; i < ci.po.length; i++) {
@@ -255,7 +337,7 @@ export function importNetlist2(model, parsed, opts = {}) {
       const p = placed.get(t.ref);
       const abs = pinAbs(p, t.pin);
       const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
-      const leftish = t.pin.x <= 0.5;
+      const leftish = (t.pin.x <= 0.5) !== !!p.flipH;
       let px = abs.x + (leftish ? -80 : 56), py = abs.y + 36;
       const clash = () => [...placed.values()].some((v) =>
         px < v.x + v.w + 8 && px + 24 > v.x - 8 && py < v.y + v.h + 8 && py + 24 > v.y - 8);
@@ -277,8 +359,8 @@ export function importNetlist2(model, parsed, opts = {}) {
         const c = comps.find((k) => k.ref === t.ref);
         return c != null && (c.prefix === 'M' || c.prefix === 'Q') && info.get(c.ref).gatePin === t.pinName;
       }).length;
-      const spanCols = Math.max(...pts.map((q) => q.x)) - Math.min(...pts.map((q) => q.x)) > P.colW * 0.8;
-      const isBus = gateCount >= 2 && spanCols;
+      const nCols = new Set(pts.map((q) => Math.round((q.x - P.x0) / P.colW))).size;
+      const isBus = gateCount >= 2 && nCols >= 3;
       // net de miroir NON-bus : jonction ancrée sur le drain de la diode
       const diode = isBus ? null : comps.find((k) => (k.prefix === 'M' || k.prefix === 'Q') &&
         k.nodes[0] === net && k.nodes[1] === net && placed.has(k.ref));
@@ -290,17 +372,16 @@ export function importNetlist2(model, parsed, opts = {}) {
         snap = dabs;
         cy = isPmos(diode) ? p.y + p.h + 28 : p.y - 28;
       }
-      let jy = cy;
-      if (isBus) {
-        jy = Math.max(...pts.map((q) => q.y)) + 55;
-      } else {
-        // gap vertical : éviter les bboxes des composants placés
+      let jy = isBus ? Math.max(...pts.map((q) => q.y)) + 55 : cy;
+      {
+        // jamais dans un corps de composant (bus compris)
         const boxes = [...placed.values()].filter((v) => Math.abs((v.x + v.w / 2) - snap.x) < v.w);
         const inBox = (yy) => boxes.some((v) => yy > v.y - 8 && yy < v.y + v.h + 8);
         if (inBox(jy)) {
+          const base = jy;
           for (let d = 10; d < 400; d += 10) {
-            if (!inBox(cy - d)) { jy = cy - d; break; }
-            if (!inBox(cy + d)) { jy = cy + d; break; }
+            if (!inBox(base + d)) { jy = base + d; break; }
+            if (!isBus && !inBox(base - d)) { jy = base - d; break; }
           }
         }
       }
@@ -314,5 +395,6 @@ export function importNetlist2(model, parsed, opts = {}) {
 
   return { components: comps.map((c) => c.ref), wires, warnings: parsed.warnings || [],
     engine: 'place2', params: P, roots,
+    pairs: structures.diffPairs.map((p) => p.refs.join('/')),
     flippable: comps.filter((c) => 'RCLD'.includes(c.prefix)).map((c) => c.ref) };
 }

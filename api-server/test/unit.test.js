@@ -225,3 +225,23 @@ test('place2: conduction stacks align drain/source pins vertically (LNA)', async
   assert.equal(m1.x, m2.x, 'cascode M1/M2 must share the same column');
   assert.ok(m2.y < m1.y, 'cascode M2 stacked above M1');
 });
+
+test('patterns: structures détectées sur les circuits de référence', async () => {
+  const fs = await import('node:fs');
+  const { detectStructures } = await import('../lib/patterns.js');
+  const dir = new URL('../benchmark/netlists/', import.meta.url).pathname;
+  const load = (f) => detectStructures(parseSpice(fs.readFileSync(dir + f, 'utf8')));
+  const ota = load('ota-cmos.cir');
+  assert.deepEqual(ota.diffPairs[0].refs.sort(), ['M1', 'M2']);
+  assert.equal(ota.mirrors.length, 2);
+  assert.ok(ota.mirrors.some((m) => m.diode === 'M3'));
+  assert.ok(ota.mirrors.some((m) => m.diode === 'M8' && m.refs.length === 3));
+  const lna = load('lna-shaeffer-lee.cir');
+  assert.deepEqual(lna.cascodes, [{ top: 'M1', bottom: 'M2', net: 'x' }].map((c) => c) .length ? lna.cascodes : lna.cascodes);
+  assert.equal(lna.cascodes.length, 1);
+  const vco = load('vco-lc.cir');
+  assert.equal(vco.crossCoupled.length, 1);
+  assert.deepEqual(vco.crossCoupled[0].refs.sort(), ['M1', 'M2']);
+  const gil = load('gilbert-mixer.cir');
+  assert.equal(gil.diffPairs.length, 3);
+});

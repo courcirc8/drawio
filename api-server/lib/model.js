@@ -186,6 +186,8 @@ export function cellInfo(cell) {
     info.w = num(g.getAttribute('width'));
     info.h = num(g.getAttribute('height'));
     info.rotation = num(s.map.get('rotation')) || 0;
+    info.flipH = s.map.get('flipH') === '1';
+    info.flipV = s.map.get('flipV') === '1';
   }
   if (info.kind === 'edge') {
     info.source = cell.getAttribute('source');

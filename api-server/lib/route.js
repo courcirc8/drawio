@@ -37,6 +37,8 @@ function loadAvoid() {
  * coordinates cannot simply be rotated in the unit square (wrong for w≠h).
  */
 function pinAbsOf(cell, relX, relY) {
+  if (cell.flipH) relX = 1 - relX;
+  if (cell.flipV) relY = 1 - relY;
   const t = ((cell.rotation || 0) * Math.PI) / 180;
   const cx = cell.x + cell.w / 2, cy = cell.y + cell.h / 2;
   const px = cell.x + relX * cell.w, py = cell.y + relY * cell.h;
