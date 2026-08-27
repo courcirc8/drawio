@@ -41,3 +41,19 @@ Poids questionnés :
 - Budget E1 : crossings 54, excess_bend 43, too_close 30 → tout pointe l'étoile
   du nœud cascode (Lvdd+Ld+M4+gate M2). Règle candidate suivante : nœud de
   polarisation cascode = rail court horizontal au-dessus de la pile, M4 accolé.
+
+### E1 (itération 2) — retour utilisateur : « le LNA est nul »
+
+Règles ajoutées (implémentées) :
+6. **Diode de polarisation accolée** : un MOS diode (D=G=net, S=0) suspendu à
+   un net de pile se pose À CÔTÉ du nœud (col−0.55, niveau+0.55), jamais dans
+   une colonne de conduction.
+7. **Jonction sur l'axe de pile** : si ≥2 pins d'un net partagent le même x
+   (éléments empilés), la jonction reste SUR cet axe, à mi-hauteur — fini
+   l'étoile qui tire les fils de côté.
+8. **Sortie vers l'extérieur** : un élément série menant à un port se place du
+   côté extérieur du schéma (droite si le net est à droite du centre).
+
+Reste identifié (candidat E1-iter3) : la masse de la diode accolée descend en
+long rail qui croise la chaîne — règle « masse locale » : symbole de masse
+juste sous la source de la diode, comme le petit trait du papier.

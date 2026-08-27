@@ -111,8 +111,17 @@ export function importNetlist2(model, parsed, opts = {}) {
       const ki = info.get(k.ref);
       return ki != null && ki.bot === net;
     }).length;
-    const shared = below.filter((c) => parentsOf(info.get(c.ref).top) > 1);
-    const solo = below.filter((c) => !shared.includes(c));
+    // diode de polarisation accrochée au net (D=G=net, S=0) : accolée à
+    // CÔTÉ du nœud, pas dans une colonne de conduction (règle E1/Fig.13)
+    const sideDiodes = below.filter((c) => (c.prefix === 'M' || c.prefix === 'Q') &&
+      c.nodes[0] === c.nodes[1] && info.get(c.ref).bot === '0');
+    for (const d of sideDiodes) {
+      slots.set(d.ref, { col: col - 0.55, level: level + 0.55 });
+      unplaced.delete(d.ref);
+    }
+    const rest = below.filter((c) => !sideDiodes.includes(c));
+    const shared = rest.filter((c) => parentsOf(info.get(c.ref).top) > 1);
+    const solo = rest.filter((c) => !shared.includes(c));
     let k = 0;
     for (const c of solo) {
       place(c.ref, k === 0 ? col : nextCol++, level + 1);
@@ -409,9 +418,12 @@ export function importNetlist2(model, parsed, opts = {}) {
     const empty0 = anchors[0].n === 0, empty1 = anchors[1].n === 0;
     if (empty0 !== empty1) {
       // élément série vers l'extérieur (l'autre net deviendra un port) :
-      // posé horizontalement à gauche du pin côté circuit, à sa hauteur
+      // posé horizontalement du côté EXTÉRIEUR du schéma, à hauteur du pin
       const a = empty0 ? anchors[1] : anchors[0];
-      cx = a.x - 60 - shape.w / 2;
+      const centers = [...placed.values()].map((v) => v.x + v.w / 2);
+      const mid = centers.length ? (Math.min(...centers) + Math.max(...centers)) / 2 : a.x;
+      const dir = a.x >= mid ? 1 : -1;
+      cx = a.x + dir * (60 + shape.w / 2);
       cy = a.y;
     } else {
       cx = (anchors[0].x + anchors[1].x) / 2;
@@ -484,8 +496,22 @@ export function importNetlist2(model, parsed, opts = {}) {
       }).length;
       const nCols = new Set(pts.map((q) => Math.round((q.x - P.x0) / P.colW))).size;
       const isBus = gateCount >= 2 && nCols >= 3;
+      // axe vertical dominant (pile) : si >=2 pins partagent le même x,
+      // la jonction reste SUR cet axe, entre eux
+      const byX = new Map();
+      for (const q of pts) {
+        const key = Math.round(q.x / 5) * 5;
+        if (!byX.has(key)) byX.set(key, []);
+        byX.get(key).push(q);
+      }
+      const axis = [...byX.entries()].find(([, l]) => l.length >= 2);
+      if (axis != null && !isBus) {
+        const ys = axis[1].map((q) => q.y).sort((a, b) => a - b);
+        snap = { x: axis[1][0].x, y: 0 };
+        cy = (ys[0] + ys[ys.length - 1]) / 2;
+      }
       // net de miroir NON-bus : jonction ancrée sur le drain de la diode
-      const diode = isBus ? null : comps.find((k) => (k.prefix === 'M' || k.prefix === 'Q') &&
+      const diode = (isBus || axis != null) ? null : comps.find((k) => (k.prefix === 'M' || k.prefix === 'Q') &&
         k.nodes[0] === net && k.nodes[1] === net && placed.has(k.ref));
       if (diode != null) {
         const di = info.get(diode.ref);
