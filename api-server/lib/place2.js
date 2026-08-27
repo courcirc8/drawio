@@ -341,11 +341,22 @@ export function importNetlist2(model, parsed, opts = {}) {
     const cy = P.y0 + s.level * P.rowH;
     // centre la BOÎTE TOURNÉE sur (cx, cy) : le canal (pins NE/SE x=1) des MOS est à +w/2-? — aligner le canal sur l'axe
     const flipped = flipRefs.has(c.ref);
-    let x = cx - w / 2, y = cy - h / 2;
-    if (c.prefix === 'M' || c.prefix === 'Q') x = flipped ? cx - 15 : cx - w + 15; // canal proche de l'axe
-    const cell = addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w, h, rotation, value: c.value || '' });
+    const axisX = cx + (flipped ? -15 : 15); // axe de conduction de la pile
+    let w2 = w, h2 = h, shapeKey2 = ci.shapeKey, rot2 = rotation;
+    if (c.prefix === 'L' && rotation !== 0) {
+      // inductance VERTICALE : symbole vertical natif (pins traversants sur
+      // l'axe) au lieu d'une bobine tournée aux pins en coin -> zéro coude
+      shapeKey2 = 'mxgraph.electrical.inductors.inductor_2';
+      const vs = getShape(shapeKey2);
+      w2 = vs.w; h2 = vs.h; rot2 = 0;
+      ci.shapeKey = shapeKey2;
+    }
+    let x = axisX - w2 / 2, y = cy - h2 / 2;
+    if (c.prefix === 'M' || c.prefix === 'Q') x = flipped ? axisX : axisX - w2;
+    if (shapeKey2 === 'mxgraph.electrical.inductors.inductor_2') x = axisX - 0.6977 * w2;
+    const cell = addVertex(model, { id: c.ref, shape: shapeKey2, x, y, w: w2, h: h2, rotation: rot2, value: c.value || '' });
     if (flipped) cell.setAttribute('style', cell.getAttribute('style') + 'flipH=1;');
-    const pc = { id: c.ref, x, y, w, h, rotation, flipH: flipped };
+    const pc = { id: c.ref, x, y, w: w2, h: h2, rotation: rot2, flipH: flipped };
     placed.set(c.ref, pc);
     // enregistrer les terminaux
     for (let i = 0; i < ci.po.length; i++) {
@@ -366,19 +377,27 @@ export function importNetlist2(model, parsed, opts = {}) {
       const ci = info.get(e.c.ref);
       const shape = getShape(ci.shapeKey);
       const cx = ga.x - 130 - k * 160;
+      // aligner les PINS de l'élément sur la ligne de chaîne (les selfs
+      // horizontales ont leurs pins au bord bas, pas au centre)
       const cy = ga.y;
-      addVertex(model, { id: e.c.ref, shape: ci.shapeKey, x: cx - shape.w / 2, y: cy - shape.h / 2, w: shape.w, h: shape.h, rotation: 0, value: e.c.value || '' });
-      placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y: cy - shape.h / 2, w: shape.w, h: shape.h, rotation: 0 });
+      const pinRelY = (getPin(ci.shapeKey, ci.po[0]) || { y: 0.5 }).y;
+      const y = ga.y - pinRelY * shape.h;
+      addVertex(model, { id: e.c.ref, shape: ci.shapeKey, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, value: e.c.value || '' });
+      placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0 });
       for (let i = 0; i < ci.po.length; i++) term(e.c.nodes[i], e.c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
       // dérivations : bias en haut (vertical), shunt masse en bas (vertical)
       for (const h of e.hangers) {
         const hi = info.get(h.c.ref);
-        const hs = getShape(hi.shapeKey);
+        let hShape = hi.shapeKey, hRot = h.up ? -90 : 90;
+        if (h.c.prefix === 'L') { hShape = 'mxgraph.electrical.inductors.inductor_2'; hRot = 0; hi.shapeKey = hShape; }
+        const hs = getShape(hShape);
         const hx = cx + 85;
-        const hy = h.up ? cy - 80 - hs.w / 2 : cy + 80 + hs.w / 2;
-        addVertex(model, { id: h.c.ref, shape: hi.shapeKey, x: hx - hs.w / 2, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: h.up ? -90 : 90, value: h.c.value || '' });
-        placed.set(h.c.ref, { id: h.c.ref, x: hx - hs.w / 2, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: h.up ? -90 : 90 });
-        for (let i = 0; i < hi.po.length; i++) term(h.c.nodes[i], h.c.ref, hi.po[i], getPin(hi.shapeKey, hi.po[i]));
+        const hh = hRot === 0 ? hs.h : hs.w;
+        const hy = h.up ? cy - 80 - hh / 2 : cy + 80 + hh / 2;
+        const hxpos = hShape === 'mxgraph.electrical.inductors.inductor_2' ? hx - 0.6977 * hs.w : hx - hs.w / 2;
+        addVertex(model, { id: h.c.ref, shape: hShape, x: hxpos, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: hRot, value: h.c.value || '' });
+        placed.set(h.c.ref, { id: h.c.ref, x: hxpos, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: hRot });
+        for (let i = 0; i < hi.po.length; i++) term(h.c.nodes[i], h.c.ref, hi.po[i], getPin(hShape, hi.po[i]));
       }
       k++;
     }
@@ -509,6 +528,21 @@ export function importNetlist2(model, parsed, opts = {}) {
         const ys = axis[1].map((q) => q.y).sort((a, b) => a - b);
         snap = { x: axis[1][0].x, y: 0 };
         cy = (ys[0] + ys[ys.length - 1]) / 2;
+      } else if (!isBus) {
+        // axe horizontal dominant (ligne de chaîne) : dot SUR la ligne, au
+        // droit du pin hors-ligne
+        const byY = new Map();
+        for (const q of pts) {
+          const key = Math.round(q.y / 5) * 5;
+          if (!byY.has(key)) byY.set(key, []);
+          byY.get(key).push(q);
+        }
+        const yAxis = [...byY.entries()].find(([, l]) => l.length >= 2);
+        if (yAxis != null) {
+          const off = pts.find((q) => Math.round(q.y / 5) * 5 !== yAxis[0]);
+          snap = { x: (off || pts[0]).x, y: 0 };
+          cy = yAxis[1][0].y;
+        }
       }
       // net de miroir NON-bus : jonction ancrée sur le drain de la diode
       const diode = (isBus || axis != null) ? null : comps.find((k) => (k.prefix === 'M' || k.prefix === 'Q') &&

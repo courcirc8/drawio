@@ -8,7 +8,8 @@ import { getShape, getPin, loadCatalog } from './stencils.js';
 export const SPICE_MAP = {
   R: { shape: 'mxgraph.electrical.resistors.resistor_2', pinOrder: ['in', 'out'], label: 'resistor' },
   C: { shape: 'mxgraph.electrical.capacitors.capacitor_1', pinOrder: ['in', 'out'], label: 'capacitor' },
-  L: { shape: 'mxgraph.electrical.inductors.inductor_3', pinOrder: ['in', 'out'], label: 'inductor' },
+  L: { shape: 'mxgraph.electrical.inductors.inductor_3', pinOrder: ['in', 'out'], label: 'inductor',
+       variants: { VERTICAL: 'mxgraph.electrical.inductors.inductor_2' } },
   D: { shape: 'mxgraph.electrical.diodes.diode', pinOrder: ['in', 'out'], label: 'diode' },
   V: { shape: 'mxgraph.electrical.signal_sources.dc_source_3', pinOrder: ['N', 'S'], label: 'voltage source', vertical: true },
   I: { shape: 'mxgraph.electrical.signal_sources.current_source', pinOrder: ['N', 'S'], label: 'current source', vertical: true },

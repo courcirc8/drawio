@@ -57,3 +57,24 @@ Règles ajoutées (implémentées) :
 Reste identifié (candidat E1-iter3) : la masse de la diode accolée descend en
 long rail qui croise la chaîne — règle « masse locale » : symbole de masse
 juste sous la source de la diode, comme le petit trait du papier.
+
+### E1 (itération 3) — « compte les angles droits » (retour utilisateur)
+
+Comptage : figure publiée ≈ **4** angles droits (Vs→Rs, coude M4, liaison
+diode, gate M2 — tout le reste est COLINÉAIRE par construction).
+Ma copie : **38** → règles ci-dessous → **20** (croisements 9 → 1).
+
+9. **Selfs verticales = symbole vertical natif** (`inductor_2`, pins
+   traversants sur l'axe) — jamais une bobine horizontale tournée dont les
+   pins en coin génèrent 2-4 coudes chacune.
+10. **Axe de conduction unique** : MOS (canal), selfs, R/C tournées et
+    jonctions partagent LE MÊME x dans une pile → fil vertical d'un trait.
+11. **Jonction sur la ligne de chaîne** (axe Y) : ≥2 pins à même hauteur →
+    le dot se pose SUR la ligne, au droit du pin dérivé.
+12. **Alignement par PIN, pas par centre** : un élément de chaîne se cale
+    pour que son pin tombe sur la ligne (les pins d'inductor_3 sont au bord
+    bas, pas au centre).
+
+Reste vers ~4 : boucle de la diode M4 + son rail de masse (règle « masse
+locale » toujours candidate), T de Cm, montée Lb1.
+Poids : excess_bend (1.4) a correctement guidé ces 4 règles — inchangé.
