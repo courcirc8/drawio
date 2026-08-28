@@ -4,9 +4,17 @@
 import { connectivity } from './netlist.js';
 import { activePins } from './components.js';
 
+// T2: anchor-off-pin and floating-endpoint are connectivity errors, not style
+// warnings — an anchor that isn't on any pin (or a wire end not on any pin at
+// all) means the extracted netlist silently used the wrong/nearest pin
+// (positional pin mapping, see AGENTS.md domain correction #1). Everything
+// else from connectivity() (currently only dangling-wire) stays a warning.
+const CONNECTIVITY_ERROR_CODES = new Set(['anchor-off-pin', 'floating-endpoint', 'anchor-name-stale']);
+
 export function check(model) {
   const conn = connectivity(model);
-  const findings = [...conn.issues.map((i) => ({ severity: 'warning', ...i }))];
+  const findings = [...conn.issues.map((i) =>
+    ({ severity: CONNECTIVITY_ERROR_CODES.has(i.code) ? 'error' : 'warning', ...i }))];
 
   // unconnected pins
   for (const { cell, cls } of conn.components) {

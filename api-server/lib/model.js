@@ -148,8 +148,28 @@ function rootEl(model) {
   return r;
 }
 
+// T4: a "cell" at the top level of <root> is either a bare <mxCell> or a
+// <mxCell> wrapped in a drawio user-data <object refdes="…" spice_value="…"
+// id="…"><mxCell .../></object> (the standard "Edit Data" representation —
+// js/grapheditor/Dialogs.js EditDataDialog / mxCodec write user attributes on
+// the OUTER <object>, id included, while style/vertex/edge/parent/geometry
+// stay on the inner <mxCell>, which itself carries no id). Wrapping is opt-in
+// per addVertex() call (via `refdes`/`data`) so every existing bare-mxCell
+// document and all pre-T4 callers keep working unchanged. mxCellOf()/geomOf()
+// below are the single place that resolves "the real mxCell" so the rest of
+// this module (and cellInfo callers) don't have to care which shape a given
+// top-level node has.
+function mxCellOf(node) {
+  if (node.nodeName === 'mxCell') return node;
+  for (let c = node.firstChild; c != null; c = c.nextSibling) {
+    if (c.nodeType === 1 && c.nodeName === 'mxCell') return c;
+  }
+  return null;
+}
+
 export function allCells(model) {
-  return Array.from(rootEl(model).childNodes).filter((n) => n.nodeType === 1 && n.nodeName === 'mxCell');
+  return Array.from(rootEl(model).childNodes)
+    .filter((n) => n.nodeType === 1 && (n.nodeName === 'mxCell' || n.nodeName === 'object'));
 }
 
 export function getCell(model, id) {
@@ -162,23 +182,49 @@ export function requireCell(model, id) {
   return c;
 }
 
-function geomOf(cell) {
+/** The <mxCell> that carries style/vertex/edge/geometry for a top-level cell node (itself if bare). */
+export function mxCellPart(node) {
+  return mxCellOf(node);
+}
+
+/** style string of a cell node, resolving the object-wrapper indirection. */
+export function styleOf(node) {
+  const mx = mxCellOf(node);
+  return (mx && mx.getAttribute('style')) || '';
+}
+
+function geomOf(node) {
+  const cell = mxCellOf(node);
+  if (cell == null) return null;
   for (let c = cell.firstChild; c != null; c = c.nextSibling) {
     if (c.nodeType === 1 && c.nodeName === 'mxGeometry') return c;
   }
   return null;
 }
 
-export function cellInfo(cell) {
-  const g = geomOf(cell);
-  const style = cell.getAttribute('style') || '';
+export function cellInfo(node) {
+  const isObj = node.nodeName === 'object';
+  const cell = mxCellOf(node);
+  const g = geomOf(node);
+  const style = (cell && cell.getAttribute('style')) || '';
   const s = parseStyle(style);
+  const attrs = {};
+  if (isObj) {
+    for (const a of Array.from(node.attributes)) {
+      if (a.name === 'id' || a.name === 'label') continue;
+      attrs[a.name] = a.value;
+    }
+  }
   const info = {
-    id: cell.getAttribute('id'),
+    id: node.getAttribute('id'),
     kind: cell.getAttribute('edge') === '1' ? 'edge' : (cell.getAttribute('vertex') === '1' ? 'vertex' : 'other'),
-    value: cell.getAttribute('value') || '',
+    value: isObj ? (node.getAttribute('label') || '') : (cell.getAttribute('value') || ''),
     style: s,
     styleRaw: style,
+    // refdes/attrs are null for a plain (non-wrapped) cell — see components.js
+    // identityOf() for the "prefer refdes, fall back to id" rule this enables.
+    refdes: isObj && attrs.refdes != null && attrs.refdes !== '' ? attrs.refdes : null,
+    attrs: isObj ? attrs : null,
   };
   if (info.kind === 'vertex' && g != null) {
     info.x = num(g.getAttribute('x'));
@@ -217,13 +263,23 @@ export function freshId(model, prefix = 'c') {
   return id;
 }
 
-/** Add a vertex. shape may be a stencil key (mxgraph.…) or a full style string. */
-export function addVertex(model, { id, shape, style, x = 0, y = 0, w = 80, h = 80, rotation, value = '' }) {
+/**
+ * Add a vertex. shape may be a stencil key (mxgraph.…) or a full style string.
+ *
+ * T4: `refdes` / `data` opt a component cell into the drawio "Edit Data"
+ * <object> wrapper (id + refdes + spice_value + any other `data` attrs on the
+ * OUTER node, style/vertex/geometry on the inner <mxCell>) so identity
+ * survives a GUI rename of the id-bearing cell, and — the more dangerous case
+ * — a copy/paste, which reassigns mxCell ids but carries the <object>'s
+ * custom attributes along unchanged. Omitting both keeps producing a bare
+ * <mxCell> exactly as before T4, so every pre-existing document/call site is
+ * unaffected.
+ */
+export function addVertex(model, { id, shape, style, x = 0, y = 0, w = 80, h = 80, rotation, value = '', refdes, data }) {
   if (id != null && getCell(model, id) != null) throw httpError(409, 'cell id already exists: ' + id);
   const doc = model.ownerDocument;
+  const cellId = id != null ? String(id) : freshId(model, 'v');
   const cell = doc.createElement('mxCell');
-  cell.setAttribute('id', id != null ? String(id) : freshId(model, 'v'));
-  cell.setAttribute('value', String(value));
   let st = style != null ? style : (shape != null && shape.startsWith('mxgraph.')
     ? `shape=${shape};html=1;verticalLabelPosition=bottom;verticalAlign=top;fillColor=none;strokeColor=default;`
     : (shape || 'rounded=0;whiteSpace=wrap;html=1;'));
@@ -238,13 +294,45 @@ export function addVertex(model, { id, shape, style, x = 0, y = 0, w = 80, h = 8
   g.setAttribute('height', String(h));
   g.setAttribute('as', 'geometry');
   cell.appendChild(g);
-  rootEl(model).appendChild(cell);
-  return cell;
+
+  const extra = { ...(data || {}) };
+  if (refdes != null) extra.refdes = String(refdes);
+  let top;
+  if (Object.keys(extra).length > 0) {
+    const obj = doc.createElement('object');
+    obj.setAttribute('id', cellId);
+    obj.setAttribute('label', String(value));
+    for (const [k, v] of Object.entries(extra)) obj.setAttribute(k, String(v));
+    obj.appendChild(cell);
+    top = obj;
+  } else {
+    cell.setAttribute('id', cellId);
+    cell.setAttribute('value', String(value));
+    top = cell;
+  }
+  rootEl(model).appendChild(top);
+  return top;
 }
 
 /**
- * Add a wire (edge). sourcePin/targetPin are optional {x,y} fixed anchors in
- * relative shape coordinates (0..1) — from the stencil pin catalog.
+ * Add a wire (edge). sourcePin/targetPin are optional {x,y,name} fixed
+ * anchors in relative shape coordinates (0..1) — from the stencil pin
+ * catalog. When a `name` is given (the stencil's <constraint name="…">), it
+ * is ALSO persisted as exitName/entryName.
+ *
+ * Why: mxGraph itself only ever saves exitX/exitY/exitDx/exitDy/exitPerimeter
+ * in the edge style (mxgraph/src/view/mxGraph.js:7153-7185) — the constraint
+ * NAME is never written by the stock editor, and getConnectionConstraint()
+ * (:7104-7136) always comes back with name=null. So today's read path
+ * (netlist.js endpointKey) has to recover gate-vs-drain identity by nearest-
+ * coordinate match, which is exactly the positional pin mapping AGENTS.md
+ * domain correction #1 warns against for DSPF/schematic ports — a human
+ * re-dragging an endpoint by a few px can silently reassign it to the wrong
+ * pin. exitName/entryName are unknown keys to mxGraph, but mxGraph style
+ * strings are opaque `key=value;` lists and unknown keys survive a GUI edit
+ * and a save (js/grapheditor/Dialogs.js "Edit Data" pattern relies on the
+ * same property). netlist.js prefers the name when present and still
+ * cross-checks it against the live coordinates (see anchor-name-stale).
  */
 export function addWire(model, { id, source, target, sourcePin, targetPin, style, points }) {
   if (id != null && getCell(model, id) != null) throw httpError(409, 'cell id already exists: ' + id);
@@ -255,8 +343,14 @@ export function addWire(model, { id, source, target, sourcePin, targetPin, style
   cell.setAttribute('id', id != null ? String(id) : freshId(model, 'w'));
   let st = style || 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;jettySize=auto;endArrow=none;endFill=0;';
   const anchors = {};
-  if (sourcePin != null) { anchors.exitX = sourcePin.x; anchors.exitY = sourcePin.y; anchors.exitDx = 0; anchors.exitDy = 0; anchors.exitPerimeter = 0; }
-  if (targetPin != null) { anchors.entryX = targetPin.x; anchors.entryY = targetPin.y; anchors.entryDx = 0; anchors.entryDy = 0; anchors.entryPerimeter = 0; }
+  if (sourcePin != null) {
+    anchors.exitX = sourcePin.x; anchors.exitY = sourcePin.y; anchors.exitDx = 0; anchors.exitDy = 0; anchors.exitPerimeter = 0;
+    if (sourcePin.name != null) anchors.exitName = sourcePin.name;
+  }
+  if (targetPin != null) {
+    anchors.entryX = targetPin.x; anchors.entryY = targetPin.y; anchors.entryDx = 0; anchors.entryDy = 0; anchors.entryPerimeter = 0;
+    if (targetPin.name != null) anchors.entryName = targetPin.name;
+  }
   st = mergeStyle(st, anchors);
   cell.setAttribute('style', st);
   cell.setAttribute('edge', '1');
@@ -272,14 +366,14 @@ export function addWire(model, { id, source, target, sourcePin, targetPin, style
   return cell;
 }
 
-export function setEdgePoints(cell, points) {
-  const doc = cell.ownerDocument;
-  let g = geomOf(cell);
+export function setEdgePoints(node, points) {
+  const doc = node.ownerDocument;
+  let g = geomOf(node);
   if (g == null) {
     g = doc.createElement('mxGeometry');
     g.setAttribute('relative', '1');
     g.setAttribute('as', 'geometry');
-    cell.appendChild(g);
+    mxCellOf(node).appendChild(g);
   }
   for (const arr of Array.from(g.childNodes)) {
     if (arr.nodeType === 1 && arr.nodeName === 'Array' && arr.getAttribute('as') === 'points') g.removeChild(arr);
@@ -299,9 +393,10 @@ export function setEdgePoints(cell, points) {
 
 /** Patch a cell: x/y/w/h absolute or dx/dy relative move, rotation, value, style merge, edge points. */
 export function updateCell(model, id, patch) {
-  const cell = requireCell(model, id);
-  const g = geomOf(cell);
-  if (g != null && cell.getAttribute('vertex') === '1') {
+  const node = requireCell(model, id);
+  const mx = mxCellOf(node);
+  const g = geomOf(node);
+  if (g != null && mx.getAttribute('vertex') === '1') {
     const cur = (a) => parseFloat(g.getAttribute(a) || '0');
     if (patch.dx != null) g.setAttribute('x', String(cur('x') + patch.dx));
     if (patch.dy != null) g.setAttribute('y', String(cur('y') + patch.dy));
@@ -311,35 +406,42 @@ export function updateCell(model, id, patch) {
     if (patch.h != null) g.setAttribute('height', String(patch.h));
   }
   if (patch.rotation != null) {
-    cell.setAttribute('style', mergeStyle(cell.getAttribute('style'),
+    mx.setAttribute('style', mergeStyle(mx.getAttribute('style'),
       { rotation: patch.rotation === 0 ? null : patch.rotation }));
   }
-  if (patch.value != null) cell.setAttribute('value', String(patch.value));
-  if (patch.style != null) cell.setAttribute('style', mergeStyle(cell.getAttribute('style'), patch.style));
-  if (patch.points != null) setEdgePoints(cell, patch.points);
-  if (patch.source !== undefined && cell.getAttribute('edge') === '1') {
-    if (patch.source == null) cell.removeAttribute('source'); else cell.setAttribute('source', String(patch.source));
+  // value lives on the outer <object> (as `label`) for a T4-wrapped cell,
+  // on the <mxCell> itself otherwise.
+  if (patch.value != null) {
+    if (node.nodeName === 'object') node.setAttribute('label', String(patch.value));
+    else mx.setAttribute('value', String(patch.value));
   }
-  if (patch.target !== undefined && cell.getAttribute('edge') === '1') {
-    if (patch.target == null) cell.removeAttribute('target'); else cell.setAttribute('target', String(patch.target));
+  if (patch.style != null) mx.setAttribute('style', mergeStyle(mx.getAttribute('style'), patch.style));
+  if (patch.points != null) setEdgePoints(node, patch.points);
+  if (patch.source !== undefined && mx.getAttribute('edge') === '1') {
+    if (patch.source == null) mx.removeAttribute('source'); else mx.setAttribute('source', String(patch.source));
   }
-  return cell;
+  if (patch.target !== undefined && mx.getAttribute('edge') === '1') {
+    if (patch.target == null) mx.removeAttribute('target'); else mx.setAttribute('target', String(patch.target));
+  }
+  return node;
 }
 
 /** Delete a cell; for vertices also deletes attached edges. Returns deleted ids. */
 export function deleteCell(model, id) {
-  const cell = requireCell(model, id);
+  const node = requireCell(model, id);
+  const mx = mxCellOf(node);
   const deleted = [];
-  if (cell.getAttribute('vertex') === '1') {
+  if (mx.getAttribute('vertex') === '1') {
     for (const e of allCells(model)) {
-      if (e.getAttribute('edge') === '1' &&
-          (e.getAttribute('source') === String(id) || e.getAttribute('target') === String(id))) {
+      const em = mxCellOf(e);
+      if (em.getAttribute('edge') === '1' &&
+          (em.getAttribute('source') === String(id) || em.getAttribute('target') === String(id))) {
         e.parentNode.removeChild(e);
         deleted.push(e.getAttribute('id'));
       }
     }
   }
-  cell.parentNode.removeChild(cell);
+  node.parentNode.removeChild(node);
   deleted.push(String(id));
   return deleted;
 }

@@ -61,7 +61,10 @@ export function importNetlist(model, parsed) {
     }
     const w = shape.w, h = shape.h;
     const x = X0 + col * COL_W, y = Y0 + row * ROW_H;
-    addVertex(model, { id: c.ref, shape: shapeKey, x, y, w, h, rotation, value: c.value || '' });
+    // T4: persist identity as refdes/spice_value on a wrapping <object>, not
+    // just as the mxCell id — id is what a GUI copy/paste silently reassigns.
+    addVertex(model, { id: c.ref, shape: shapeKey, x, y, w, h, rotation, value: c.value || '',
+      refdes: c.ref, data: { spice_value: c.value || '' } });
     placed.set(c.ref, { id: c.ref, x, y, w, h, rotation, shapeKey, spice: c, map });
   }
 
@@ -91,12 +94,12 @@ export function importNetlist(model, parsed) {
         addVertex(model, { id: gid, shape: GROUND_SHAPE, x: abs.x - gw / 2, y: p.y + p.h + 40, w: gw, h: gh });
         const gpin = getPin(GROUND_SHAPE, GROUND_PIN) || gnd.pins[0];
         wires.push(addWire(model, { source: t.ref, target: gid,
-          sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: gpin.x, y: gpin.y } }).getAttribute('id'));
+          sourcePin: { x: t.pin.x, y: t.pin.y, name: t.pin.name }, targetPin: { x: gpin.x, y: gpin.y, name: gpin.name } }).getAttribute('id'));
       }
     } else if (terms.length === 2) {
       const [a, b] = terms;
       wires.push(addWire(model, { source: a.ref, target: b.ref,
-        sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y } }).getAttribute('id'));
+        sourcePin: { x: a.pin.x, y: a.pin.y, name: a.pin.name }, targetPin: { x: b.pin.x, y: b.pin.y, name: b.pin.name } }).getAttribute('id'));
     } else if (terms.length > 2) {
       // star wiring through a junction dot at the terminals' centroid
       let cx = 0, cy = 0;
@@ -106,7 +109,7 @@ export function importNetlist(model, parsed) {
       addVertex(model, { id: jid, style: JUNCTION_STYLE, x: cx - 3, y: cy - 3, w: 6, h: 6 });
       for (const t of terms) {
         wires.push(addWire(model, { source: t.ref, target: jid,
-          sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: 0.5, y: 0.5 } }).getAttribute('id'));
+          sourcePin: { x: t.pin.x, y: t.pin.y, name: t.pin.name }, targetPin: { x: 0.5, y: 0.5 } }).getAttribute('id'));
       }
     }
     // single-terminal nets are left unwired; ERC reports them

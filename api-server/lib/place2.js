@@ -14,7 +14,7 @@
  *     aux nets >2 terminaux, condensateurs flottants placés entre colonnes.
  * Paramètres exposés dans `opts` pour la boucle d'optimisation.
  */
-import { addVertex, addWire, httpError } from './model.js';
+import { addVertex, addWire, httpError, mxCellPart } from './model.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES, GROUND_SHAPE, GROUND_PIN } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs } from './route.js';
@@ -354,8 +354,11 @@ export function importNetlist2(model, parsed, opts = {}) {
     let x = axisX - w2 / 2, y = cy - h2 / 2;
     if (c.prefix === 'M' || c.prefix === 'Q') x = flipped ? axisX : axisX - w2;
     if (shapeKey2 === 'mxgraph.electrical.inductors.inductor_2') x = axisX - 0.6977 * w2;
-    const cell = addVertex(model, { id: c.ref, shape: shapeKey2, x, y, w: w2, h: h2, rotation: rot2, value: c.value || '' });
-    if (flipped) cell.setAttribute('style', cell.getAttribute('style') + 'flipH=1;');
+    const cell = addVertex(model, { id: c.ref, shape: shapeKey2, x, y, w: w2, h: h2, rotation: rot2, value: c.value || '',
+      refdes: c.ref, data: { spice_value: c.value || '' } });
+    // T4: a refdes-wrapped cell is the <object>, not the styled <mxCell> —
+    // mxCellPart() resolves to the inner node that actually carries `style`.
+    if (flipped) { const mx = mxCellPart(cell); mx.setAttribute('style', mx.getAttribute('style') + 'flipH=1;'); }
     const pc = { id: c.ref, x, y, w: w2, h: h2, rotation: rot2, flipH: flipped };
     placed.set(c.ref, pc);
     // enregistrer les terminaux
@@ -382,7 +385,8 @@ export function importNetlist2(model, parsed, opts = {}) {
       const cy = ga.y;
       const pinRelY = (getPin(ci.shapeKey, ci.po[0]) || { y: 0.5 }).y;
       const y = ga.y - pinRelY * shape.h;
-      addVertex(model, { id: e.c.ref, shape: ci.shapeKey, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, value: e.c.value || '' });
+      addVertex(model, { id: e.c.ref, shape: ci.shapeKey, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, value: e.c.value || '',
+        refdes: e.c.ref, data: { spice_value: e.c.value || '' } });
       placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0 });
       for (let i = 0; i < ci.po.length; i++) term(e.c.nodes[i], e.c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
       // dérivations : bias en haut (vertical), shunt masse en bas (vertical)
@@ -395,7 +399,8 @@ export function importNetlist2(model, parsed, opts = {}) {
         const hh = hRot === 0 ? hs.h : hs.w;
         const hy = h.up ? cy - 80 - hh / 2 : cy + 80 + hh / 2;
         const hxpos = hShape === 'mxgraph.electrical.inductors.inductor_2' ? hx - 0.6977 * hs.w : hx - hs.w / 2;
-        addVertex(model, { id: h.c.ref, shape: hShape, x: hxpos, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: hRot, value: h.c.value || '' });
+        addVertex(model, { id: h.c.ref, shape: hShape, x: hxpos, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: hRot, value: h.c.value || '',
+          refdes: h.c.ref, data: { spice_value: h.c.value || '' } });
         placed.set(h.c.ref, { id: h.c.ref, x: hxpos, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: hRot });
         for (let i = 0; i < hi.po.length; i++) term(h.c.nodes[i], h.c.ref, hi.po[i], getPin(hShape, hi.po[i]));
       }
@@ -411,7 +416,8 @@ export function importNetlist2(model, parsed, opts = {}) {
       const vs = getShape(vi.shapeKey);
       const cx = ga.x - 130 - k * 160;
       const cy = ga.y + 90;
-      addVertex(model, { id: ch.endV.ref, shape: vi.shapeKey, x: cx - vs.w / 2, y: cy - vs.h / 2, w: vs.w, h: vs.h, rotation: 0, value: ch.endV.value || '' });
+      addVertex(model, { id: ch.endV.ref, shape: vi.shapeKey, x: cx - vs.w / 2, y: cy - vs.h / 2, w: vs.w, h: vs.h, rotation: 0, value: ch.endV.value || '',
+        refdes: ch.endV.ref, data: { spice_value: ch.endV.value || '' } });
       placed.set(ch.endV.ref, { id: ch.endV.ref, x: cx - vs.w / 2, y: cy - vs.h / 2, w: vs.w, h: vs.h, rotation: 0 });
       for (let i = 0; i < vi.po.length; i++) term(ch.endV.nodes[i], ch.endV.ref, vi.po[i], getPin(vi.shapeKey, vi.po[i]));
     }
@@ -449,7 +455,8 @@ export function importNetlist2(model, parsed, opts = {}) {
       cy = (anchors[0].y + anchors[1].y) / 2 + (P.floatDrop || 0);
     }
     const x = cx - shape.w / 2, y = cy - shape.h / 2;
-    addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: 0, value: c.value || '' });
+    addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: 0, value: c.value || '',
+      refdes: c.ref, data: { spice_value: c.value || '' } });
     placed.set(c.ref, { id: c.ref, x, y, w: shape.w, h: shape.h, rotation: 0 });
     for (let i = 0; i < ci.po.length; i++) {
       term(c.nodes[i], c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
@@ -468,7 +475,7 @@ export function importNetlist2(model, parsed, opts = {}) {
         const abs = pinAbs(p, t.pin);
         const id = 'VT' + (++seq);
         addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: p.y - 66, w: 40, h: 26, value: 'VDD' });
-        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: 0.5, y: 1 } });
+        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y, name: t.pin.name }, targetPin: { x: 0.5, y: 1 } });
       }
     } else if (net === '0') {
       for (const t of terms) {
@@ -479,7 +486,7 @@ export function importNetlist2(model, parsed, opts = {}) {
         // publiées), jamais un long rail vers une ligne de fond commune
         addVertex(model, { id, shape: GROUND_SHAPE, x: abs.x - 15, y: abs.y + 45, w: 30, h: 20 });
         const gp = getPin(GROUND_SHAPE, GROUND_PIN);
-        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: gp.x, y: gp.y } });
+        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y, name: t.pin.name }, targetPin: { x: gp.x, y: gp.y, name: gp.name } });
       }
     }
   }
@@ -501,10 +508,10 @@ export function importNetlist2(model, parsed, opts = {}) {
       for (let k = 0; k < 6 && clash(); k++) { py += 50; }
       addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net.toUpperCase() });
       placed.set(id, { id, x: px, y: py, w: 24, h: 24, rotation: 0 });
-      wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
+      wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y, name: t.pin.name } });
     } else if (terms.length === 2) {
       const [a, b] = terms;
-      wire(null, { source: a.ref, target: b.ref, sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y } });
+      wire(null, { source: a.ref, target: b.ref, sourcePin: { x: a.pin.x, y: a.pin.y, name: a.pin.name }, targetPin: { x: b.pin.x, y: b.pin.y, name: b.pin.name } });
     } else {
       let cx = 0, cy = 0;
       const pts = terms.map((t) => pinAbs(placed.get(t.ref), t.pin));
@@ -573,7 +580,7 @@ export function importNetlist2(model, parsed, opts = {}) {
       const id = 'J_' + net.replace(/[^A-Za-z0-9]/g, '_');
       addVertex(model, { id, style: JCT, x: snap.x - 3, y: jy - 3, w: 6, h: 6 });
       for (const t of terms) {
-        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y } });
+        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y, name: t.pin.name } });
       }
     }
   }

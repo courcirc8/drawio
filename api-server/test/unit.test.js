@@ -4,7 +4,7 @@ import * as model from '../lib/model.js';
 import { parseSpice, extractNetlist, connectivity } from '../lib/netlist.js';
 import { importNetlist } from '../lib/place.js';
 import { routePage } from '../lib/route.js';
-import { compare } from '../lib/lvs.js';
+import { compare, gate } from '../lib/lvs.js';
 import { check as ercCheck } from '../lib/erc.js';
 import { bom } from '../lib/bom.js';
 import { searchShapes, getShape, getPin } from '../lib/stencils.js';
@@ -244,4 +244,156 @@ test('patterns: structures détectées sur les circuits de référence', async (
   assert.deepEqual(vco.crossCoupled[0].refs.sort(), ['M1', 'M2']);
   const gil = load('gilbert-mixer.cir');
   assert.equal(gil.diffPairs.length, 3);
+});
+
+// ------------------------------------------------------------- T1: mandatory LVS on import
+
+test('T1: lvs.gate rejects a mismatch (422) unless forced', async () => {
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  const parsed = parseSpice(RC);
+  importNetlist(m, parsed);
+  await routePage(m, null, {});
+  // Corrupt the built document the way a bad import/edit would: detach R1's
+  // "out" wire from C1 and reattach it to V1 instead, so the extracted
+  // netlist disagrees with the SPICE that was imported. This is the "an
+  // import that would produce an LVS mismatch" scenario at the library
+  // level (server.js runs exactly this compare()+gate() pair after import).
+  const cells = model.allCells(m);
+  const wOutToC1 = cells.find((c) => model.mxCellPart(c).getAttribute('target') === 'C1');
+  model.mxCellPart(wOutToC1).setAttribute('target', 'V1');
+  const report = compare(extractNetlist(m), parsed);
+  assert.equal(report.match, false, 'expected a deliberately corrupted document to mismatch');
+  const rejected = gate(report, { force: false });
+  assert.deepEqual(rejected, { ok: false, status: 422, error: 'lvs-mismatch' });
+});
+
+test('T1: lvs.gate downgrades a mismatch to a 200 with warnings when forced', () => {
+  const badReport = { match: false, missing: [], extra: [], type_mismatches: [], net_mismatches: [{ x: 1 }] };
+  const forced = gate(badReport, { force: true });
+  assert.equal(forced.ok, true);
+  assert.equal(forced.status, 200);
+  assert.equal(forced.warnings, badReport);
+  const clean = gate({ match: true }, { force: false });
+  assert.deepEqual(clean, { ok: true, status: 201 });
+});
+
+// ------------------------------------------------------------- T3: pin identity by name
+
+test('T3: exitName/entryName round-trip to the same pin after serialize + reparse', () => {
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'R2', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 0, w: 100, h: 20 });
+  const outPin = getPin('mxgraph.electrical.resistors.resistor_2', 'out');
+  const inPin = getPin('mxgraph.electrical.resistors.resistor_2', 'in');
+  model.addWire(m, { id: 'w', source: 'R1', target: 'R2', sourcePin: outPin, targetPin: inPin });
+  const w = model.getCell(m, 'w');
+  assert.equal(w.getAttribute('style').includes('exitName=out'), true);
+  assert.equal(w.getAttribute('style').includes('entryName=in'), true);
+  // serialize -> reparse -> re-extract: the named pins must resolve to the
+  // exact same net membership as before the round trip.
+  const xml = model.serialize(doc);
+  const doc2 = model.parseDrawio(xml);
+  const m2 = model.getPage(doc2);
+  const conn = connectivity(m2);
+  assert.equal(conn.issues.length, 0, JSON.stringify(conn.issues));
+  const net = conn.netOf.get('R1:out');
+  assert.equal(net, conn.netOf.get('R2:in'));
+});
+
+test('T3: a re-dragged (stale) named anchor is flagged anchor-name-stale and still resolves by coordinates', () => {
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'R2', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 0, w: 100, h: 20 });
+  const outPin = getPin('mxgraph.electrical.resistors.resistor_2', 'out');
+  const inPin = getPin('mxgraph.electrical.resistors.resistor_2', 'in');
+  model.addWire(m, { id: 'w', source: 'R1', target: 'R2', sourcePin: outPin, targetPin: inPin });
+  // Simulate a human re-dragging the wire's source endpoint in the GUI: the
+  // exitName key survives (mxGraph never touches unknown style keys) but
+  // exitX/exitY move to a different point on the same shape — here, R1's
+  // "in" pin coordinates, while exitName still says "out".
+  const w = model.getCell(m, 'w');
+  const inR1 = getPin('mxgraph.electrical.resistors.resistor_2', 'in');
+  w.setAttribute('style', model.mergeStyle(w.getAttribute('style'), { exitX: inR1.x, exitY: inR1.y }));
+  const conn = connectivity(m);
+  const stale = conn.issues.filter((i) => i.code === 'anchor-name-stale');
+  assert.equal(stale.length, 1, JSON.stringify(conn.issues));
+  assert.deepEqual(stale[0].cells, ['w', 'R1']);
+  // still resolves to the pin the coordinates now actually point at ("in"),
+  // not the stale name ("out"), and not silently to the wrong net either.
+  assert.equal(conn.netOf.get('R1:in'), conn.netOf.get('R2:in'));
+  // R1's "out" pin (the stale name) is left isolated on its own net, not
+  // wrongly merged into R2's net.
+  assert.notEqual(conn.netOf.get('R1:out'), conn.netOf.get('R2:in'));
+});
+
+test('T3: a legacy wire with no exitName/entryName resolves exactly as before (backward compat)', () => {
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'R2', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 0, w: 100, h: 20 });
+  // deliberately pass bare {x,y} anchors with no `name` — the pre-T3 shape.
+  model.addWire(m, { id: 'w', source: 'R1', target: 'R2', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 } });
+  const w = model.getCell(m, 'w');
+  assert.equal(w.getAttribute('style').includes('exitName'), false);
+  const conn = connectivity(m);
+  assert.equal(conn.issues.length, 0, JSON.stringify(conn.issues));
+  assert.equal(conn.netOf.get('R1:out'), conn.netOf.get('R2:in'));
+});
+
+// ------------------------------------------------------------- T4: refdes identity
+
+test('T4: refdes survives an id change (copy/paste re-id); netlist keys on refdes not the mxCell id', () => {
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  const parsed = parseSpice(RC);
+  importNetlist(m, parsed); // place.js now wraps components with refdes/spice_value
+  const r1 = model.getCell(m, 'R1');
+  assert.equal(r1.nodeName, 'object', 'component cells should be refdes-wrapped');
+  assert.equal(r1.getAttribute('refdes'), 'R1');
+  // Simulate what a real drawio copy/paste does: the pasted cell (and every
+  // wire endpoint pointing at it) gets a NEW id, but the <object>'s refdes
+  // attribute is copied verbatim — that's the "worse" case the task calls
+  // out, because nothing about a paste operation touches user-data attrs.
+  const oldId = 'R1', newId = 'R1_paste_9f2';
+  r1.setAttribute('id', newId);
+  for (const c of model.allCells(m)) {
+    const mx = model.mxCellPart(c);
+    if (mx.getAttribute('source') === oldId) mx.setAttribute('source', newId);
+    if (mx.getAttribute('target') === oldId) mx.setAttribute('target', newId);
+  }
+  const extracted = extractNetlist(m);
+  assert.ok(extracted.components.some((c) => c.ref === 'R1'), 'expected ref R1, got: ' + JSON.stringify(extracted.components));
+  assert.equal(extracted.components.some((c) => c.ref === newId), false);
+  const report = compare(extracted, parsed);
+  assert.equal(report.match, true, JSON.stringify(report));
+});
+
+test('T4: spice_value attribute is stored and preferred by extraction', () => {
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  importNetlist(m, parseSpice(RC));
+  const r1 = model.getCell(m, 'R1');
+  assert.equal(r1.getAttribute('spice_value'), '10k');
+  const extracted = extractNetlist(m);
+  assert.equal(extracted.components.find((c) => c.ref === 'R1').value, '10k');
+});
+
+// ------------------------------------------------------------- T2: ERC severities
+
+test('T2: anchor-off-pin and floating-endpoint are ERC errors, naming the cell and pin', () => {
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  model.addVertex(m, { id: 'A', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'B', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 0, w: 100, h: 20 });
+  // anchor far from any real pin (no name key at all -> legacy nearest-match path)
+  model.addWire(m, { id: 'w', source: 'A', target: 'B', sourcePin: { x: 0.37, y: 0.12 }, targetPin: { x: 0, y: 0.5 } });
+  const r = ercCheck(m);
+  const off = r.findings.filter((f) => f.code === 'anchor-off-pin');
+  assert.equal(off.length, 1, JSON.stringify(r.findings));
+  assert.equal(off[0].severity, 'error');
+  assert.deepEqual(off[0].cells, ['w', 'A']);
+  assert.match(off[0].message, /pin/);
 });

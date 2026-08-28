@@ -92,7 +92,10 @@ export function classify(cellInfo) {
   }
   const shape = getShape(key);
   if (shape == null) return { role: 'other' };
-  const prefix = reverse.get(key) || inferPrefix(cellInfo.id);
+  // T4: prefer the persisted refdes over the mxCell id for the id-shape
+  // fallback (reverse.get(key) from the stencil already wins when it exists;
+  // this only matters for an unmapped/custom shape relying on the id prefix).
+  const prefix = reverse.get(key) || inferPrefix(identityOf(cellInfo));
   const mapping = prefix != null ? SPICE_MAP[prefix] : null;
   return { role: 'component', prefix, mapping, shape };
 }
@@ -100,6 +103,19 @@ export function classify(cellInfo) {
 function inferPrefix(id) {
   const m = /^([A-Za-z])[0-9]/.exec(String(id || ''));
   return m != null && SPICE_MAP[m[1].toUpperCase()] != null ? m[1].toUpperCase() : null;
+}
+
+/**
+ * T4: the SPICE identity of a cell — its `refdes` user-data attribute
+ * (persisted on the wrapping <object>, see model.js addVertex) when present,
+ * otherwise the mxCell/document id. A GUI rename edits the id-bearing node's
+ * label, not this attribute, and a copy/paste reassigns the id but carries
+ * the <object>'s attributes along unchanged — refdes survives both, the bare
+ * id survives neither. Callers outside this module (netlist.js extraction,
+ * bom.js) should use this instead of reading `.id` directly.
+ */
+export function identityOf(cellInfo) {
+  return (cellInfo.refdes != null && cellInfo.refdes !== '') ? cellInfo.refdes : cellInfo.id;
 }
 
 /** Pins that carry connectivity for a classified component (SPICE pin order if known, else all). */

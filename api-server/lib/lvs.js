@@ -67,6 +67,19 @@ export function compare(extracted, golden) {
   return report;
 }
 
+/**
+ * T1: decide the HTTP outcome for an LVS report produced right after a
+ * netlist import — LVS is now mandatory there, not just available on demand
+ * via POST /lvs. Exported (rather than inlined in server.js) so it can be
+ * unit-tested without booting the HTTP server: `?force=1` downgrades a
+ * mismatch to a 200 with a `warnings` field instead of failing the import.
+ */
+export function gate(report, { force = false } = {}) {
+  if (report.match) return { ok: true, status: 201 };
+  if (force) return { ok: true, status: 200, warnings: report };
+  return { ok: false, status: 422, error: 'lvs-mismatch' };
+}
+
 const SUFFIX = { t: 1e12, g: 1e9, meg: 1e6, k: 1e3, m: 1e-3, u: 1e-6, n: 1e-9, p: 1e-12, f: 1e-15 };
 
 /** Parse a SPICE number with scale suffix (10k, 0.1u, 3meg, 2.2E-6F) -> number|null. */

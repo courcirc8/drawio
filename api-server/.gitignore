@@ -1,0 +1,2 @@
+# bun install artifact; package-lock.json stays authoritative for node users
+bun.lock

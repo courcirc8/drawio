@@ -21,7 +21,10 @@ const RC = 'V1 in 0 DC 5\nR1 in out 10k\nC1 out 0 100n\n.end\n';
 let proc;
 
 test.before(async () => {
-  proc = spawn('node', [path.join(HERE, '../server.js'), '--port', String(PORT)], { stdio: 'pipe' });
+  // T5: this host has no `node` binary (bun-only environment) — spawn under
+  // whatever runtime is executing the test itself instead of hardcoding a
+  // name that may not exist on PATH.
+  proc = spawn(process.execPath, [path.join(HERE, '../server.js'), '--port', String(PORT)], { stdio: 'pipe' });
   for (let i = 0; i < 50; i++) {
     try {
       const r = await fetch(BASE + '/health');
@@ -55,7 +58,12 @@ test('e2e: import -> route -> netlist -> lvs -> erc -> bom', async () => {
   assert.equal(cells.find((c) => c.id === 'R1').rotation, 0);
 });
 
-test('e2e: png export via headless chromium', { skip: !HAS_CHROME && 'no chromium found' }, async () => {
+// Runtime-agnostic skip: node:test honours the `{skip: ...}` option object, but
+// bun's test runner does not -- under bun the test RAN and failed with a 500
+// ("no Chromium/Chrome found"), which looks like a regression instead of an
+// absent dependency. Returning early works on both runners.
+test('e2e: png export via headless chromium', async () => {
+  if (!HAS_CHROME) { console.log('  skipped: no chromium found'); return; }
   const created = await (await fetch(BASE + '/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
   await fetch(`${BASE}/documents/${created.id}/netlist/import`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: RC });
   const res = await fetch(`${BASE}/documents/${created.id}/export?format=png&scale=2`);

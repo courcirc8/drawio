@@ -2,7 +2,7 @@
  * netlist.js — SPICE netlist parsing and netlist extraction from a schematic.
  */
 import { allCells, cellInfo, httpError } from './model.js';
-import { classify, activePins, pinOrderFor, SPICE_MAP } from './components.js';
+import { classify, activePins, pinOrderFor, identityOf, SPICE_MAP } from './components.js';
 import { pinAbs } from './route.js';
 
 // ---------------------------------------------------------------- SPICE parse
@@ -117,12 +117,44 @@ export function connectivity(model) {
     if (cls.role === 'junction') return 'J:' + cellId;
     const prefX = which === 'source' ? 'exitX' : 'entryX';
     const prefY = which === 'source' ? 'exitY' : 'entryY';
+    const prefName = which === 'source' ? 'exitName' : 'entryName';
     const ax = c.style.map.get(prefX), ay = c.style.map.get(prefY);
+    const nameAttr = c.style.map.get(prefName);
     const pins = activePins(cls);
     if (pins.length === 0) return 'J:' + cellId; // unknown shape: treat as single node
+
+    // T3: prefer the persisted pin NAME (model.js addWire writes exitName/
+    // entryName) over coordinate matching. Trust it only while the stored
+    // exitX/exitY are still within EPS of that named pin's catalog position —
+    // a human who re-drags the endpoint in the GUI moves the coordinates but
+    // the name key survives untouched, so a mismatch means the name is
+    // stale: re-derive by nearest-coordinate (the legacy path below) and say
+    // so via `anchor-name-stale`, rather than silently trusting a name that
+    // no longer points at where the wire actually lands.
+    if (nameAttr != null) {
+      const named = pins.find((p) => p.name === nameAttr);
+      if (named != null) {
+        if (ax == null || ay == null) return cellId + ':' + named.name;
+        const x0 = parseFloat(ax), y0 = parseFloat(ay);
+        const d0 = Math.hypot(named.x - x0, named.y - y0);
+        if (d0 <= EPS) return cellId + ':' + named.name;
+        let best = named, bd = d0;
+        for (const p of pins) {
+          const dd = Math.hypot(p.x - x0, p.y - y0);
+          if (dd < bd) { bd = dd; best = p; }
+        }
+        issues.push({ code: 'anchor-name-stale',
+          message: `wire ${c.id} ${prefName}="${nameAttr}" on ${cellId} is stale (stored anchor is ${d0.toFixed(3)} from that pin's catalog position); re-resolved by coordinates to pin "${best.name}"`,
+          cells: [c.id, cellId] });
+        return cellId + ':' + best.name;
+      }
+      // name present but is not a pin of this shape (e.g. stencil swapped
+      // out from under the wire) — fall through to legacy coordinate match.
+    }
+
     if (ax == null || ay == null) {
       if (pins.length === 1) return cellId + ':' + pins[0].name;
-      issues.push({ code: 'floating-endpoint', message: `wire ${c.id} attaches to ${cellId} without a pin anchor`, cells: [c.id, cellId] });
+      issues.push({ code: 'floating-endpoint', message: `wire ${c.id} attaches to ${cellId} without a pin anchor (defaulted to pin ${pins[0].name})`, cells: [c.id, cellId] });
       return cellId + ':' + pins[0].name;
     }
     const x = parseFloat(ax), y = parseFloat(ay);
@@ -197,9 +229,15 @@ export function extractNetlist(model) {
       continue;
     }
     const nodes = pinOrderFor(cls).map((pinName) => conn.netOf.get(cell.id + ':' + pinName) || '?');
-    const value = cell.value || '';
-    structured.push({ ref: cell.id, prefix: cls.prefix, nodes, value });
-    out.push([cell.id, ...nodes, value].join(' ').trim());
+    // T4: `spice_value` (the wrapping <object>'s attribute) is authoritative
+    // over `value`/label when both exist — a GUI user could retarget the
+    // visible label without meaning to change the SPICE value.
+    const value = (cell.attrs && cell.attrs.spice_value != null) ? cell.attrs.spice_value : (cell.value || '');
+    // T4: the emitted SPICE ref is the persisted refdes when present, never
+    // the raw mxCell id — the id is what a GUI copy/paste silently reassigns.
+    const ref = identityOf(cell);
+    structured.push({ ref, prefix: cls.prefix, nodes, value });
+    out.push([ref, ...nodes, value].join(' ').trim());
   }
   return { spice: '* extracted by drawio-api-server\n' + out.join('\n') + '\n.end\n', components: structured, issues: conn.issues };
 }
