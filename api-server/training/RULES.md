@@ -231,3 +231,10 @@ LVS 5/5, toutes les règles utilisateur intactes (invariants).
     prennent la rangée la plus profonde du groupe — gates reliées par un bus
     rectiligne (interprétation « même coordonnée » du retour utilisateur ;
     l'OTA passe à 0 croisement / 10 coudes, record).
+
+27. **Axe de conduction UNIQUE par colonne, indépendant des flips** (retour
+    utilisateur photo à l'appui : baïonnettes de 30 px sur le net b de
+    l'OTA). Le flip déplaçait l'axe de ±15 px ; désormais l'axe est fixe et
+    c'est le CORPS qui change de côté (pins du MOS flippé posés sur l'axe,
+    selfs verticales flippées compensées). OTA 10→7 coudes, Gilbert 4→2
+    croisements, biquad 6, VCO 7, LNA complet 7.

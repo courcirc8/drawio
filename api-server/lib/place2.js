@@ -576,7 +576,9 @@ export function importNetlist2(model, parsed, opts = {}) {
     const cy = P.y0 + s.level * P.rowH;
     // centre la BOÎTE TOURNÉE sur (cx, cy) : le canal (pins NE/SE x=1) des MOS est à +w/2-? — aligner le canal sur l'axe
     const flipped = flipRefs.has(c.ref);
-    const axisX = cx + (flipped ? -15 : 15); // axe de conduction de la pile
+    // axe de conduction UNIQUE par colonne, indépendant des flips (un flip
+    // décalait l'axe de ±15 px et désalignait les piles mixtes -> baïonnettes)
+    const axisX = cx + 15;
     let w2 = w, h2 = h, shapeKey2 = ci.shapeKey, rot2 = rotation;
     if (c.prefix === 'L' && rotation !== 0) {
       // inductance VERTICALE : symbole vertical natif (pins traversants sur
@@ -588,7 +590,9 @@ export function importNetlist2(model, parsed, opts = {}) {
     }
     let x = axisX - w2 / 2, y = cy - h2 / 2;
     if (c.prefix === 'M' || c.prefix === 'Q') x = flipped ? axisX : axisX - w2;
-    if (shapeKey2 === 'mxgraph.electrical.inductors.inductor_2') x = axisX - 0.6977 * w2;
+    if (shapeKey2 === 'mxgraph.electrical.inductors.inductor_2') {
+      x = axisX - (flipped ? (1 - 0.6977) : 0.6977) * w2;
+    }
     const cell = addVertex(model, { id: c.ref, shape: shapeKey2, x, y, w: w2, h: h2, rotation: rot2, value: c.value || '' });
     if (flipped) cell.setAttribute('style', cell.getAttribute('style') + 'flipH=1;');
     const pc = { id: c.ref, x, y, w: w2, h: h2, rotation: rot2, flipH: flipped };
