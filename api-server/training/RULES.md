@@ -143,3 +143,24 @@ routage. S'applique quand le faisceau ne choisit pas des gates adjacentes.
 Restant assumé : le quad garde ~14-18 coudes selon la trajectoire du faisceau
 (gates adjacentes VS X canonique) — la vraie sortie est le GABARIT de quad
 (stratégie templates S4 du registre).
+
+### Retour utilisateur : « paire RF pas au même niveau + ~12 coudes en trop »
+
+14. **Paire différentielle = MÊME RANGÉE, toujours** (règle humaine imposée
+    structurellement, plus un critère de score) ; queue recentrée sous le
+    milieu de la paire. Cause du décalage : placement séquentiel des éléments
+    partagés.
+15. **Quad double-équilibré détecté** (patterns.quads : 2 paires dont les
+    queues sont les drains d'une paire RF) → flips canoniques imposés (gates
+    internes face à face), rangée du quad seulement (jamais la paire RF en
+    colonne fractionnaire identique) ; membres exclus des flips de recherche.
+16. **Tap d'alim ancré sur le PIN ABSOLU** (+30 px d'écart) : pour une forme
+    TOURNÉE, l'ancien ancrage bbox posait le tap pin-sur-pin avec directions
+    opposées → libavoid faisait un tour complet (les « rectangles fantômes »
+    autour des charges du Gilbert).
+17. Graine toujours finaliste : optimize ≥ v2 garanti (le score rapide et le
+    score complet peuvent diverger).
+
+Gilbert : paire alignée, quad canonique, boîtes fantômes éliminées ;
+21 coudes (11 excès) restants — voie de sortie identifiée : gabarit de quad
+avec lane lop dédiée (S4).

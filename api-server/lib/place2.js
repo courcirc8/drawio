@@ -63,7 +63,9 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         const p = placed.get(t.ref);
         const abs = pinAbs(p, t.pin);
         const id = 'VT' + (++seq);
-        addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: p.y - 66, w: 40, h: 26, value: 'VDD' });
+        // position ancrée sur le PIN ABSOLU (les formes tournées ont leur pin
+        // ailleurs que le haut de leur bbox) + écart franc de 30 px
+        addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: abs.y - 26 - 30, w: 40, h: 26, value: 'VDD' });
         wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: 0.5, y: 1 } });
       }
     } else if (net === '0') {
@@ -308,6 +310,7 @@ export function importNetlist2(model, parsed, opts = {}) {
   }
 
   markFloating(vddNet);
+  const structures = detectStructures(parsed);
   // ---- chaînes de signal : suites d'éléments série (passifs flottants)
   //      aboutissant à une gate ; posées horizontalement dans l'ordre du flux,
   //      dérivations shunt vers la masse en bas, branches de polarisation en
@@ -397,6 +400,23 @@ export function importNetlist2(model, parsed, opts = {}) {
       colOf.delete(ref);
     }
   }
+  // paires différentielles / cross-couplées : MÊME RANGÉE obligatoirement
+  // (règle humaine), queue recentrée sous le milieu de la paire
+  for (const pr of [...structures.diffPairs, ...structures.crossCoupled]) {
+    const [ra, rb] = pr.refs;
+    const sa = slots.get(ra), sb = slots.get(rb);
+    if (sa == null || sb == null || sa.level === sb.level) continue;
+    const L = Math.min(sa.level, sb.level);
+    sa.level = L; sb.level = L;
+  }
+  for (const t of structures.tails) {
+    const st = slots.get(t.ref);
+    const [pa, pb] = t.pair.map((r) => slots.get(r));
+    if (st == null || pa == null || pb == null) continue;
+    st.col = (pa.col + pb.col) / 2;
+    st.level = Math.max(pa.level, pb.level) + 1;
+  }
+
   // reste (sources V vers masse, branches isolées) : colonnes à gauche
   for (const c of comps) {
     if (!unplaced.has(c.ref)) continue;
@@ -412,7 +432,6 @@ export function importNetlist2(model, parsed, opts = {}) {
 
   // ---- regroupement de colonnes par structures (paires adjacentes,
   //      miroirs adjacents diode en tête)
-  const structures = detectStructures(parsed);
   {
     const colOfRef = (ref) => {
       const sl = slots.get(ref);
@@ -475,8 +494,9 @@ export function importNetlist2(model, parsed, opts = {}) {
   //      seulement les paires cross-couplées (gain net) ; les paires diff
   //      sont flippées à la demande de l'optimiseur (P.flipPairs).
   const flipRefs = new Set();
+  const quadRefs = new Set((structures.quads || []).flatMap((q) => q.refs));
   const wantFlip = (pr) => structures.crossCoupled.includes(pr) ||
-    (P.flipPairs || []).includes(pr.refs.join('/'));
+    ((P.flipPairs || []).includes(pr.refs.join('/')) && !pr.refs.some((r) => quadRefs.has(r)));
   for (const pr of [...structures.diffPairs, ...structures.crossCoupled]) {
     if (!wantFlip(pr)) continue;
     const [a, b] = pr.refs;
@@ -485,6 +505,20 @@ export function importNetlist2(model, parsed, opts = {}) {
     const right = ca.col <= cb.col ? b : a;
     const rc = slots.get(right).col;
     for (const [ref, sl] of slots) if (sl.col === rc) flipRefs.add(ref);
+  }
+
+  // quad canonique : gates INTERNES face à face (flip du 2e par colonne),
+  // membres du quad exclus des flips de recherche
+  for (const q of (structures.quads || [])) {
+    const sorted = q.refs.filter((r) => slots.has(r)).sort((a, b) => slots.get(a).col - slots.get(b).col);
+    if (sorted.length === 4) {
+      const inner = slots.get(sorted[1]);
+      // uniquement la rangée du quad et sa charge au-dessus — jamais la
+      // paire RF (colonne fractionnaire identique) ni la queue en dessous
+      for (const [ref, sl] of slots) {
+        if (sl.col === inner.col && sl.level <= inner.level) flipRefs.add(ref);
+      }
+    }
   }
 
   // ---- géométrie

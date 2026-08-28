@@ -105,7 +105,8 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   // ---- finalistes : score complet (rendu + OpenCV)
   let best = null;
   const finReasons = [];
-  for (const fin of beam.slice(0, 3)) {
+  const finalists = [seed0, ...beam.slice(0, 3).filter((b) => b !== seed0)];
+  for (const fin of finalists) {
     const full = await evaluate(parsed, fin.params, reference, false);
     if (full.ok && (best == null || full.score > best.score)) best = full;
     else if (!full.ok) finReasons.push(full.reason);
