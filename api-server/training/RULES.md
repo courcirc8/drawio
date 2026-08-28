@@ -78,3 +78,11 @@ Ma copie : **38** → règles ci-dessous → **20** (croisements 9 → 1).
 Reste vers ~4 : boucle de la diode M4 + son rail de masse (règle « masse
 locale » toujours candidate), T de Cm, montée Lb1.
 Poids : excess_bend (1.4) a correctement guidé ces 4 règles — inchangé.
+
+### E1 (itération 4) — masse locale
+
+13. **Masse locale** : chaque symbole de masse se pose juste sous SON pin
+    (comme le petit trait des figures publiées), jamais relié à une ligne de
+    fond commune. Résultat : croisements 1 → 0 sur le LNA complet (le rail de
+    M4 traversait la chaîne) ; coudes 20 → 22 (+2 assumés, le stub coûte un
+    coude mais tue le croisement). ERC 0/0, LVS 18/18, 6/6 benchmarks LVS.

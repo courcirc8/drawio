@@ -475,7 +475,9 @@ export function importNetlist2(model, parsed, opts = {}) {
         const p = placed.get(t.ref);
         const abs = pinAbs(p, t.pin);
         const id = 'GND' + (++seq);
-        addVertex(model, { id, shape: GROUND_SHAPE, x: abs.x - 15, y: Math.max(...[...placed.values()].map((q) => q.y + q.h)) + 40, w: 30, h: 20 });
+        // masse LOCALE : juste sous le pin (comme le petit trait des figures
+        // publiées), jamais un long rail vers une ligne de fond commune
+        addVertex(model, { id, shape: GROUND_SHAPE, x: abs.x - 15, y: abs.y + 45, w: 30, h: 20 });
         const gp = getPin(GROUND_SHAPE, GROUND_PIN);
         wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: gp.x, y: gp.y } });
       }
