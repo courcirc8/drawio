@@ -192,3 +192,14 @@ Nettoyeur implémenté (règles 19-21, dans routePage) :
 
 Effet suite (v2 brut) : biquad 15→7 coudes, VCO 10→6 (0 excès), Gilbert
 15→12, OTA 24→18, E1 17→13. Queue du Gilbert = tracé humain exact.
+
+22. **Interdiction absolue de superposition inter-nets** (retour utilisateur :
+    « pas le droit de mettre 2 nœuds à potentiel différent l'un sur
+    l'autre ») : passe `separateNets` en fin de routage — détection des
+    segments colinéaires (<5 px d'écart de lane, >10 px de recouvrement)
+    entre nets DIFFÉRENTS (union-find local jonctions/pins), réparation par
+    décalage de lane du segment intérieur mobile, sinon dog-leg sur le
+    recouvrement ; redémarrage du scan après chaque réparation, plafond 30.
+    Les deux issues autorisées : lanes à y différents (implémenté) ou
+    croisement diagonal assumé (les diagonales edgeStyle=none sont exclues
+    de la détection).

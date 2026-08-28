@@ -200,7 +200,109 @@ export async function routePage(model, edgeIds, opts) {
   }
   // ---- polish : collapse des micro-jogs (artefacts de nudge / évitements)
   polishJogs(model, vertices, 22);
+  // ---- séparation : deux nets différents ne se superposent JAMAIS
+  separateNets(model, vertices);
   return { ids: routed };
+}
+
+/**
+ * Interdit la superposition colinéaire de segments appartenant à des nets
+ * différents (lecture électrique fausse). Réparation : décalage de lane du
+ * segment mobile (waypoints intérieurs), sinon insertion d'un dog-leg.
+ */
+function separateNets(model, obstacles) {
+  const blocked = (x1, y1, x2, y2) => obstacles.some((v) =>
+    Math.max(x1, x2) > v.x + 3 && Math.min(x1, x2) < v.x + v.w - 3 &&
+    Math.max(y1, y2) > v.y + 3 && Math.min(y1, y2) < v.y + v.h - 3);
+  const done = new Set();
+  for (let repairs = 0; repairs < 30; repairs++) {
+    const cells = allCells(model).map(cellInfo);
+    const byId2 = new Map(cells.map((c) => [c.id, c]));
+    const parent = new Map();
+    const find = (k) => { while (parent.get(k) !== k) k = parent.get(k); return k; };
+    const uni = (a, b) => { if (!parent.has(a)) parent.set(a, a); if (!parent.has(b)) parent.set(b, b); parent.set(find(a), find(b)); };
+    const endKey = (c, which) => {
+      const cid = which === 'src' ? c.source : c.target;
+      const cell = byId2.get(cid);
+      if (cell != null && cell.style.map.has('drawioApiJunction')) return 'J:' + cid;
+      const X = c.style.map.get(which === 'src' ? 'exitX' : 'entryX');
+      const Y = c.style.map.get(which === 'src' ? 'exitY' : 'entryY');
+      return cid + ':' + X + ',' + Y;
+    };
+    const anchor = (c, pref, cell) => {
+      const X = c.style.map.get(pref + 'X'), Y = c.style.map.get(pref + 'Y');
+      if (X != null && Y != null) return pinAbsOf(cell, parseFloat(X), parseFloat(Y));
+      const bb = rotatedAabb(cell);
+      return { x: bb.x + bb.w / 2, y: bb.y + bb.h / 2 };
+    };
+    const edgesInfo = [];
+    for (const c of cells) {
+      if (c.kind !== 'edge' || c.source == null || c.target == null) continue;
+      if (c.style.map.get('edgeStyle') === 'none') continue;
+      const a = endKey(c, 'src'), b = endKey(c, 'tgt');
+      uni(a, b);
+      const src = byId2.get(c.source), tgt = byId2.get(c.target);
+      if (src == null || tgt == null || src.x == null || tgt.x == null) continue;
+      const pl = [anchor(c, 'exit', src), ...(c.points || []), anchor(c, 'entry', tgt)];
+      const segs = [];
+      for (let i = 0; i + 1 < pl.length; i++) {
+        const p = pl[i], q = pl[i + 1];
+        if (Math.abs(p.y - q.y) < 0.6 && Math.abs(p.x - q.x) >= 0.6) segs.push({ axis: 'h', lane: p.y, a: Math.min(p.x, q.x), b: Math.max(p.x, q.x), i });
+        else if (Math.abs(p.x - q.x) < 0.6 && Math.abs(p.y - q.y) >= 0.6) segs.push({ axis: 'v', lane: p.x, a: Math.min(p.y, q.y), b: Math.max(p.y, q.y), i });
+      }
+      edgesInfo.push({ c, a, b, segs, nPl: pl.length });
+    }
+    let repaired = false;
+    outer:
+    for (let i = 0; i < edgesInfo.length && !repaired; i++) {
+      for (let j = i + 1; j < edgesInfo.length && !repaired; j++) {
+        const A = edgesInfo[i], Bv = edgesInfo[j];
+        if (find(A.a) === find(Bv.a)) continue;
+        for (const sa of A.segs) {
+          for (const sb of Bv.segs) {
+            if (sa.axis !== sb.axis || Math.abs(sa.lane - sb.lane) > 5) continue;
+            const lo = Math.max(sa.a, sb.a), hi = Math.min(sa.b, sb.b);
+            if (hi - lo < 10) continue;
+            const pairKey = [A.c.id, Bv.c.id, sa.axis, Math.round(lo), Math.round(hi)].join('|');
+            if (done.has(pairKey)) continue;
+            done.add(pairKey);
+            const delta = 14;
+            // 1) décaler un segment INTÉRIEUR (2 waypoints)
+            const shift = (ei, seg, d) => {
+              const npts = ei.c.points || [];
+              if (!(seg.i >= 1 && seg.i <= npts.length - 1)) return false;
+              const p = npts[seg.i - 1], q = npts[seg.i];
+              if (seg.axis === 'h') {
+                if (blocked(seg.a, seg.lane + d, seg.b, seg.lane + d)) return false;
+                p.y += d; q.y += d;
+              } else {
+                if (blocked(seg.lane + d, seg.a, seg.lane + d, seg.b)) return false;
+                p.x += d; q.x += d;
+              }
+              const el = allCells(model).find((x) => x.getAttribute('id') === ei.c.id);
+              setEdgePoints(el, npts);
+              return true;
+            };
+            if (shift(A, sa, -delta) || shift(A, sa, delta) || shift(Bv, sb, -delta) || shift(Bv, sb, delta)) {
+              repaired = true; break outer;
+            }
+            // 2) dog-leg sur le chevauchement de A (index pts = index pl du début de segment)
+            const el = allCells(model).find((x) => x.getAttribute('id') === A.c.id);
+            const dgn = blocked(sa.axis === 'h' ? lo : sa.lane - delta, sa.axis === 'h' ? sa.lane - delta : lo,
+                                sa.axis === 'h' ? hi : sa.lane - delta, sa.axis === 'h' ? sa.lane - delta : hi) ? delta : -delta;
+            const pts = A.c.points ? A.c.points.map((p) => ({ ...p })) : [];
+            const jog = sa.axis === 'h'
+              ? [{ x: lo, y: sa.lane }, { x: lo, y: sa.lane + dgn }, { x: hi, y: sa.lane + dgn }, { x: hi, y: sa.lane }]
+              : [{ x: sa.lane, y: lo }, { x: sa.lane + dgn, y: lo }, { x: sa.lane + dgn, y: hi }, { x: sa.lane, y: hi }];
+            pts.splice(sa.i, 0, ...jog);
+            setEdgePoints(el, pts);
+            repaired = true; break outer;
+          }
+        }
+      }
+    }
+    if (!repaired) break;
+  }
 }
 
 /** Aplatis les motifs H-V-H / V-H-V dont le segment central est court. */
