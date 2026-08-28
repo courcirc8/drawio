@@ -535,6 +535,20 @@ export function importNetlist2(model, parsed, opts = {}) {
     }
   }
 
+  // règle 28 : miroir à 2 transistors -> gates FACE À FACE vers le centre
+  // (flip du membre gauche, sa rangée uniquement — l'axe étant indépendant
+  // du flip, l'alignement de colonne est préservé)
+  for (const mg of structures.mirrors) {
+    const ms = mg.refs.filter((r) => slots.has(r));
+    if (ms.length !== 2) continue;
+    if (ms.some((r) => quadRefs.has(r))) continue;
+    const [la, lb] = ms.sort((a, b) => slots.get(a).col - slots.get(b).col);
+    const sl = slots.get(la);
+    for (const [ref, s2] of slots) {
+      if (s2.col === sl.col && s2.level === sl.level) flipRefs.add(ref);
+    }
+  }
+
   // quad canonique : gates INTERNES face à face (flip du 2e par colonne),
   // membres du quad exclus des flips de recherche
   for (const q of (structures.quads || [])) {

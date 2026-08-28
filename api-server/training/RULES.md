@@ -238,3 +238,9 @@ LVS 5/5, toutes les règles utilisateur intactes (invariants).
     c'est le CORPS qui change de côté (pins du MOS flippé posés sur l'axe,
     selfs verticales flippées compensées). OTA 10→7 coudes, Gilbert 4→2
     croisements, biquad 6, VCO 7, LNA complet 7.
+
+28. **Miroir à 2 transistors = gates face à face vers le centre** (retour
+    utilisateur) : flip du membre gauche, restreint à sa rangée (la garde de
+    niveau protège la paire en dessous ; l'axe unique de la règle 27 garantit
+    l'alignement de colonne). Liaison gate-gate courte au centre, cadre de
+    diode compact côté centre.
