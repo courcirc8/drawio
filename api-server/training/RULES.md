@@ -223,3 +223,11 @@ Effet suite (v2 brut) : biquad 15→7 coudes, VCO 10→6 (0 excès), Gilbert
 ### Relance des règles sur les 5 références (état courant, optimize=12)
 OTA 1c/11b · biquad 2c/7b · LNA complet 0c/9b · VCO 0c/8b · Gilbert 4c/8b —
 LVS 5/5, toutes les règles utilisateur intactes (invariants).
+
+25. **Aligner les DRAINS, pas les centres** (retour utilisateur) : dans tout
+    groupe de même rangée (paire, miroir), les pins de drain sont alignés sur
+    la lane médiane (décalage vertical par membre si nécessaire).
+26. **Miroir de courant = une seule rangée** : tous les membres d'un miroir
+    prennent la rangée la plus profonde du groupe — gates reliées par un bus
+    rectiligne (interprétation « même coordonnée » du retour utilisateur ;
+    l'OTA passe à 0 croisement / 10 coudes, record).

@@ -14,7 +14,7 @@
  *     aux nets >2 terminaux, condensateurs flottants placés entre colonnes.
  * Paramètres exposés dans `opts` pour la boucle d'optimisation.
  */
-import { addVertex, addWire, httpError } from './model.js';
+import { addVertex, addWire, updateCell, httpError } from './model.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES, GROUND_SHAPE, GROUND_PIN } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs } from './route.js';
@@ -425,6 +425,14 @@ export function importNetlist2(model, parsed, opts = {}) {
     st.col = (pa.col + pb.col) / 2;
     st.level = Math.max(pa.level, pb.level) + 1;
   }
+  // règle 26 : les transistors d'un même MIROIR partagent la rangée (la plus
+  // profonde du groupe) — gates sur un bus rectiligne, comme un dessin humain
+  for (const mg of structures.mirrors) {
+    const ss = mg.refs.map((r) => slots.get(r)).filter(Boolean);
+    if (ss.length < 2) continue;
+    const L = Math.max(...ss.map((x) => x.level));
+    for (const x of ss) x.level = L;
+  }
 
   // reste (sources V vers masse, branches isolées) : colonnes à gauche
   for (const c of comps) {
@@ -681,6 +689,28 @@ export function importNetlist2(model, parsed, opts = {}) {
     for (let i = 0; i < ci.po.length; i++) {
       term(c.nodes[i], c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
     }
+  }
+
+  // règle 25 : dans un groupe de même rangée, aligner les PINS DE DRAIN
+  for (const grp of [...structures.diffPairs.map((p) => p.refs), ...structures.mirrors.map((m) => m.refs)]) {
+    const members = grp.filter((r) => placed.has(r) && (comps.find((c) => c.ref === r)));
+    if (members.length < 2) continue;
+    const drainY = (ref) => {
+      const ci2 = info.get(ref);
+      if (ci2 == null || ci2.po == null) return null;
+      const pin = getPin(ci2.shapeKey, ci2.po[0]);
+      return pin != null ? pinAbs(placed.get(ref), pin).y : null;
+    };
+    const ys = members.map(drainY).filter((y) => y != null);
+    if (ys.length < 2) continue;
+    const med = [...ys].sort((a, b) => a - b)[Math.floor((ys.length - 1) / 2)];
+    members.forEach((ref, i) => {
+      const y = drainY(ref);
+      if (y == null || Math.abs(y - med) < 0.5 || Math.abs(y - med) > 60) return;
+      const pc3 = placed.get(ref);
+      updateCell(model, ref, { dy: med - y });
+      pc3.y += med - y;
+    });
   }
 
   const wires = wireNets(model, { comps, info, placed, netTerms, vddNet, P });
