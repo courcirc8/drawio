@@ -1,12 +1,35 @@
 #!/usr/bin/env bash
 # Benchmark placement : v1 (naïf) vs v2 (place2) vs v2+optimize.
-# Produit rf-collection/benchmark/<net>-<engine>.png + benchmark.html
+# Produit <OUT>/<net>-<engine>.png + <api-server>/benchmark.html
+#
+# BUG (fixed): OUT used to be hardcoded to an absolute path on another
+# machine (/home/courcirc8/.../rf-collection/benchmark) — on any other host
+# that directory does not exist, nothing lands in the repo, and no result
+# table is ever committed. OUT now defaults to a path INSIDE the repo,
+# resolved relative to this script's own location, and is overridable with
+# --out-dir or $BEAUTY_BENCHMARK_OUT.
 set -uo pipefail
 B=${1:-http://127.0.0.1:8770}
 ITER=${2:-12}
-HERE=$(cd "$(dirname "$0")/.." && pwd)
-OUT=/home/courcirc8/ClaudeCode/test-delegation/rf-collection/benchmark
-mkdir -p $OUT
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+OUT=${BEAUTY_BENCHMARK_OUT:-$HERE/benchmark/results}
+for arg in "$@"; do
+  case "$arg" in
+    --out-dir=*) OUT="${arg#--out-dir=}" ;;
+  esac
+done
+
+mkdir -p "$OUT"
+
+# Fail loudly if the api-server is not reachable, instead of silently writing
+# an empty/all-ERREUR table (the old script had no such check).
+if ! curl -sf -o /dev/null "$B/health"; then
+  echo "ERROR: api-server not reachable at $B (GET /health failed)." >&2
+  echo "Start it first: cd $HERE && bun server.js" >&2
+  exit 1
+fi
+
 J='Content-Type: application/json'
 RES=$OUT/results.tsv
 : > $RES
@@ -36,9 +59,15 @@ print(f\"{r['score']}\t{m['crossings']}\t{m['through_component']}\t{m['bends']}\
     curl -s -X DELETE $B/documents/$DOC >/dev/null
   done
 done
-python3 - "$RES" "$OUT" <<'PYEOF'
-import sys, html
-res, out = sys.argv[1], sys.argv[2]
+HTML_OUT=$HERE/benchmark/benchmark.html
+python3 - "$RES" "$OUT" "$HTML_OUT" <<'PYEOF'
+import sys, html, os
+res, out, html_out = sys.argv[1], sys.argv[2], sys.argv[3]
+# BUG (fixed): image <img src> used to be a fixed "benchmark/<name>.png",
+# which only worked because OUT was hardcoded as .../benchmark and
+# benchmark.html was written one level up. OUT is now configurable, so the
+# link is computed relative to where benchmark.html actually lands.
+img_rel = os.path.relpath(out, os.path.dirname(html_out))
 rows = [l.rstrip('\n').split('\t') for l in open(res) if l.strip()]
 nets = sorted(set(r[0] for r in rows))
 EN = {'v1': 'v1 naïf', 'v2': 'place2', 'opt': 'place2+optimize'}
@@ -53,7 +82,7 @@ for n in nets:
         lvs = '✔ LVS' if r[2] == 'True' else '✘ LVS'
         cols.append(f'''<div class="c"><h3>{EN[e]} — <b>{r[3]}</b>/100</h3>
 <p class="m">{lvs} · {r[4]} crois. · {r[5]} trav. · {r[6]} coudes · {r[7]} px</p>
-<a href="benchmark/{n}-{e}.png"><img loading="lazy" src="benchmark/{n}-{e}.png"></a></div>''')
+<a href="{img_rel}/{n}-{e}.png"><img loading="lazy" src="{img_rel}/{n}-{e}.png"></a></div>''')
     cards.append(f'<section><h2>{n}</h2><div class="row">{"".join(cols)}</div></section>')
 page = f'''<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Benchmark placement</title>
 <style>body{{font-family:system-ui,sans-serif;margin:0;background:#f6f8fa;color:#1c2733}}
@@ -66,7 +95,8 @@ h2{{font-size:1.05rem;margin:.3rem 0 .6rem}} .row{{display:flex;gap:1rem;flex-wr
 <header><h1 style="margin:0;font-size:1.3rem">Benchmark : netlist → schéma (score beauté /100, gate LVS)</h1>
 <p style="color:#5b6b7b;margin:.3rem 0 0">v1 naïf → place2 (piles de conduction) → place2+optimize (recherche locale)</p></header>
 <main>{''.join(cards)}</main></body></html>'''
-open(out + '/../benchmark.html', 'w').write(page)
-print('benchmark.html généré')
+open(html_out, 'w').write(page)
+print(f'{html_out} généré')
 PYEOF
+echo "results table: $RES"
 cat $RES

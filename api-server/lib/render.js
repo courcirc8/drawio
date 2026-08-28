@@ -12,9 +12,35 @@ import { allCells, cellInfo, serialize } from './model.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EXPORT_PAGE = 'file://' + path.resolve(HERE, '../../src/main/webapp/export3.html');
+// Chrome discovery. The system paths below are only the common Linux packages;
+// on a workstation where Chrome was installed by puppeteer or Playwright (which
+// is the usual case on a machine with no root), the binary lives under a
+// versioned cache directory instead and NONE of the system paths exist. Probing
+// only the system paths made three separate agents conclude "no Chromium on this
+// host" while a working Chrome for Testing 147 sat in ~/.cache/puppeteer -- and a
+// missing render silently drops ~46 points of scoring weight (see tools/BEAUTY.md).
+// So: glob the caches too, newest version first.
+function cacheCandidates() {
+  const home = process.env.HOME || '';
+  const roots = [
+    [path.join(home, '.cache/puppeteer/chrome'), 'chrome-linux64/chrome'],
+    [path.join(home, '.cache/puppeteer/chrome-headless-shell'), 'chrome-headless-shell-linux64/chrome-headless-shell'],
+    [path.join(home, '.cache/ms-playwright'), 'chrome-linux64/chrome'],
+    [path.join(home, '.cache/ms-playwright'), 'chrome-linux/chrome'],
+  ];
+  const found = [];
+  for (const [root, tail] of roots) {
+    let versions = [];
+    try { versions = fs.readdirSync(root).sort().reverse(); } catch { continue; }
+    for (const v of versions) found.push(path.join(root, v, tail));
+  }
+  return found;
+}
+
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH, '/usr/bin/chromium-browser', '/usr/bin/chromium',
   '/snap/bin/chromium', '/usr/bin/google-chrome',
+  ...cacheCandidates(),
 ].filter(Boolean);
 
 let browserPromise = null;
