@@ -32,7 +32,7 @@ function isPmos(c) {
 }
 
 /** terminaux haut/bas dans le sens de conduction + shape/pins par composant */
-function condInfo(c) {
+export function condInfo(c) {
   const map = SPICE_MAP[c.prefix];
   if (c.prefix === 'M' || c.prefix === 'Q') {
     const pmos = isPmos(c);
@@ -49,6 +49,135 @@ function condInfo(c) {
       topPin: map.pinOrder[0], botPin: map.pinOrder[1] };
   }
   return null;
+}
+
+export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
+  const wires = [];
+  const wire = (a, b) => wires.push(addWire(model, a === null ? b : a).getAttribute('id'));
+  let seq = 0;
+
+  // rails : tap VDD au-dessus de chaque terminal du net vdd ; masse sous chaque terminal de 0
+  for (const [net, terms] of netTerms) {
+    if (net === vddNet && vddNet !== '0') {
+      for (const t of terms) {
+        const p = placed.get(t.ref);
+        const abs = pinAbs(p, t.pin);
+        const id = 'VT' + (++seq);
+        addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: p.y - 66, w: 40, h: 26, value: 'VDD' });
+        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: 0.5, y: 1 } });
+      }
+    } else if (net === '0') {
+      for (const t of terms) {
+        const p = placed.get(t.ref);
+        const abs = pinAbs(p, t.pin);
+        const id = 'GND' + (++seq);
+        // masse LOCALE : juste sous le pin (comme le petit trait des figures
+        // publiées), jamais un long rail vers une ligne de fond commune
+        addVertex(model, { id, shape: GROUND_SHAPE, x: abs.x - 15, y: abs.y + 45, w: 30, h: 20 });
+        const gp = getPin(GROUND_SHAPE, GROUND_PIN);
+        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: gp.x, y: gp.y } });
+      }
+    }
+  }
+
+  // nets de signal
+  for (const [net, terms] of netTerms) {
+    if (net === vddNet || net === '0') continue;
+    if (terms.length === 1) {
+      // entrée/sortie : port
+      const t = terms[0];
+      const p = placed.get(t.ref);
+      const abs = pinAbs(p, t.pin);
+      const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+      const leftish = (t.pin.x <= 0.5) !== !!p.flipH;
+      let px = abs.x + (leftish ? -80 : 56), py = abs.y + 36;
+      const clash = () => [...placed.values()].some((v) =>
+        px < v.x + v.w + 8 && px + 24 > v.x - 8 && py < v.y + v.h + 8 && py + 24 > v.y - 8);
+      for (let k = 0; k < 6 && clash(); k++) { px += leftish ? -60 : 60; }
+      for (let k = 0; k < 6 && clash(); k++) { py += 50; }
+      addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net.toUpperCase() });
+      placed.set(id, { id, x: px, y: py, w: 24, h: 24, rotation: 0 });
+      wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
+    } else if (terms.length === 2) {
+      const [a, b] = terms;
+      wire(null, { source: a.ref, target: b.ref, sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y } });
+    } else {
+      const pts = terms.map((t) => pinAbs(placed.get(t.ref), t.pin));
+      // S1' : point MÉDIAN = optimum L1 exact pour un branchement unique
+      // (esprit HyperedgeRerouter de libavoid, non exporté par le bundle)
+      const med = (arr) => { const a = [...arr].sort((x, y) => x - y); return a[Math.floor((a.length - 1) / 2)]; };
+      let cx = med(pts.map((q) => q.x)), cy = med(pts.map((q) => q.y));
+      let snap = { x: cx, y: cy };
+      const gateCount = terms.filter((t) => {
+        const c = comps.find((k) => k.ref === t.ref);
+        return c != null && (c.prefix === 'M' || c.prefix === 'Q') && info.get(c.ref).gatePin === t.pinName;
+      }).length;
+      const nCols = new Set(pts.map((q) => Math.round((q.x - P.x0) / P.colW))).size;
+      const isBus = gateCount >= 2 && nCols >= 3;
+      // axe vertical dominant (pile) : si >=2 pins partagent le même x,
+      // la jonction reste SUR cet axe, entre eux
+      const byX = new Map();
+      for (const q of pts) {
+        const key = Math.round(q.x / 5) * 5;
+        if (!byX.has(key)) byX.set(key, []);
+        byX.get(key).push(q);
+      }
+      const axis = [...byX.entries()].find(([, l]) => l.length >= 2);
+      if (axis != null && !isBus) {
+        const ys = axis[1].map((q) => q.y).sort((a, b) => a - b);
+        snap = { x: axis[1][0].x, y: 0 };
+        cy = (ys[0] + ys[ys.length - 1]) / 2;
+      } else if (!isBus) {
+        // axe horizontal dominant (ligne de chaîne) : dot SUR la ligne, au
+        // droit du pin hors-ligne
+        const byY = new Map();
+        for (const q of pts) {
+          const key = Math.round(q.y / 5) * 5;
+          if (!byY.has(key)) byY.set(key, []);
+          byY.get(key).push(q);
+        }
+        const yAxis = [...byY.entries()].find(([, l]) => l.length >= 2);
+        if (yAxis != null) {
+          const off = pts.find((q) => Math.round(q.y / 5) * 5 !== yAxis[0]);
+          snap = { x: (off || pts[0]).x, y: 0 };
+          cy = yAxis[1][0].y;
+        }
+      }
+      // net de miroir NON-bus : jonction ancrée sur le drain de la diode
+      const diode = (isBus || axis != null) ? null : comps.find((k) => (k.prefix === 'M' || k.prefix === 'Q') &&
+        k.nodes[0] === net && k.nodes[1] === net && placed.has(k.ref));
+      if (diode != null) {
+        const di = info.get(diode.ref);
+        const dpin = getPin(di.shapeKey, di.po[0]);
+        const dabs = pinAbs(placed.get(diode.ref), dpin);
+        const p = placed.get(diode.ref);
+        snap = dabs;
+        cy = isPmos(diode) ? p.y + p.h + 28 : p.y - 28;
+      }
+      let jy = isBus ? Math.max(...pts.map((q) => q.y)) + 55 : cy;
+      {
+        // jamais dans un corps de composant (bus compris)
+        const boxes = [...placed.values()].filter((v) => Math.abs((v.x + v.w / 2) - snap.x) < v.w);
+        const inBox = (yy) => boxes.some((v) => yy > v.y - 8 && yy < v.y + v.h + 8);
+        if (inBox(jy)) {
+          const base = jy;
+          for (let d = 10; d < 400; d += 10) {
+            if (!inBox(base + d)) { jy = base + d; break; }
+            if (!isBus && !inBox(base - d)) { jy = base - d; break; }
+          }
+        }
+      }
+      const id = 'J_' + net.replace(/[^A-Za-z0-9]/g, '_');
+      const hint = P.junctionHint != null ? P.junctionHint.get(id) : null;
+      if (hint != null) { snap = { x: hint.x + 3, y: 0 }; jy = hint.y + 3; }
+      addVertex(model, { id, style: JCT, x: snap.x - 3, y: jy - 3, w: 6, h: 6 });
+      for (const t of terms) {
+        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y } });
+      }
+    }
+  }
+
+  return wires;
 }
 
 export function importNetlist2(model, parsed, opts = {}) {
@@ -456,127 +585,7 @@ export function importNetlist2(model, parsed, opts = {}) {
     }
   }
 
-  const wires = [];
-  const wire = (a, b) => wires.push(addWire(model, a === null ? b : a).getAttribute('id'));
-  let seq = 0;
-
-  // rails : tap VDD au-dessus de chaque terminal du net vdd ; masse sous chaque terminal de 0
-  for (const [net, terms] of netTerms) {
-    if (net === vddNet && vddNet !== '0') {
-      for (const t of terms) {
-        const p = placed.get(t.ref);
-        const abs = pinAbs(p, t.pin);
-        const id = 'VT' + (++seq);
-        addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: p.y - 66, w: 40, h: 26, value: 'VDD' });
-        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: 0.5, y: 1 } });
-      }
-    } else if (net === '0') {
-      for (const t of terms) {
-        const p = placed.get(t.ref);
-        const abs = pinAbs(p, t.pin);
-        const id = 'GND' + (++seq);
-        // masse LOCALE : juste sous le pin (comme le petit trait des figures
-        // publiées), jamais un long rail vers une ligne de fond commune
-        addVertex(model, { id, shape: GROUND_SHAPE, x: abs.x - 15, y: abs.y + 45, w: 30, h: 20 });
-        const gp = getPin(GROUND_SHAPE, GROUND_PIN);
-        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: gp.x, y: gp.y } });
-      }
-    }
-  }
-
-  // nets de signal
-  for (const [net, terms] of netTerms) {
-    if (net === vddNet || net === '0') continue;
-    if (terms.length === 1) {
-      // entrée/sortie : port
-      const t = terms[0];
-      const p = placed.get(t.ref);
-      const abs = pinAbs(p, t.pin);
-      const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
-      const leftish = (t.pin.x <= 0.5) !== !!p.flipH;
-      let px = abs.x + (leftish ? -80 : 56), py = abs.y + 36;
-      const clash = () => [...placed.values()].some((v) =>
-        px < v.x + v.w + 8 && px + 24 > v.x - 8 && py < v.y + v.h + 8 && py + 24 > v.y - 8);
-      for (let k = 0; k < 6 && clash(); k++) { px += leftish ? -60 : 60; }
-      for (let k = 0; k < 6 && clash(); k++) { py += 50; }
-      addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net.toUpperCase() });
-      placed.set(id, { id, x: px, y: py, w: 24, h: 24, rotation: 0 });
-      wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
-    } else if (terms.length === 2) {
-      const [a, b] = terms;
-      wire(null, { source: a.ref, target: b.ref, sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y } });
-    } else {
-      let cx = 0, cy = 0;
-      const pts = terms.map((t) => pinAbs(placed.get(t.ref), t.pin));
-      for (const q of pts) { cx += q.x; cy += q.y; }
-      cx /= pts.length; cy /= pts.length;
-      let snap = pts.reduce((best, q) => Math.abs(q.x - cx) < Math.abs(best.x - cx) ? q : best, pts[0]);
-      const gateCount = terms.filter((t) => {
-        const c = comps.find((k) => k.ref === t.ref);
-        return c != null && (c.prefix === 'M' || c.prefix === 'Q') && info.get(c.ref).gatePin === t.pinName;
-      }).length;
-      const nCols = new Set(pts.map((q) => Math.round((q.x - P.x0) / P.colW))).size;
-      const isBus = gateCount >= 2 && nCols >= 3;
-      // axe vertical dominant (pile) : si >=2 pins partagent le même x,
-      // la jonction reste SUR cet axe, entre eux
-      const byX = new Map();
-      for (const q of pts) {
-        const key = Math.round(q.x / 5) * 5;
-        if (!byX.has(key)) byX.set(key, []);
-        byX.get(key).push(q);
-      }
-      const axis = [...byX.entries()].find(([, l]) => l.length >= 2);
-      if (axis != null && !isBus) {
-        const ys = axis[1].map((q) => q.y).sort((a, b) => a - b);
-        snap = { x: axis[1][0].x, y: 0 };
-        cy = (ys[0] + ys[ys.length - 1]) / 2;
-      } else if (!isBus) {
-        // axe horizontal dominant (ligne de chaîne) : dot SUR la ligne, au
-        // droit du pin hors-ligne
-        const byY = new Map();
-        for (const q of pts) {
-          const key = Math.round(q.y / 5) * 5;
-          if (!byY.has(key)) byY.set(key, []);
-          byY.get(key).push(q);
-        }
-        const yAxis = [...byY.entries()].find(([, l]) => l.length >= 2);
-        if (yAxis != null) {
-          const off = pts.find((q) => Math.round(q.y / 5) * 5 !== yAxis[0]);
-          snap = { x: (off || pts[0]).x, y: 0 };
-          cy = yAxis[1][0].y;
-        }
-      }
-      // net de miroir NON-bus : jonction ancrée sur le drain de la diode
-      const diode = (isBus || axis != null) ? null : comps.find((k) => (k.prefix === 'M' || k.prefix === 'Q') &&
-        k.nodes[0] === net && k.nodes[1] === net && placed.has(k.ref));
-      if (diode != null) {
-        const di = info.get(diode.ref);
-        const dpin = getPin(di.shapeKey, di.po[0]);
-        const dabs = pinAbs(placed.get(diode.ref), dpin);
-        const p = placed.get(diode.ref);
-        snap = dabs;
-        cy = isPmos(diode) ? p.y + p.h + 28 : p.y - 28;
-      }
-      let jy = isBus ? Math.max(...pts.map((q) => q.y)) + 55 : cy;
-      {
-        // jamais dans un corps de composant (bus compris)
-        const boxes = [...placed.values()].filter((v) => Math.abs((v.x + v.w / 2) - snap.x) < v.w);
-        const inBox = (yy) => boxes.some((v) => yy > v.y - 8 && yy < v.y + v.h + 8);
-        if (inBox(jy)) {
-          const base = jy;
-          for (let d = 10; d < 400; d += 10) {
-            if (!inBox(base + d)) { jy = base + d; break; }
-            if (!isBus && !inBox(base - d)) { jy = base - d; break; }
-          }
-        }
-      }
-      const id = 'J_' + net.replace(/[^A-Za-z0-9]/g, '_');
-      addVertex(model, { id, style: JCT, x: snap.x - 3, y: jy - 3, w: 6, h: 6 });
-      for (const t of terms) {
-        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y } });
-      }
-    }
-  }
+  const wires = wireNets(model, { comps, info, placed, netTerms, vddNet, P });
 
   return { components: comps.map((c) => c.ref), wires, warnings: parsed.warnings || [],
     engine: 'place2', params: P, roots,

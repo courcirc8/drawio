@@ -86,3 +86,21 @@ Poids : excess_bend (1.4) a correctement guidé ces 4 règles — inchangé.
     fond commune. Résultat : croisements 1 → 0 sur le LNA complet (le rail de
     M4 traversait la chaîne) ; coudes 20 → 22 (+2 assumés, le stub coûte un
     coude mais tue le croisement). ERC 0/0, LVS 18/18, 6/6 benchmarks LVS.
+
+### Stratégies S1-S3 testées (état de l'art : Weave arXiv 2607.03835, EEschematic, MLCAD'22)
+
+- **S1 hyperedges libavoid** : API non exportée par le bundle (embind minimal).
+  Plan B implémenté : jonction au POINT MÉDIAN (optimum L1 exact du
+  branchement unique) — neutre-positif, gardé (les règles d'axe priment).
+- **S2 moteur ELK en couches** (`?engine=elk`, échelle de modes à la Weave) :
+  implémenté, mesuré, PERD contre v2 sur les 7 circuits (OTA 20c vs 1c, E1
+  59b vs 22b) — le layered générique ne connaît ni piles ni symétries
+  analogiques. Conservé comme moteur de SECOURS pour netlists hors-motifs.
+- **S3 compaction par alignement de pins** (`POST /compact`, intégrée en fin
+  d'`?optimize` avec rollback) : chaque mouvement testé sous score
+  géométrique rapide (beauty.py sans OpenCV). Jamais négatif ; gains E1
+  22→19 coudes, Gilbert 32→28, biquad 27→23.
+
+Leçon de poids : le score géométrique seul (sans rendu) suffit pour guider la
+compaction — 20× plus rapide, à généraliser dans l'optimiseur (candidats
+pré-filtrés sans rendu, rendu seulement pour les finalistes).

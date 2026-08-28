@@ -353,7 +353,8 @@ if __name__ == '__main__':
     ref = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] != '-' else None
     verts, edges = load(xml_path)
     m = xml_metrics(verts, edges)
-    m.update(cv_metrics(png_path, ref))
+    if png_path != '-':
+        m.update(cv_metrics(png_path, ref))
     if len(sys.argv) > 4:
         m.update(json.load(open(sys.argv[4])))
     print(json.dumps({'score': score(m), 'metrics': m, 'weights': WEIGHTS}))

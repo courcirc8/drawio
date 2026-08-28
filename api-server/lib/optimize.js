@@ -4,12 +4,13 @@
  * matche pas (gate de correction), puis noté par beauty.py ; on garde le
  * meilleur (hill-climbing avec redémarrages aléatoires légers).
  */
-import { newDocument, getPage } from './model.js';
+import { newDocument, getPage, serialize, parseDrawio } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { routePage } from './route.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 import { scoreDocument } from './beauty.js';
+import { compactPage } from './compact.js';
 
 function mulberry(seed) {
   let a = seed >>> 0;
@@ -73,5 +74,21 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
     history.push({ iter: i, score: cand.ok ? cand.score : null, accepted, rejected: cand.ok ? undefined : cand.reason });
     if (accepted) best = cand;
   }
+  // S3 : compaction finale, gardée par LVS + score (avec restauration)
+  try {
+    const backup = serialize(best.doc);
+    const m = getPage(best.doc);
+    const before = best.score;
+    await compactPage(m);
+    const lvs = compare(extractNetlist(m), parsed);
+    const b = lvs.match ? await scoreDocument(best.doc, m, { reference }) : null;
+    if (b != null && b.score >= before) {
+      best = { ...best, score: b.score, metrics: b.metrics };
+      history.push({ iter: 'compact', score: b.score, accepted: true });
+    } else {
+      best.doc = parseDrawio(backup);
+      history.push({ iter: 'compact', score: b ? b.score : null, accepted: false });
+    }
+  } catch (e) { history.push({ iter: 'compact', accepted: false, rejected: String(e).slice(0, 120) }); }
   return { best, history };
 }

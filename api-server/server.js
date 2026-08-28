@@ -168,7 +168,13 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
       metrics: best.metrics, params: best.params, history,
       components: best.placed.components, wires: best.placed.wires });
   }
-  const placed = engine === 'v2' ? place2.importNetlist2(m, parsed) : place.importNetlist(m, parsed);
+  let placed;
+  if (engine === 'elk') {
+    const { importNetlistElk } = await import('./lib/place-elk.js');
+    placed = await importNetlistElk(m, parsed);
+  } else {
+    placed = engine === 'v2' ? place2.importNetlist2(m, parsed) : place.importNetlist(m, parsed);
+  }
   const routed = await route.routePage(m, placed.wires, {});
   res.status(201).json({ ...placed, routed: routed.ids.length });
 }));
@@ -200,6 +206,13 @@ app.get('/documents/:id/bom', wrap((req, res) => {
   const rows = bomLib.bom(m);
   if ((req.query.format || 'json') === 'csv') return res.type('text/csv').send(bomLib.bomCsv(rows));
   res.json(rows);
+}));
+
+app.post('/documents/:id/compact', wrap(async (req, res) => {
+  const { entry, model: m } = pageOf(req);
+  const { compactPage } = await import('./lib/compact.js');
+  const r = await compactPage(m, req.body || {});
+  res.json(r);
 }));
 
 app.post('/documents/:id/beauty', wrap(async (req, res) => {
