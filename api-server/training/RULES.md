@@ -214,3 +214,12 @@ Effet suite (v2 brut) : biquad 15→7 coudes, VCO 10→6 (0 excès), Gilbert
     L'optimiseur ne règle plus que l'espacement, l'ordre des piles
     indépendantes et les flips de passifs. Gilbert : 8 coudes AVEC toutes
     les règles intactes.
+
+24. **Liaison diode = petit cadre EXTÉRIEUR au corps** (waypoints explicites
+    gate→coin→drain) — le renderer dessinait sinon une diagonale à travers
+    le transistor. Idiome délibéré des figures publiées : exempté du
+    comptage de coudes (comme les diagonales de cross-couplage).
+
+### Relance des règles sur les 5 références (état courant, optimize=12)
+OTA 1c/11b · biquad 2c/7b · LNA complet 0c/9b · VCO 0c/8b · Gilbert 4c/8b —
+LVS 5/5, toutes les règles utilisateur intactes (invariants).

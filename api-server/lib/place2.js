@@ -117,10 +117,19 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       for (const t of [...terms]) {
         if (!seen.has(t.ref)) { seen.set(t.ref, t); continue; }
         const other = seen.get(t.ref);
-        wire(null, { source: t.ref, target: t.ref,
-          sourcePin: { x: other.pin.x, y: other.pin.y }, targetPin: { x: t.pin.x, y: t.pin.y } });
-        // retirer le pin de GATE (x logique 0) de l'étoile, garder le drain
+        // liaison diode : L EXTÉRIEUR au corps (waypoints explicites — le
+        // renderer dessine sinon une diagonale à travers le transistor)
+        const pc2 = placed.get(t.ref);
         const gate = t.pin.x === 0 ? t : other;
+        const drain = gate === t ? other : t;
+        const g = pinAbs(pc2, gate.pin), dr = pinAbs(pc2, drain.pin);
+        const left = g.x <= pc2.x + pc2.w / 2;
+        const ox = left ? Math.min(g.x, pc2.x) - 16 : Math.max(g.x, pc2.x + pc2.w) + 16;
+        const top = dr.y <= pc2.y + pc2.h / 2;
+        const oy = top ? pc2.y - 14 : pc2.y + pc2.h + 14;
+        wire(null, { source: t.ref, target: t.ref,
+          sourcePin: { x: gate.pin.x, y: gate.pin.y }, targetPin: { x: drain.pin.x, y: drain.pin.y },
+          points: [{ x: ox, y: g.y }, { x: ox, y: oy }, { x: dr.x, y: oy }] });
         const idx = terms.indexOf(gate);
         if (idx >= 0) terms.splice(idx, 1);
       }

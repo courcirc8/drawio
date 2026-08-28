@@ -152,8 +152,12 @@ def xml_metrics(verts, edges):
     polys = polylines(verts, edges)
     m = {}
     # coudes + longueur + coudes excédentaires (vs minimum géométrique)
+    # (les self-loops de liaison diode sont un idiome délibéré, comme les
+    # diagonales : exemptés)
     bends, excess, length = 0, 0, 0.0
-    for pl in polys:
+    for e, pl in zip(edges, polys):
+        if e['src'] is not None and e['src'] == e['tgt']:
+            continue
         dirs = []
         for (x1, y1), (x2, y2) in zip(pl, pl[1:]):
             length += math.hypot(x2-x1, y2-y1)
