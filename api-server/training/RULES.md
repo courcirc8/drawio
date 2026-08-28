@@ -169,3 +169,26 @@ avec lane lop dédiée (S4).
     membre droit flippé colonne-avec-garde-de-niveau (rangée de la paire et
     en dessous uniquement) → gates vers l'extérieur, 2e entrée À DROITE.
     P.flipPairs devient un toggle d'inversion pour la recherche.
+
+### « Pourquoi la source de courant monte puis redescend ? » — algorithme de cleaning
+
+Diagnostic en 3 couches (chacune vérifiée) :
+1. les fils de queue étaient géométriquement DROITS (0 waypoint, extrémités
+   alignées) — l'escalier était fabriqué AU RENDU par le jettySize=auto du
+   routeur implicite de drawio ;
+2. libavoid renvoyait [] (« sans coude ») pour des chemins non alignés dans
+   d'autres cas → le renderer improvisait aussi.
+
+Nettoyeur implémenté (règles 19-21, dans routePage) :
+19. **Équerre synthétique** : route vide + extrémités non alignées → coude
+    unique explicite (axe de sortie du pin respecté) — plus jamais le
+    routeur implicite.
+20. **L canonique des jonctions** : tout fil pin→jonction dont le L est libre
+    d'obstacles est posé en 2 segments (axe du pin, ligne de la jonction),
+    jettySize=0 (le stub auto refaisait des marches).
+21. **Collapse des micro-jogs** : motifs H-V-H / V-H-V à segment central
+    ≤22 px aplatis vers le côté ancré/le plus long, test d'obstacle, point
+    fixe en ≤6 itérations.
+
+Effet suite (v2 brut) : biquad 15→7 coudes, VCO 10→6 (0 excès), Gilbert
+15→12, OTA 24→18, E1 17→13. Queue du Gilbert = tracé humain exact.

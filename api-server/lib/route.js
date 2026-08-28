@@ -10,7 +10,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
-import { allCells, cellInfo, setEdgePoints, updateCell } from './model.js';
+import { allCells, cellInfo, setEdgePoints, updateCell, mergeStyle } from './model.js';
 import { getShape } from './stencils.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -146,15 +146,124 @@ export async function routePage(model, edgeIds, opts) {
   if (resp.error != null) return { ids: [], failed: resp.error };
   const routes = resp.routes;
   const routed = [];
+  const vertsById = new Map(vertices.map((v) => [v.id, v]));
+  const endAbs = (c, pref, cell) => {
+    const X = c.style.map.get(pref + 'X'), Y = c.style.map.get(pref + 'Y');
+    if (X != null && Y != null) return pinAbsOf(cell, parseFloat(X), parseFloat(Y));
+    const b = rotatedAabb(cell);
+    return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; // attache flottante : centre
+  };
   for (const e of edges) {
     const pts = routes[e.id];
-    if (pts != null) {
-      const cellEl = allCells(model).find((el) => el.getAttribute('id') === e.id);
-      setEdgePoints(cellEl, pts);
-      routed.push(e.id);
+    if (pts == null) continue;
+    const cellEl = allCells(model).find((el) => el.getAttribute('id') === e.id);
+    const cInfo = cellInfo(cellEl);
+    const src = byId.get(e.source), tgt = byId.get(e.target);
+    let out = pts;
+    // fil vers/depuis une JONCTION : L canonique si le chemin est libre
+    const isJct = (cc) => cc != null && cc.style.map.has('drawioApiJunction');
+    const jTarget = isJct(tgt), jSource = isJct(src);
+    if ((jTarget || jSource) && !(jTarget && jSource)) {
+      const a = endAbs(cInfo, 'exit', src), b = endAbs(cInfo, 'entry', tgt);
+      const pinEnd = jTarget ? a : b;
+      const jEnd = jTarget ? b : a;
+      const ex = cInfo.style.map.get(jTarget ? 'exitX' : 'entryX');
+      const ey = cInfo.style.map.get(jTarget ? 'exitY' : 'entryY');
+      const vertFirst = ey === '0' || ey === '1' || (ex !== '0' && ex !== '1');
+      const corner = vertFirst ? { x: pinEnd.x, y: jEnd.y } : { x: jEnd.x, y: pinEnd.y };
+      const clear = (p, q) => !vertices.some((v) =>
+        v.id !== e.source && v.id !== e.target &&
+        Math.max(p.x, q.x) > v.x + 3 && Math.min(p.x, q.x) < v.x + v.w - 3 &&
+        Math.max(p.y, q.y) > v.y + 3 && Math.min(p.y, q.y) < v.y + v.h - 3);
+      if (clear(pinEnd, corner) && clear(corner, jEnd)) {
+        out = (Math.abs(pinEnd.x - jEnd.x) < 1 || Math.abs(pinEnd.y - jEnd.y) < 1) ? [] : [corner];
+        setEdgePoints(cellEl, out);
+        // le jetty auto du renderer fabrique des marches sur ces fils courts :
+        // sortie de pin directe
+        cellEl.setAttribute('style', mergeStyle(cellEl.getAttribute('style'), { jettySize: 0 }));
+        routed.push(e.id);
+        continue;
+      }
     }
+    if (pts.length === 0) {
+      // libavoid dit « droit » : si les extrémités ne sont PAS alignées, on
+      // synthétise l'équerre nous-mêmes (jamais le routeur implicite de drawio)
+      const a = endAbs(cInfo, 'exit', src), b = endAbs(cInfo, 'entry', tgt);
+      if (Math.abs(a.x - b.x) > 1 && Math.abs(a.y - b.y) > 1) {
+        const ex = cInfo.style.map.get('exitX'), ey = cInfo.style.map.get('exitY');
+        const vertFirst = ey === '0' || ey === '1' || (ex !== '0' && ex !== '1');
+        out = [vertFirst ? { x: a.x, y: b.y } : { x: b.x, y: a.y }];
+      }
+    }
+    setEdgePoints(cellEl, out);
+    routed.push(e.id);
   }
+  // ---- polish : collapse des micro-jogs (artefacts de nudge / évitements)
+  polishJogs(model, vertices, 22);
   return { ids: routed };
+}
+
+/** Aplatis les motifs H-V-H / V-H-V dont le segment central est court. */
+function polishJogs(model, obstacles, tol) {
+  const cells = allCells(model).map(cellInfo);
+  const byId2 = new Map(cells.map((c) => [c.id, c]));
+  const boxes = obstacles.map((v) => ({ x: v.x + 3, y: v.y + 3, w: v.w - 6, h: v.h - 6, id: v.id }));
+  const blocked = (x1, y1, x2, y2, skip) => boxes.some((b) => !skip.has(b.id) &&
+    Math.max(x1, x2) > b.x && Math.min(x1, x2) < b.x + b.w &&
+    Math.max(y1, y2) > b.y && Math.min(y1, y2) < b.y + b.h);
+  for (const c of cells) {
+    if (c.kind !== 'edge' || c.points == null || c.points.length === 0) continue;
+    if (c.style.map.get('edgeStyle') === 'none') continue;
+    const src = byId2.get(c.source), tgt = byId2.get(c.target);
+    if (src == null || tgt == null || src.x == null || tgt.x == null) continue;
+    const anchor = (pref, cell) => {
+      const X = c.style.map.get(pref + 'X'), Y = c.style.map.get(pref + 'Y');
+      if (X != null && Y != null) return pinAbsOf(cell, parseFloat(X), parseFloat(Y));
+      const b = rotatedAabb(cell);
+      return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    };
+    const skip = new Set([c.source, c.target]);
+    let pl = [anchor('exit', src), ...c.points.map((p) => ({ ...p })), anchor('entry', tgt)];
+    let changed = true, guard = 6;
+    while (changed && guard-- > 0) {
+      changed = false;
+      for (let i = 1; i + 2 < pl.length; i++) {
+        const [p0, p1, p2, p3] = [pl[i - 1], pl[i], pl[i + 1], pl[i + 2]];
+        const isH = (a, b) => Math.abs(a.y - b.y) < 0.6 && Math.abs(a.x - b.x) >= 0.6;
+        const isV = (a, b) => Math.abs(a.x - b.x) < 0.6 && Math.abs(a.y - b.y) >= 0.6;
+        if (isH(p0, p1) && isV(p1, p2) && isH(p2, p3) && Math.abs(p1.y - p2.y) <= tol) {
+          const fix0 = i - 1 === 0, fix1 = i + 2 === pl.length - 1;
+          if (fix0 && fix1) continue;
+          const useP0 = fix0 || (!fix1 && Math.abs(p1.x - p0.x) >= Math.abs(p3.x - p2.x));
+          const yT = useP0 ? p0.y : p3.y;
+          const [qa, qb] = useP0 ? [p2, p3] : [p0, p1];
+          if (blocked(Math.min(qa.x, qb.x), yT - 1, Math.max(qa.x, qb.x), yT + 1, skip)) continue;
+          p1.y = yT; p2.y = yT;
+          changed = true;
+        } else if (isV(p0, p1) && isH(p1, p2) && isV(p2, p3) && Math.abs(p1.x - p2.x) <= tol) {
+          const fix0 = i - 1 === 0, fix1 = i + 2 === pl.length - 1;
+          if (fix0 && fix1) continue;
+          const useP0 = fix0 || (!fix1 && Math.abs(p1.y - p0.y) >= Math.abs(p3.y - p2.y));
+          const xT = useP0 ? p0.x : p3.x;
+          const [qa, qb] = useP0 ? [p2, p3] : [p0, p1];
+          if (blocked(xT - 1, Math.min(qa.y, qb.y), xT + 1, Math.max(qa.y, qb.y), skip)) continue;
+          p1.x = xT; p2.x = xT;
+          changed = true;
+        }
+      }
+      // dédoublonner les points colinéaires/identiques
+      pl = pl.filter((p, i) => i === 0 || Math.abs(p.x - pl[i - 1].x) > 0.3 || Math.abs(p.y - pl[i - 1].y) > 0.3);
+      for (let i = 1; i + 1 < pl.length; i++) {
+        const a = pl[i - 1], b2 = pl[i], c2 = pl[i + 1];
+        if ((Math.abs(a.x - b2.x) < 0.6 && Math.abs(b2.x - c2.x) < 0.6) ||
+            (Math.abs(a.y - b2.y) < 0.6 && Math.abs(b2.y - c2.y) < 0.6)) {
+          pl.splice(i, 1); i--;
+        }
+      }
+    }
+    const cellEl = allCells(model).find((el) => el.getAttribute('id') === c.id);
+    setEdgePoints(cellEl, pl.slice(1, -1));
+  }
 }
 
 /** Absolute position of a shape pin, rotation-aware. Used by netlist wiring/extraction. */
