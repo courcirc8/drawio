@@ -244,3 +244,16 @@ LVS 5/5, toutes les règles utilisateur intactes (invariants).
     niveau protège la paire en dessous ; l'axe unique de la règle 27 garantit
     l'alignement de colonne). Liaison gate-gate courte au centre, cadre de
     diode compact côté centre.
+
+29. **Fusion des conducteurs de même potentiel qui se longent** : segments
+    même net/même axe à ≤16 px se rejoignent sur une lane commune — mais
+    UNIQUEMENT si la lane cible est libre de tout autre net (sinon la
+    séparation contre-attaque). Ordre : fusion → séparation → dots.
+30. **Point de contact à toute branche ≥3 terminaux** : après géométrie
+    finale, un dot est posé partout où l'extrémité d'un fil touche le
+    segment d'un autre fil du même net (les jonctions explicites en ont
+    déjà). Vérifié sur la zone photographiée (verticale b de l'OTA : une
+    lane, trois tés pointés).
+Note : la variance du faisceau fait osciller le Gilbert 9↔17 coudes selon la
+trajectoire (ablation : règles 29-30 neutres, v2 brut identique) — la sortie
+déterministe reste le gabarit de quad (S4).

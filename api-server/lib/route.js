@@ -200,9 +200,167 @@ export async function routePage(model, edgeIds, opts) {
   }
   // ---- polish : collapse des micro-jogs (artefacts de nudge / évitements)
   polishJogs(model, vertices, 22);
+  // ---- fusion : deux conducteurs du MÊME net qui se longent se rejoignent
+  if (process.env.DISABLE_MERGE !== '1') mergeSameNet(model, vertices);
   // ---- séparation : deux nets différents ne se superposent JAMAIS
   separateNets(model, vertices);
+  // ---- points de contact sur les branches >=3 terminaux (après géométrie finale)
+  if (process.env.DISABLE_DOTS !== '1') addContactDots(model);
   return { ids: routed };
+}
+
+/** Groupes de nets par union-find (jonctions = cellule, pins = cellule+ancre). */
+function netGroups(cells) {
+  const byId2 = new Map(cells.map((c) => [c.id, c]));
+  const parent = new Map();
+  const find = (k) => { while (parent.get(k) !== k) k = parent.get(k); return k; };
+  const uni = (a, b) => { if (!parent.has(a)) parent.set(a, a); if (!parent.has(b)) parent.set(b, b); parent.set(find(a), find(b)); };
+  const endKey = (c, which) => {
+    const cid = which === 'src' ? c.source : c.target;
+    const cell = byId2.get(cid);
+    if (cell != null && cell.style.map.has('drawioApiJunction')) return 'J:' + cid;
+    const X = c.style.map.get(which === 'src' ? 'exitX' : 'entryX');
+    const Y = c.style.map.get(which === 'src' ? 'exitY' : 'entryY');
+    return cid + ':' + X + ',' + Y;
+  };
+  const edgeNet = new Map();
+  for (const c of cells) {
+    if (c.kind !== 'edge' || c.source == null || c.target == null) continue;
+    uni(endKey(c, 'src'), endKey(c, 'tgt'));
+  }
+  for (const c of cells) {
+    if (c.kind !== 'edge' || c.source == null || c.target == null) continue;
+    edgeNet.set(c.id, find(endKey(c, 'src')));
+  }
+  return edgeNet;
+}
+
+function polylineOf(c, byId2) {
+  const src = byId2.get(c.source), tgt = byId2.get(c.target);
+  if (src == null || tgt == null || src.x == null || tgt.x == null) return null;
+  const anchor = (pref, cell) => {
+    const X = c.style.map.get(pref + 'X'), Y = c.style.map.get(pref + 'Y');
+    if (X != null && Y != null) return pinAbsOf(cell, parseFloat(X), parseFloat(Y));
+    const bb = rotatedAabb(cell);
+    return { x: bb.x + bb.w / 2, y: bb.y + bb.h / 2 };
+  };
+  return [anchor('exit', src), ...(c.points || []), anchor('entry', tgt)];
+}
+
+function mergeSameNet(model, obstacles) {
+  for (let repairs = 0; repairs < 20; repairs++) {
+    const cells = allCells(model).map(cellInfo);
+    const byId2 = new Map(cells.map((c) => [c.id, c]));
+    const edgeNet = netGroups(cells);
+    const wires = cells.filter((c) => c.kind === 'edge' && c.source != null && c.target != null &&
+      c.style.map.get('edgeStyle') !== 'none' && c.source !== c.target);
+    let repaired = false;
+    for (let i = 0; i < wires.length && !repaired; i++) {
+      for (let j = i + 1; j < wires.length && !repaired; j++) {
+        const A = wires[i], Bv = wires[j];
+        if (edgeNet.get(A.id) !== edgeNet.get(Bv.id)) continue;
+        const plA = polylineOf(A, byId2), plB = polylineOf(Bv, byId2);
+        if (plA == null || plB == null) continue;
+        const segs = (pl) => {
+          const out = [];
+          for (let k = 0; k + 1 < pl.length; k++) {
+            const p = pl[k], q = pl[k + 1];
+            if (Math.abs(p.y - q.y) < 0.6 && Math.abs(p.x - q.x) >= 0.6) out.push({ axis: 'h', lane: p.y, a: Math.min(p.x, q.x), b: Math.max(p.x, q.x), i: k });
+            else if (Math.abs(p.x - q.x) < 0.6 && Math.abs(p.y - q.y) >= 0.6) out.push({ axis: 'v', lane: p.x, a: Math.min(p.y, q.y), b: Math.max(p.y, q.y), i: k });
+          }
+          return out;
+        };
+        // lanes occupées par les AUTRES nets (une fusion ne doit pas y atterrir)
+        const foreign = [];
+        for (const W of wires) {
+          if (edgeNet.get(W.id) === edgeNet.get(A.id)) continue;
+          const plW = polylineOf(W, byId2);
+          if (plW == null) continue;
+          for (let k = 0; k + 1 < plW.length; k++) {
+            const p = plW[k], q = plW[k + 1];
+            if (Math.abs(p.y - q.y) < 0.6) foreign.push({ axis: 'h', lane: p.y, a: Math.min(p.x, q.x), b: Math.max(p.x, q.x) });
+            else if (Math.abs(p.x - q.x) < 0.6) foreign.push({ axis: 'v', lane: p.x, a: Math.min(p.y, q.y), b: Math.max(p.y, q.y) });
+          }
+        }
+        const laneFree = (axis, lane, a, b) => !foreign.some((f) =>
+          f.axis === axis && Math.abs(f.lane - lane) < 6 && Math.min(f.b, b) - Math.max(f.a, a) > 8);
+        for (const sa of segs(plA)) {
+          for (const sb of segs(plB)) {
+            if (sa.axis !== sb.axis) continue;
+            const d = Math.abs(sa.lane - sb.lane);
+            if (d < 1 || d > 16) continue;
+            if (Math.min(sa.b, sb.b) - Math.max(sa.a, sb.a) < 20) continue;
+            if (!laneFree(sa.axis, sb.lane, sa.a, sa.b) && !laneFree(sa.axis, sa.lane, sb.a, sb.b)) continue;
+            // MERGE : le segment intérieur mobile rejoint la lane de l'autre
+            const shiftTo = (ei, seg, lane) => {
+              const npts = ei.points || [];
+              if (!(seg.i >= 1 && seg.i <= npts.length - 1)) return false;
+              const p = npts[seg.i - 1], q = npts[seg.i];
+              if (seg.axis === 'h') { p.y = lane; q.y = lane; } else { p.x = lane; q.x = lane; }
+              const el = allCells(model).find((x) => x.getAttribute('id') === ei.id);
+              setEdgePoints(el, npts);
+              return true;
+            };
+            if (laneFree(sa.axis, sb.lane, sa.a, sa.b) && shiftTo(A, sa, sb.lane)) { repaired = true; }
+            else if (laneFree(sa.axis, sa.lane, sb.a, sb.b) && shiftTo(Bv, sb, sa.lane)) { repaired = true; }
+            if (repaired) break;
+          }
+          if (repaired) break;
+        }
+      }
+    }
+    if (!repaired) break;
+  }
+}
+
+function addContactDots(model) {
+  const JDOT = 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;';
+  const cells = allCells(model).map(cellInfo);
+  const byId2 = new Map(cells.map((c) => [c.id, c]));
+  const edgeNet = netGroups(cells);
+  const wires = cells.filter((c) => c.kind === 'edge' && c.source != null && c.target != null && c.source !== c.target);
+  const existingDots = cells.filter((c) => c.kind === 'vertex' && c.style.map.has('drawioApiJunction'))
+    .map((c) => ({ x: c.x + c.w / 2, y: c.y + c.h / 2 }));
+  const newDots = [];
+  const onSeg = (pt, p, q) => {
+    if (Math.abs(p.y - q.y) < 0.6) return Math.abs(pt.y - p.y) <= 2.5 && pt.x > Math.min(p.x, q.x) + 4 && pt.x < Math.max(p.x, q.x) - 4;
+    if (Math.abs(p.x - q.x) < 0.6) return Math.abs(pt.x - p.x) <= 2.5 && pt.y > Math.min(p.y, q.y) + 4 && pt.y < Math.max(p.y, q.y) - 4;
+    return false;
+  };
+  for (const A of wires) {
+    const plA = polylineOf(A, byId2);
+    if (plA == null) continue;
+    for (const Bv of wires) {
+      if (A === Bv || edgeNet.get(A.id) !== edgeNet.get(Bv.id)) continue;
+      const plB = polylineOf(Bv, byId2);
+      if (plB == null) continue;
+      for (const pt of [plA[0], plA[plA.length - 1]]) {
+        for (let k = 0; k + 1 < plB.length; k++) {
+          if (!onSeg(pt, plB[k], plB[k + 1])) continue;
+          if (existingDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 8)) continue;
+          if (newDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 8)) continue;
+          newDots.push({ x: pt.x, y: pt.y });
+        }
+      }
+    }
+  }
+  let dseq = 0;
+  for (const dd of newDots) {
+    const doc = model.ownerDocument;
+    const cell = doc.createElement('mxCell');
+    cell.setAttribute('id', 'DOT' + (++dseq) + '_' + Math.round(dd.x) + '_' + Math.round(dd.y));
+    cell.setAttribute('style', JDOT);
+    cell.setAttribute('vertex', '1');
+    cell.setAttribute('parent', '1');
+    const g = doc.createElement('mxGeometry');
+    g.setAttribute('x', String(dd.x - 3));
+    g.setAttribute('y', String(dd.y - 3));
+    g.setAttribute('width', '6');
+    g.setAttribute('height', '6');
+    g.setAttribute('as', 'geometry');
+    cell.appendChild(g);
+    model.getElementsByTagName('root')[0].appendChild(cell);
+  }
 }
 
 /**
