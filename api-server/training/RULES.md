@@ -86,3 +86,25 @@ Poids : excess_bend (1.4) a correctement guidé ces 4 règles — inchangé.
     fond commune. Résultat : croisements 1 → 0 sur le LNA complet (le rail de
     M4 traversait la chaîne) ; coudes 20 → 22 (+2 assumés, le stub coûte un
     coude mais tue le croisement). ERC 0/0, LVS 18/18, 6/6 benchmarks LVS.
+
+> **Corrigé 2026-08-28 — `label_on_wire` était cassé pendant TOUTES les
+> itérations E1 ci-dessus ; les scores /100 qu'un `beauty.py` de l'époque
+> aurait produits ne sont PAS comparables à ceux d'après le correctif.**
+> `tools/beauty.py`'s `label_box`/`label_on_wire` avait un `pass` là où
+> l'exclusion du propre fil d'un composant était prévue (le fil qui se
+> termine SUR le label de son propre composant comptait toujours comme « le
+> traverse »), ce qui gonflait `label_on_wire` pour quasiment tout composant
+> étiqueté et connecté — donc pour la quasi-totalité des composants des LNA
+> ci-dessus. Le même `beauty.py` avait aussi `min_length` toujours à 0.0 (code
+> mort, `sum(hypot(0,0)...)`), ce qui faussait le terme `length`. Mesuré sur
+> `rc-filter` (v2, doc sans rendu PNG) : `label_on_wire` 4 → 0 et
+> `min_length` 0.0 → 210.0 après correctif, score 75.6 → 87.1 pour la MÊME
+> géométrie XML, sans aucun changement de placement. Les comptages bruts
+> cités ci-dessus (croisements, coudes) restent des mesures géométriques
+> valides — indépendantes de ces deux bugs — et ne sont PAS retirés ; seul un
+> score /100 total qui en aurait dérivé à l'époque ne doit pas être reposé
+> comme référence face à un score post-correctif. Voir aussi `tools/BEAUTY.md`
+> et `beauty.score()`, qui depuis ce correctif refuse d'appeler `score` un
+> résultat calculé avec des termes manquants (`score_partial` +
+> `missing_terms` à la place) — précisément pour qu'un tel écart de mesure ne
+> se reproduise plus en silence.

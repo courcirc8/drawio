@@ -11,6 +11,18 @@ Deux sources de vérité :
  - OpenCV sur le PNG rendu : équilibre d'encre, et si une image de référence
    est fournie, SSIM + appariement ORB (ressemblance structurelle).
 Les poids sont dans WEIGHTS (réglés par la boucle LLM).
+
+CE QUE LE SCORE NE VOIT PAS (détail : tools/BEAUTY.md) — score() traite un
+terme MANQUANT comme un terme PARFAIT, jamais comme "inconnu":
+ - géométrie XML : toujours dispo si le XML est valide (aucune dépendance).
+ - cv2 (ink_balance, ssim, orb_match) : demandent le PNG rendu (headless
+   Chromium via lib/render.js — absent -> POST /beauty échoue tout court côté
+   API ; en standalone, cv2.imread(None) -> cv_metrics() retourne {} au lieu
+   de lever) ; ssim/orb_match demandent EN PLUS une image de référence.
+ - flow_ok/rails_ok/pair_sym/mirror_row : calculés côté JS
+   (lib/beauty.js:structuralMetrics), jamais en Python, transmis par le 4e
+   argument CLI struct.json ; absents => score() les lit à 1 (poids combiné
+   46/100+ compté comme parfait, la plus grosse ardoise silencieuse du score).
 """
 import sys, json, math, xml.etree.ElementTree as ET
 
@@ -45,10 +57,28 @@ def load(xml_path):
     model = root.find('.//mxGraphModel')
     cells = model.find('root')
     verts, edges = {}, []
-    for c in cells:
-        if c.tag != 'mxCell':
+    for outer in cells:
+        # A component may be a bare <mxCell>, or an <object refdes=... > wrapper
+        # around one (draw.io's "Edit Data" representation, which the api-server
+        # now emits so that identity survives a GUI copy/paste). The wrapper puts
+        # the mxCell one level DOWN, so the original `c.tag != 'mxCell': continue`
+        # dropped every wrapped component from `verts` -- after which every edge
+        # anchor resolved to None, polylines() skipped all of them, and n_wires
+        # read 0. That silently zeroed EVERY geometry penalty (crossings, bends,
+        # wire_length, too_close, labels): an empty drawing scores as a perfect
+        # one. Unwrap here; the label lives on the wrapper, the rest on the cell.
+        if outer.tag == 'object':
+            c = outer.find('mxCell')
+            if c is None:
+                continue
+            cid = outer.get('id')
+            label = outer.get('label') or ''
+        elif outer.tag == 'mxCell':
+            c = outer
+            cid = c.get('id')
+            label = c.get('value') or ''
+        else:
             continue
-        cid = c.get('id')
         style = c.get('style') or ''
         g = c.find('mxGeometry')
         if c.get('vertex') == '1' and g is not None:
@@ -56,7 +86,7 @@ def load(xml_path):
             for tok in style.split(';'):
                 if tok.startswith('rotation='):
                     rot = float(tok.split('=')[1])
-            verts[cid] = {'value': c.get('value') or '',
+            verts[cid] = {'value': label,
                           'vlp': next((tok.split('=')[1] for tok in style.split(';') if tok.startswith('verticalLabelPosition=')), None),
                           'x': float(g.get('x', 0)), 'y': float(g.get('y', 0)),
                           'w': float(g.get('width', 0)), 'h': float(g.get('height', 0)),
@@ -168,6 +198,15 @@ def xml_metrics(verts, edges):
     m['bends'] = bends
     m['excess_bends'] = excess
     m['wire_length'] = round(length, 1)
+    # BUG (fixed): was `sum(math.hypot(0, 0) for _ in comps)` — always 0.0,
+    # a dead metric that neither summed anything real nor was fed by wires.
+    # Intent per WEIGHTS['length'] comment ("par tranche de 1000 px de fil
+    # au-delà du minimum"): the geometric lower bound on wire length is the
+    # straight-line (Manhattan-free, Euclidean) distance between each wire's
+    # two connection anchors, ignoring the actual routed path. score() below
+    # now penalises wire_length beyond THIS real minimum instead of the old
+    # `300*n_wires/3` flat per-wire budget, which had no relation to geometry.
+    m['min_length'] = round(sum(math.hypot(pl[-1][0]-pl[0][0], pl[-1][1]-pl[0][1]) for pl in polys), 1)
     # croisements fil-fil (hors jonctions et hors extrémités partagées)
     crossings = 0
     for i in range(len(polys)):
@@ -225,7 +264,6 @@ def xml_metrics(verts, edges):
         bbox = (xs1-xs0) * (ys1-ys0)
         ideal = sum(v['w']*v['h'] for _, v in comps) * 6  # ~facteur d'aération raisonnable
         m['sprawl'] = round(max(0.0, bbox/max(ideal, 1) - 1.0), 3)
-        m['min_length'] = round(sum(math.hypot(0, 0) for _ in comps), 1)
     else:
         m['sprawl'] = 0.0
     # labels : près du device (ancré par drawio), mais JAMAIS sur un fil ni
@@ -239,10 +277,19 @@ def xml_metrics(verts, edges):
         vlp = v.get('vlp')
         if vlp == 'top':
             cy = v['y'] - lh/2 - 2
-        elif vlp == 'bottom' or vlp is None and False:
+        elif vlp == 'bottom' or vlp is None:
+            # BUG (fixed): was `vlp == 'bottom' or vlp is None and False` —
+            # `and` binds tighter than `or`, so `vlp is None and False` is
+            # always False and this elif collapsed to `vlp == 'bottom'` only.
+            # Every mxgraph.* shape emitted by lib/model.js:228 sets
+            # verticalLabelPosition=bottom explicitly, so vlp is None only for
+            # hand-edited cells or bare `style=` vertices (e.g. junctions) —
+            # those should get the same "label below" placement, not fall
+            # through to the centred-label case, which put the estimated
+            # label box at the wrong y for those cells.
             cy = v['y'] + v['h'] + lh/2 + 2
         else:
-            cy = v['y'] + v['h'] + lh/2 + 2 if vlp == 'bottom' else v['y'] + v['h']/2
+            cy = v['y'] + v['h']/2
         return (cx-lw/2, cy-lh/2, cx+lw/2, cy+lh/2)
     lboxes = []
     for cid, v in verts.items():
@@ -254,7 +301,13 @@ def xml_metrics(verts, edges):
         hit = False
         for e, pl in zip(edges, polys):
             if cid in (e['src'], e['tgt']):
-                pass  # même son propre fil ne doit pas barrer le label
+                # BUG (fixed): was a bare `pass`, so this component's own wire
+                # was never excluded and fell through into the segment-vs-box
+                # test below. A wire legitimately terminates inside/next to its
+                # own component's label anchor, so it always "hit" the label
+                # box — inflating label_on_wire for essentially every labelled
+                # component with a connection. `continue` skips this edge.
+                continue
             for (x1, y1), (x2, y2) in zip(pl, pl[1:]):
                 if max(x1, x2) < lb[0] or min(x1, x2) > lb[2] or max(y1, y2) < lb[1] or min(y1, y2) > lb[3]:
                     continue
@@ -329,24 +382,110 @@ def cv_metrics(png_path, ref_path=None):
                 m['orb_match'] = round(len(good) / max(len(k1), len(k2)), 3)
     return m
 
+# Each entry: (WEIGHTS key, metric keys it needs, penalty(m) in the same
+# units as WEIGHTS — i.e. multiplied by the weight inside score()).
+# A term counts as "missing" (never "computed to be zero") iff ANY of its
+# metric keys is absent from `m`. This is what lets score() tell "perfect"
+# apart from "never evaluated" — see the module docstring and tools/BEAUTY.md.
+SCORE_TERMS = [
+    ('crossing',      ('crossings',),               lambda m: m['crossings']),
+    ('through',       ('through_component',),       lambda m: m['through_component']),
+    ('bend',          ('bends',),                    lambda m: m['bends']),
+    ('excess_bend',   ('excess_bends',),             lambda m: m['excess_bends']),
+    ('too_close',     ('too_close',),                lambda m: m['too_close']),
+    ('label_on_wire', ('label_on_wire',),            lambda m: m['label_on_wire']),
+    ('label_overlap', ('label_overlap',),            lambda m: m['label_overlap']),
+    ('length',        ('wire_length', 'min_length'), lambda m: max(0.0, m['wire_length'] - m['min_length']) / 1000),
+    ('misalign',      ('align_ratio',),              lambda m: 1 - m['align_ratio']),
+    ('unbalance',     ('ink_balance',),               lambda m: m['ink_balance']),
+    ('sprawl',        ('sprawl',),                    lambda m: m['sprawl']),
+    ('flow',          ('flow_ok',),                   lambda m: 1 - m['flow_ok']),
+    ('rails',         ('rails_ok',),                  lambda m: 1 - m['rails_ok']),
+    ('pair_sym',      ('pair_sym',),                  lambda m: 1 - m['pair_sym']),
+    ('mirror_row',    ('mirror_row',),                lambda m: 1 - m['mirror_row']),
+]
+# Metric keys that feed a SCORE_TERMS entry, plus ssim/orb_match which are
+# purely informational (no WEIGHTS entry) but were also silently absent
+# whenever no reference PNG was given — surfaced the same way in `metrics`.
+_ALL_METRIC_KEYS = sorted({k for _, needs, _ in SCORE_TERMS for k in needs} | {'ssim', 'orb_match'})
+
 def score(m):
+    """
+    Returns a dict, NOT a bare number — see the module docstring and
+    tools/BEAUTY.md ("what the score cannot see"). Chosen design (option B
+    of the two the task offered): report `score_partial` + `missing_weight`
+    and refuse to call an incomplete result `score`, rather than a
+    best/worst RANGE. A range needs a defensible "worst case" per term;
+    that is well-defined for the four bounded (1 - ratio) structural terms
+    (worst = the full weight) but NOT for the count-based geometry terms
+    (crossings, bends, wire_length, …) which have no natural ceiling — and
+    in practice those are the ones that are never actually missing (they
+    come straight from the XML). Inventing an arbitrary ceiling just to
+    fill in a range that will never be exercised was rejected as spurious
+    precision; `score_partial` says exactly what was measured, no more.
+
+    Fields:
+      score_partial   — always present; computed ONLY over evaluated terms.
+      score           — present ONLY when missing_weight == 0.0 (nothing was
+                         skipped); this is the drop-in replacement for the
+                         old bare-float return, so a caller that only ever
+                         checks for `score` gets the old all-or-nothing
+                         guarantee back for free instead of silently reading
+                         a number computed over a different term set.
+      evaluated_weight / missing_weight — sum of WEIGHTS actually applied /
+                         skipped; missing_weight + evaluated_weight ==
+                         sum(WEIGHTS.values()) always.
+      missing_terms   — WEIGHTS keys that were skipped, e.g. ['flow',
+                         'rails', 'pair_sym', 'mirror_row', 'unbalance']
+                         when no PNG/struct.json was supplied. This is the
+                         "say what you dropped" fix from AGENTS.md domain
+                         correction #13 (verdict-ceiling-hidden-by-dc-blocks
+                         is the prior incident this generalises from).
+    """
     s = 100.0
-    s -= WEIGHTS['crossing'] * m.get('crossings', 0)
-    s -= WEIGHTS['through'] * m.get('through_component', 0)
-    s -= WEIGHTS['bend'] * m.get('bends', 0)
-    s -= WEIGHTS['excess_bend'] * m.get('excess_bends', 0)
-    s -= WEIGHTS['too_close'] * m.get('too_close', 0)
-    s -= WEIGHTS['label_on_wire'] * m.get('label_on_wire', 0)
-    s -= WEIGHTS['label_overlap'] * m.get('label_overlap', 0)
-    s -= WEIGHTS['length'] * max(0.0, m.get('wire_length', 0) - 300*m.get('n_wires', 0)/3) / 1000
-    s -= WEIGHTS['misalign'] * (1 - m.get('align_ratio', 1))
-    s -= WEIGHTS['unbalance'] * m.get('ink_balance', 0)
-    s -= WEIGHTS['sprawl'] * m.get('sprawl', 0)
-    s -= WEIGHTS['flow'] * (1 - m.get('flow_ok', 1))
-    s -= WEIGHTS['rails'] * (1 - m.get('rails_ok', 1))
-    s -= WEIGHTS['pair_sym'] * (1 - m.get('pair_sym', 1))
-    s -= WEIGHTS['mirror_row'] * (1 - m.get('mirror_row', 1))
-    return round(max(0.0, min(100.0, s)), 1)
+    evaluated_weight = 0.0
+    missing_weight = 0.0
+    missing_terms = []
+    for weight_key, needs, penalty_fn in SCORE_TERMS:
+        w = WEIGHTS[weight_key]
+        if any(k not in m for k in needs):
+            missing_terms.append(weight_key)
+            missing_weight += w
+            continue
+        evaluated_weight += w
+        s -= w * penalty_fn(m)
+    score_partial = round(max(0.0, min(100.0, s)), 1)
+    out = {
+        'score_partial': score_partial,
+        'evaluated_weight': round(evaluated_weight, 2),
+        'missing_weight': round(missing_weight, 2),
+        'missing_terms': missing_terms,
+    }
+    if missing_weight == 0.0:
+        out['score'] = score_partial
+    return out
+
+def compare(result_a, result_b):
+    """
+    Refuse to compare two score() result dicts whose `missing_terms` sets
+    differ — comparing e.g. an 87.1 computed over all 15 terms with an 87.1
+    computed over 11 of them (4 structural terms silently defaulted to
+    "perfect") is exactly the trap this exists to catch. Use this wherever a
+    before/after or best-candidate comparison is made (see
+    tools/gen_baseline.py's per-circuit v1/v2/opt comparisons).
+
+    Returns {'error': ...} rather than raising, so a caller iterating many
+    candidates can log-and-skip an incomparable pair instead of aborting the
+    whole run on one bad comparison.
+    """
+    ma, mb = set(result_a.get('missing_terms', [])), set(result_b.get('missing_terms', []))
+    if ma != mb:
+        return {'error': 'incomparable: missing_terms differ',
+                'a_missing': sorted(ma), 'b_missing': sorted(mb)}
+    key = 'score' if ('score' in result_a and 'score' in result_b) else 'score_partial'
+    a_val, b_val = result_a[key], result_b[key]
+    return {'metric': key, 'a': a_val, 'b': b_val, 'delta': round(b_val - a_val, 1),
+            'missing_terms': sorted(ma)}
 
 if __name__ == '__main__':
     xml_path, png_path = sys.argv[1], sys.argv[2]
@@ -356,4 +495,11 @@ if __name__ == '__main__':
     m.update(cv_metrics(png_path, ref))
     if len(sys.argv) > 4:
         m.update(json.load(open(sys.argv[4])))
-    print(json.dumps({'score': score(m), 'metrics': m, 'weights': WEIGHTS}))
+    result = score(m)
+    # `metrics` gets the same explicit 'unavailable' marker for every metric
+    # key a score term needed but `m` doesn't have, so it reads consistently
+    # whether inspected on its own or via `missing_terms` above.
+    metrics_out = dict(m)
+    for k in _ALL_METRIC_KEYS:
+        metrics_out.setdefault(k, 'unavailable')
+    print(json.dumps({**result, 'metrics': metrics_out, 'weights': WEIGHTS}))
