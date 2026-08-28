@@ -164,3 +164,8 @@ Restant assumé : le quad garde ~14-18 coudes selon la trajectoire du faisceau
 Gilbert : paire alignée, quad canonique, boîtes fantômes éliminées ;
 21 coudes (11 excès) restants — voie de sortie identifiée : gabarit de quad
 avec lane lop dédiée (S4).
+
+18. **Miroir vertical par défaut des paires diff** (retour utilisateur) :
+    membre droit flippé colonne-avec-garde-de-niveau (rangée de la paire et
+    en dessous uniquement) → gates vers l'extérieur, 2e entrée À DROITE.
+    P.flipPairs devient un toggle d'inversion pour la recherche.

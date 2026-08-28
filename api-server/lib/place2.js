@@ -495,16 +495,27 @@ export function importNetlist2(model, parsed, opts = {}) {
   //      sont flippées à la demande de l'optimiseur (P.flipPairs).
   const flipRefs = new Set();
   const quadRefs = new Set((structures.quads || []).flatMap((q) => q.refs));
-  const wantFlip = (pr) => structures.crossCoupled.includes(pr) ||
-    ((P.flipPairs || []).includes(pr.refs.join('/')) && !pr.refs.some((r) => quadRefs.has(r)));
+  // miroir vertical PAR DÉFAUT pour les paires diff (membre droit flippé,
+  // gates vers l'extérieur, 2e entrée à droite) ; P.flipPairs INVERSE ce
+  // défaut pour la recherche ; quads gérés à part
+  const wantFlip = (pr) => {
+    if (pr.refs.some((r) => quadRefs.has(r))) return false;
+    const base = true;
+    const toggled = (P.flipPairs || []).includes(pr.refs.join('/'));
+    return structures.crossCoupled.includes(pr) ? true : (base !== toggled);
+  };
   for (const pr of [...structures.diffPairs, ...structures.crossCoupled]) {
     if (!wantFlip(pr)) continue;
     const [a, b] = pr.refs;
     const ca = slots.get(a), cb = slots.get(b);
     if (ca == null || cb == null) continue;
     const right = ca.col <= cb.col ? b : a;
-    const rc = slots.get(right).col;
-    for (const [ref, sl] of slots) if (sl.col === rc) flipRefs.add(ref);
+    const rs = slots.get(right);
+    // garde de niveau : la rangée de la paire et en dessous — jamais les
+    // charges/miroirs au-dessus (leur gate doit regarder leur diode)
+    for (const [ref, sl] of slots) {
+      if (sl.col === rs.col && sl.level >= rs.level) flipRefs.add(ref);
+    }
   }
 
   // quad canonique : gates INTERNES face à face (flip du 2e par colonne),
