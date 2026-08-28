@@ -203,3 +203,14 @@ Effet suite (v2 brut) : biquad 15→7 coudes, VCO 10→6 (0 excès), Gilbert
     Les deux issues autorisées : lanes à y différents (implémenté) ou
     croisement diagonal assumé (les diagonales edgeStyle=none sont exclues
     de la détection).
+
+23. **Les règles humaines sont des INVARIANTS, pas des dimensions de
+    recherche** (retour utilisateur : « tu as réparé un point et cassé le
+    travail d'avant »). L'optimiseur avait le droit de basculer le miroir des
+    paires (toggle flipPairs) et de permuter les colonnes des structures →
+    il le faisait dès que le score y gagnait. Supprimé : plus de move
+    flipPairs ; les permutations de fanout excluent tout net dont un enfant
+    appartient à une structure reconnue (paire, quad, miroir, queue).
+    L'optimiseur ne règle plus que l'espacement, l'ordre des piles
+    indépendantes et les flips de passifs. Gilbert : 8 coudes AVEC toutes
+    les règles intactes.

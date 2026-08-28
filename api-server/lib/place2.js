@@ -678,6 +678,13 @@ export function importNetlist2(model, parsed, opts = {}) {
 
   return { components: comps.map((c) => c.ref), wires, warnings: parsed.warnings || [],
     engine: 'place2', params: P, roots,
+    structuredRefs: [...new Set([
+      ...structures.diffPairs.flatMap((p) => p.refs),
+      ...structures.crossCoupled.flatMap((p) => p.refs),
+      ...structures.mirrors.flatMap((m) => m.refs),
+      ...(structures.quads || []).flatMap((q) => q.refs),
+      ...structures.tails.map((t) => t.ref),
+    ])],
     fanouts: (() => {
       const out = {};
       const byNet = new Map();

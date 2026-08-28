@@ -45,10 +45,12 @@ function perturb(rnd, base, placedInfo) {
     childOrder: JSON.parse(JSON.stringify(base.childOrder || {})) };
   const roots = placedInfo.roots || [];
   const flippable = placedInfo.flippable || [];
-  const pairs = placedInfo.pairs || [];
+  const structured = new Set(placedInfo.structuredRefs || []);
   const fanouts = placedInfo.fanouts || {};
-  const fanoutNets = Object.keys(fanouts);
-  const nMoves = 4 + (pairs.length ? 1 : 0) + (fanoutNets.length ? 1 : 0);
+  // seuls les fanouts SANS structure reconnue sont permutables : les paires,
+  // quads, miroirs et queues sont des INVARIANTS (règles utilisateur)
+  const fanoutNets = Object.keys(fanouts).filter((n) => !fanouts[n].some((r) => structured.has(r)));
+  const nMoves = 4 + (fanoutNets.length ? 1 : 0);
   const move = Math.floor(rnd() * nMoves);
   if (move === 0 && roots.length > 1) {
     const order = p.order.length ? p.order : [...roots];
@@ -63,11 +65,6 @@ function perturb(rnd, base, placedInfo) {
     p.colW = Math.max(150, Math.min(260, (p.colW || 190) + (rnd() < 0.5 ? -20 : 20)));
   } else if (move === 3) {
     p.rowH = Math.max(150, Math.min(240, (p.rowH || 180) + (rnd() < 0.5 ? -20 : 20)));
-  } else if (move === 4 && pairs.length) {
-    // symétriser/désymétriser une paire différentielle (flip miroir)
-    const key = pairs[Math.floor(rnd() * pairs.length)];
-    const i = p.flipPairs.indexOf(key);
-    if (i >= 0) p.flipPairs.splice(i, 1); else p.flipPairs.push(key);
   } else if (fanoutNets.length) {
     // permuter deux colonnes SŒURS sous un même fanout (ex: quad du Gilbert)
     const net = fanoutNets[Math.floor(rnd() * fanoutNets.length)];
