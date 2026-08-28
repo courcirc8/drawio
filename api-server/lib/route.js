@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import { allCells, cellInfo, setEdgePoints, updateCell } from './model.js';
 import { getShape } from './stencils.js';
@@ -15,20 +16,70 @@ import { getShape } from './stencils.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const LIB_DIR = path.resolve(HERE, '../../src/main/webapp/js/libavoid-js');
 
-let avoidPromise = null;
-
-function loadAvoid() {
-  if (avoidPromise == null) {
-    vm.runInThisContext(fs.readFileSync(path.join(LIB_DIR, 'libavoid.min.js'), 'utf8'),
-      { filename: 'libavoid.min.js' });
+let helpersLoaded = false;
+function loadHelpers() {
+  // seuls les helpers géométriques purs (constraintForPoint…) sont requis en
+  // thread principal ; le module Avoid vit dans le worker
+  if (!helpersLoaded) {
     vm.runInThisContext(fs.readFileSync(path.join(LIB_DIR, 'libavoid-routing.js'), 'utf8'),
       { filename: 'libavoid-routing.js' });
-    avoidPromise = Promise.resolve(globalThis.__libavoidReady).then(() => {
-      if (globalThis.Avoid == null) throw new Error('libavoid failed to initialize');
-      return globalThis.Avoid;
-    });
+    helpersLoaded = true;
   }
-  return avoidPromise;
+}
+
+// ---- worker de routage avec timeout (un solve pathologique est tué/relancé)
+let worker = null;
+let seq = 0;
+const pending = new Map();
+const ROUTE_TIMEOUT_MS = 6000;
+
+let idleTimer = null;
+function armIdleKill() {
+  if (idleTimer != null) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => { if (pending.size === 0) killWorker(); }, 2500);
+  idleTimer.unref();
+}
+
+function getWorker() {
+  if (worker == null) {
+    worker = new Worker(new URL('./route-worker.js', import.meta.url));
+    worker.unref();
+    if (worker.stdout) worker.stdout.unref?.();
+    if (worker.stderr) worker.stderr.unref?.();
+    worker.on('message', (msg) => {
+      const p = pending.get(msg.id);
+      if (p != null) { pending.delete(msg.id); clearTimeout(p.timer); p.resolve(msg); }
+      if (msg.error != null) {
+        // un abort Emscripten laisse le module MORT pour la session du
+        // worker (cf. docs/claude/libavoid-routing.md) : on relance
+        killWorker();
+      } else {
+        armIdleKill();
+      }
+    });
+    worker.on('error', () => { killWorker(); });
+  }
+  return worker;
+}
+function killWorker() {
+  const w = worker;
+  worker = null;
+  for (const [, p] of pending) { clearTimeout(p.timer); p.resolve({ error: 'worker-restart' }); }
+  pending.clear();
+  if (w != null) w.terminate().catch(() => {});
+}
+
+function computeRoutesSafe(vertices, edges, opts) {
+  return new Promise((resolve) => {
+    const id = ++seq;
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      killWorker();
+      resolve({ error: 'route-timeout' });
+    }, ROUTE_TIMEOUT_MS);
+    pending.set(id, { resolve, timer });
+    getWorker().postMessage({ id, vertices, edges, opts });
+  });
 }
 
 /**
@@ -69,7 +120,7 @@ function anchorConstraint(styleMap, prefix, cell, aabb) {
  * @returns {ids: routedEdgeIds}
  */
 export async function routePage(model, edgeIds, opts) {
-  const Avoid = await loadAvoid();
+  loadHelpers();
   const cells = allCells(model).map(cellInfo);
   const vertices = cells.filter((c) => c.kind === 'vertex' && c.x != null)
     .map((c) => { const b = rotatedAabb(c); return { id: c.id, x: b.x, y: b.y, w: b.w, h: b.h }; });
@@ -81,6 +132,7 @@ export async function routePage(model, edgeIds, opts) {
     if (wanted != null && !wanted.has(c.id)) continue;
     if (c.source == null || c.target == null) continue;
     if (c.source === c.target) continue;
+    if (c.style.map.get('edgeStyle') === 'none') continue; // diagonale volontaire
     const src = byId.get(c.source), tgt = byId.get(c.target);
     if (src == null || tgt == null) continue;
     edges.push({
@@ -90,7 +142,9 @@ export async function routePage(model, edgeIds, opts) {
       sourceJetty: 10, targetJetty: 10,
     });
   }
-  const routes = globalThis.AvoidRouting.computeRoutes(Avoid, vertices, edges, opts || {});
+  const resp = await computeRoutesSafe(vertices, edges, opts || {});
+  if (resp.error != null) return { ids: [], failed: resp.error };
+  const routes = resp.routes;
   const routed = [];
   for (const e of edges) {
     const pts = routes[e.id];

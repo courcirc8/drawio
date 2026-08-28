@@ -122,3 +122,24 @@ pré-filtrés sans rendu, rendu seulement pour les finalistes).
 Bilan benchmark (optimize=16) : LNA **2 coudes / 0 excès — MIEUX que le
 papier (~4)** ; RC 4b ; VCO 0c/9b ; E1 0c/14b (38 au départ) ; OTA 0c/21b ;
 biquad 2c/17b ; Gilbert 4c/14b (32 au départ). LVS 7/7, 21/21 tests.
+
+### « Pourquoi des coudes 90° inutiles dans le Gilbert ? » — audit fil-par-fil
+
+Réponse mesurée : 7 excès sur 3 fils seulement — M6→J_outm (traversée
+totale), M4→M5 gates `lom` (740 px), M3→M6 gates `lop` (jog 28 px). Causes :
+(a) ordre des colonnes du quad ≠ ordre canonique M3 M4 | M5 M6 ;
+(b) **l'espace de recherche ne contenait pas la permutation** : seuls racines
+et flips étaient explorables → ajout du mouvement « permutation de colonnes
+sœurs sous un fanout » (P.childOrder) ;
+(c) découverte critique en l'explorant : un placement légal (sans
+chevauchement) peut faire BOUCLER ou ABORTER libavoid → **routage déplacé
+dans un worker à timeout**, tué/relancé sur blocage ou `Aborted()` (le module
+Emscripten est mort après un abort — piège documenté du fork), candidat
+rejeté proprement ;
+(d) règle « diagonales de quad » : net gate-gate même rangée à colonnes
+éloignées → diagonale droite assumée (style des figures publiées), exclue du
+routage. S'applique quand le faisceau ne choisit pas des gates adjacentes.
+
+Restant assumé : le quad garde ~14-18 coudes selon la trajectoire du faisceau
+(gates adjacentes VS X canonique) — la vraie sortie est le GABARIT de quad
+(stratégie templates S4 du registre).

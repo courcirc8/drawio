@@ -26,7 +26,8 @@ async function evaluate(parsed, params, reference, fast = false) {
   const doc = newDocument();
   const m = getPage(doc);
   const placed = importNetlist2(m, parsed, params);
-  await routePage(m, placed.wires, {});
+  const r = await routePage(m, placed.wires, {});
+  if (r.failed != null) return { ok: false, reason: r.failed };
   const lvs = compare(extractNetlist(m), parsed);
   if (!lvs.match) return { ok: false, reason: 'lvs', lvs };
   if (fast) {
@@ -40,11 +41,15 @@ async function evaluate(parsed, params, reference, fast = false) {
 
 function perturb(rnd, base, placedInfo) {
   const p = { ...base, order: [...(base.order || [])], flip: { ...(base.flip || {}) },
-    flipPairs: [...(base.flipPairs || [])] };
+    flipPairs: [...(base.flipPairs || [])],
+    childOrder: JSON.parse(JSON.stringify(base.childOrder || {})) };
   const roots = placedInfo.roots || [];
   const flippable = placedInfo.flippable || [];
   const pairs = placedInfo.pairs || [];
-  const move = Math.floor(rnd() * (pairs.length ? 5 : 4));
+  const fanouts = placedInfo.fanouts || {};
+  const fanoutNets = Object.keys(fanouts);
+  const nMoves = 4 + (pairs.length ? 1 : 0) + (fanoutNets.length ? 1 : 0);
+  const move = Math.floor(rnd() * nMoves);
   if (move === 0 && roots.length > 1) {
     const order = p.order.length ? p.order : [...roots];
     const i = Math.floor(rnd() * order.length);
@@ -58,11 +63,19 @@ function perturb(rnd, base, placedInfo) {
     p.colW = Math.max(150, Math.min(260, (p.colW || 190) + (rnd() < 0.5 ? -20 : 20)));
   } else if (move === 3) {
     p.rowH = Math.max(150, Math.min(240, (p.rowH || 180) + (rnd() < 0.5 ? -20 : 20)));
-  } else {
+  } else if (move === 4 && pairs.length) {
     // symétriser/désymétriser une paire différentielle (flip miroir)
     const key = pairs[Math.floor(rnd() * pairs.length)];
     const i = p.flipPairs.indexOf(key);
     if (i >= 0) p.flipPairs.splice(i, 1); else p.flipPairs.push(key);
+  } else if (fanoutNets.length) {
+    // permuter deux colonnes SŒURS sous un même fanout (ex: quad du Gilbert)
+    const net = fanoutNets[Math.floor(rnd() * fanoutNets.length)];
+    const cur = p.childOrder[net] || [...fanouts[net]];
+    const i = Math.floor(rnd() * cur.length);
+    const j = Math.floor(rnd() * cur.length);
+    [cur[i], cur[j]] = [cur[j], cur[i]];
+    p.childOrder[net] = cur;
   }
   return p;
 }
@@ -71,8 +84,8 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   const rnd = mulberry(seed);
   const history = [];
   // ---- recherche à FAISCEAU sur score rapide (géométrie seule)
-  const beamW = 5;
-  const generations = Math.max(2, Math.round(iterations / 2));
+  const beamW = 4;
+  const generations = Math.max(2, Math.round(iterations / 4));
   const seed0 = await evaluate(parsed, {}, reference, true);
   if (!seed0.ok) throw new Error('placement initial rejeté par le LVS: ' + JSON.stringify(seed0.lvs).slice(0, 300));
   let beam = [seed0];
@@ -80,7 +93,7 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   for (let g = 1; g <= generations; g++) {
     const cands = [...beam];
     for (const parent of beam) {
-      for (let k = 0; k < Math.ceil(12 / beam.length); k++) {
+      for (let k = 0; k < Math.ceil(8 / beam.length); k++) {
         const c = await evaluate(parsed, perturb(rnd, parent.params, parent.placed), reference, true);
         if (c.ok) cands.push(c);
       }
@@ -91,11 +104,13 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   }
   // ---- finalistes : score complet (rendu + OpenCV)
   let best = null;
+  const finReasons = [];
   for (const fin of beam.slice(0, 3)) {
     const full = await evaluate(parsed, fin.params, reference, false);
     if (full.ok && (best == null || full.score > best.score)) best = full;
+    else if (!full.ok) finReasons.push(full.reason);
   }
-  if (best == null) throw new Error('aucun finaliste valide');
+  if (best == null) throw new Error('aucun finaliste valide: ' + finReasons.join(','));
   history.push({ iter: 'final', score: best.score, accepted: true });
   // S3 : compaction finale, gardée par LVS + score (avec restauration)
   try {

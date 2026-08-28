@@ -287,8 +287,16 @@ export function importNetlist2(model, parsed, opts = {}) {
     const rest = below.filter((c) => !sideDiodes.includes(c));
     const shared = rest.filter((c) => parentsOf(info.get(c.ref).top) > 1);
     const solo = rest.filter((c) => !shared.includes(c));
+    let solo2 = solo;
+    const co = (P.childOrder || {})[ci.bot];
+    if (co != null) {
+      solo2 = [...solo].sort((a, b) => {
+        const ia = co.indexOf(a.ref), ib = co.indexOf(b.ref);
+        return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+      });
+    }
     let k = 0;
-    for (const c of solo) {
+    for (const c of solo2) {
       place(c.ref, k === 0 ? col : nextCol++, level + 1);
       k++;
     }
@@ -625,6 +633,18 @@ export function importNetlist2(model, parsed, opts = {}) {
 
   return { components: comps.map((c) => c.ref), wires, warnings: parsed.warnings || [],
     engine: 'place2', params: P, roots,
+    fanouts: (() => {
+      const out = {};
+      const byNet = new Map();
+      for (const c of comps) {
+        const ci2 = info.get(c.ref);
+        if (ci2 == null || ci2.top == null) continue;
+        if (!byNet.has(ci2.top)) byNet.set(ci2.top, []);
+        byNet.get(ci2.top).push(c.ref);
+      }
+      for (const [n, l] of byNet) if (l.length >= 2 && n !== '0') out[n] = l;
+      return out;
+    })(),
     pairs: structures.diffPairs.map((p) => p.refs.join('/')),
     flippable: comps.filter((c) => 'RCLD'.includes(c.prefix)).map((c) => c.ref) };
 }
