@@ -10,7 +10,7 @@ import { routePage } from './route.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 import { scoreDocument } from './beauty.js';
-import { compactPage } from './compact.js';
+import { compactPage, fastScore } from './compact.js';
 
 function mulberry(seed) {
   let a = seed >>> 0;
@@ -22,15 +22,20 @@ function mulberry(seed) {
   };
 }
 
-async function evaluate(parsed, params, reference) {
+async function evaluate(parsed, params, reference, fast = false) {
   const doc = newDocument();
   const m = getPage(doc);
   const placed = importNetlist2(m, parsed, params);
   await routePage(m, placed.wires, {});
   const lvs = compare(extractNetlist(m), parsed);
   if (!lvs.match) return { ok: false, reason: 'lvs', lvs };
+  if (fast) {
+    // score géométrique seul (~10x plus rapide) : pré-filtre du faisceau
+    const s = await fastScore(m);
+    return { ok: true, doc, m, placed, score: s, params, fast: true };
+  }
   const b = await scoreDocument(doc, m, { reference });
-  return { ok: true, doc, placed, score: b.score, metrics: b.metrics, params };
+  return { ok: true, doc, m, placed, score: b.score, metrics: b.metrics, params };
 }
 
 function perturb(rnd, base, placedInfo) {
@@ -65,15 +70,33 @@ function perturb(rnd, base, placedInfo) {
 export async function optimizeNetlist(parsed, { iterations = 10, reference = null, seed = 42 } = {}) {
   const rnd = mulberry(seed);
   const history = [];
-  let best = await evaluate(parsed, {}, reference);
-  if (!best.ok) throw new Error('placement initial rejeté par le LVS: ' + JSON.stringify(best.lvs).slice(0, 300));
-  history.push({ iter: 0, score: best.score, accepted: true });
-  for (let i = 1; i <= iterations; i++) {
-    const cand = await evaluate(parsed, perturb(rnd, best.params, best.placed), reference);
-    const accepted = cand.ok && cand.score > best.score;
-    history.push({ iter: i, score: cand.ok ? cand.score : null, accepted, rejected: cand.ok ? undefined : cand.reason });
-    if (accepted) best = cand;
+  // ---- recherche à FAISCEAU sur score rapide (géométrie seule)
+  const beamW = 5;
+  const generations = Math.max(2, Math.round(iterations / 2));
+  const seed0 = await evaluate(parsed, {}, reference, true);
+  if (!seed0.ok) throw new Error('placement initial rejeté par le LVS: ' + JSON.stringify(seed0.lvs).slice(0, 300));
+  let beam = [seed0];
+  history.push({ iter: 'g0', score: seed0.score, accepted: true });
+  for (let g = 1; g <= generations; g++) {
+    const cands = [...beam];
+    for (const parent of beam) {
+      for (let k = 0; k < Math.ceil(12 / beam.length); k++) {
+        const c = await evaluate(parsed, perturb(rnd, parent.params, parent.placed), reference, true);
+        if (c.ok) cands.push(c);
+      }
+    }
+    cands.sort((a, b) => b.score - a.score);
+    beam = cands.slice(0, beamW);
+    history.push({ iter: 'g' + g, score: beam[0].score, beam: beam.map((b) => b.score) });
   }
+  // ---- finalistes : score complet (rendu + OpenCV)
+  let best = null;
+  for (const fin of beam.slice(0, 3)) {
+    const full = await evaluate(parsed, fin.params, reference, false);
+    if (full.ok && (best == null || full.score > best.score)) best = full;
+  }
+  if (best == null) throw new Error('aucun finaliste valide');
+  history.push({ iter: 'final', score: best.score, accepted: true });
   // S3 : compaction finale, gardée par LVS + score (avec restauration)
   try {
     const backup = serialize(best.doc);

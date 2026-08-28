@@ -77,10 +77,22 @@ function structuralMetrics(model) {
   // symétrie des paires + rangées de miroirs
   const structures = detectStructures({ components: comps.map((c) => ({ ...c, model: c.value })) });
   const pairs = [...structures.diffPairs, ...structures.crossCoupled];
+  const tailOf = new Map();
+  for (const t of structures.tails) tailOf.set(t.pair.join('/'), t.ref);
   let pOk = 0;
   for (const p of pairs) {
     const [a, b] = p.refs.map(pos);
-    if (a != null && b != null && Math.abs(a.y - b.y) < 14) pOk++;
+    if (a == null || b == null) continue;
+    let s = Math.abs(a.y - b.y) < 14 ? 0.5 : 0;
+    const tref = tailOf.get(p.refs.join('/')) || tailOf.get([...p.refs].reverse().join('/'));
+    const tp = tref != null ? pos(tref) : null;
+    if (tp != null) {
+      // symétrie exacte : centre de la paire sur l'axe de la queue
+      if (Math.abs((a.x + b.x) / 2 - tp.x) < 18) s += 0.5;
+    } else {
+      s += 0.5; // pas de queue : la même hauteur suffit
+    }
+    pOk += s;
   }
   m.pair_sym = pairs.length ? Math.round((pOk / pairs.length) * 1000) / 1000 : 1;
   let mTot = 0, mOk = 0;

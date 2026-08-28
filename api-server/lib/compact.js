@@ -18,7 +18,7 @@ import { routePage, pinAbs } from './route.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.resolve(HERE, '../tools/beauty.py');
 
-async function fastScore(model) {
+export async function fastScore(model) {
   const tmp = path.join(os.tmpdir(), 'compact-' + process.pid + '-' + Date.now() + '.xml');
   fs.writeFileSync(tmp, serialize(model.ownerDocument));
   try {

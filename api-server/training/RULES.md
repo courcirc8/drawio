@@ -104,3 +104,21 @@ Poids : excess_bend (1.4) a correctement guidé ces 4 règles — inchangé.
 Leçon de poids : le score géométrique seul (sans rendu) suffit pour guider la
 compaction — 20× plus rapide, à généraliser dans l'optimiseur (candidats
 pré-filtrés sans rendu, rendu seulement pour les finalistes).
+
+### Session « encore mieux » — leviers 1-4 (mesurés, gate LVS partout)
+
+1. **Faisceau + score rapide** : tous les candidats évalués en géométrie pure
+   (~200 ms), rendu OpenCV pour 3 finalistes → ~100 évaluations là où on en
+   faisait 16, temps divisé par 4. Gilbert 28→14 coudes.
+2. **Diode dessinée comme le papier** (fil direct gate→drain, l'étoile ne voit
+   que le drain) + **ports montants dans l'axe** (flipV, label au-dessus) :
+   E1 19→14 coudes, OTA 20→18.
+3. **Symétrie exacte** dans pair_sym (centre de paire sur l'axe de la queue,
+   ½ point hauteur + ½ point axe) — le faisceau l'optimise ; toutes les paires
+   à 1.0 sauf Gilbert 0.5 (quad à 3 queues, cas à raffiner).
+4. **Bus à tronc** (≥4 terminaux, large empan → 2 jonctions + tronc, comme la
+   ligne vb des figures publiées).
+
+Bilan benchmark (optimize=16) : LNA **2 coudes / 0 excès — MIEUX que le
+papier (~4)** ; RC 4b ; VCO 0c/9b ; E1 0c/14b (38 au départ) ; OTA 0c/21b ;
+biquad 2c/17b ; Gilbert 4c/14b (32 au départ). LVS 7/7, 21/21 tests.

@@ -89,6 +89,13 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const p = placed.get(t.ref);
       const abs = pinAbs(p, t.pin);
       const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+      if (t.pin.y === 0 && t.pin.x > 0.25 && t.pin.x < 0.75) {
+        const cellUp = addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, value: net.toUpperCase() });
+        cellUp.setAttribute('style', cellUp.getAttribute('style') + 'flipV=1;verticalLabelPosition=top;verticalAlign=bottom;');
+        placed.set(id, { id, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, rotation: 0, flipV: true });
+        wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
+        continue;
+      }
       const leftish = (t.pin.x <= 0.5) !== !!p.flipH;
       let px = abs.x + (leftish ? -80 : 56), py = abs.y + 36;
       const clash = () => [...placed.values()].some((v) =>
@@ -102,6 +109,19 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const [a, b] = terms;
       wire(null, { source: a.ref, target: b.ref, sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y } });
     } else {
+      // diode-connectée sur ce net : petit fil direct gate->drain (comme les
+      // figures publiées), et seul le DRAIN participe à l'étoile
+      const seen = new Map();
+      for (const t of [...terms]) {
+        if (!seen.has(t.ref)) { seen.set(t.ref, t); continue; }
+        const other = seen.get(t.ref);
+        wire(null, { source: t.ref, target: t.ref,
+          sourcePin: { x: other.pin.x, y: other.pin.y }, targetPin: { x: t.pin.x, y: t.pin.y } });
+        // retirer le pin de GATE (x logique 0) de l'étoile, garder le drain
+        const gate = t.pin.x === 0 ? t : other;
+        const idx = terms.indexOf(gate);
+        if (idx >= 0) terms.splice(idx, 1);
+      }
       const pts = terms.map((t) => pinAbs(placed.get(t.ref), t.pin));
       // S1' : point MÉDIAN = optimum L1 exact pour un branchement unique
       // (esprit HyperedgeRerouter de libavoid, non exporté par le bundle)
@@ -170,6 +190,22 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const id = 'J_' + net.replace(/[^A-Za-z0-9]/g, '_');
       const hint = P.junctionHint != null ? P.junctionHint.get(id) : null;
       if (hint != null) { snap = { x: hint.x + 3, y: 0 }; jy = hint.y + 3; }
+      const span = Math.max(...pts.map((q) => q.x)) - Math.min(...pts.map((q) => q.x));
+      if (terms.length >= 4 && span > (P.colW || 190) * 1.5 && hint == null) {
+        // BUS : tronc horizontal à 2 jonctions (comme la ligne vb des papiers),
+        // chaque terminal se raccorde à la jonction de son côté
+        const sorted = [...terms].map((t, i) => ({ t, x: pts[i].x })).sort((a, b) => a.x - b.x);
+        const half = Math.ceil(sorted.length / 2);
+        const left = sorted.slice(0, half), right = sorted.slice(half);
+        const med = (arr) => { const a = arr.map((e) => e.x).sort((x, y) => x - y); return a[Math.floor((a.length - 1) / 2)]; };
+        const id2 = id + '_2';
+        addVertex(model, { id, style: JCT, x: med(left) - 3, y: jy - 3, w: 6, h: 6 });
+        addVertex(model, { id: id2, style: JCT, x: med(right) - 3, y: jy - 3, w: 6, h: 6 });
+        wire(null, { source: id, target: id2 });
+        for (const e of left) wire(null, { source: e.t.ref, target: id, sourcePin: { x: e.t.pin.x, y: e.t.pin.y } });
+        for (const e of right) wire(null, { source: e.t.ref, target: id2, sourcePin: { x: e.t.pin.x, y: e.t.pin.y } });
+        continue;
+      }
       addVertex(model, { id, style: JCT, x: snap.x - 3, y: jy - 3, w: 6, h: 6 });
       for (const t of terms) {
         wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y } });
