@@ -142,6 +142,27 @@ export async function routePage(model, edgeIds, opts) {
       sourceJetty: 10, targetJetty: 10,
     });
   }
+  // pré-passe : self-edges (liaisons diode gate->drain) = cadre EXTÉRIEUR
+  // au corps (règle 24) — jamais une diagonale à travers le transistor
+  for (const c of cells) {
+    if (c.kind !== 'edge' || c.source == null || c.source !== c.target) continue;
+    const body0 = byId.get(c.source);
+    if (body0 == null || body0.x == null) continue;
+    const bb = rotatedAabb(body0);
+    const aX = c.style.map.get('exitX'), aY = c.style.map.get('exitY');
+    const bX = c.style.map.get('entryX'), bY = c.style.map.get('entryY');
+    if (aX == null || bX == null) continue;
+    const a = pinAbsOf(body0, parseFloat(aX), parseFloat(aY));
+    const b = pinAbsOf(body0, parseFloat(bX), parseFloat(bY));
+    const left = a.x <= bb.x + bb.w / 2;
+    const ox = left ? bb.x - 16 : bb.x + bb.w + 16;
+    const top = b.y <= bb.y + bb.h / 2;
+    const oy = top ? bb.y - 14 : bb.y + bb.h + 14;
+    const el = allCells(model).find((x) => x.getAttribute('id') === c.id);
+    setEdgePoints(el, [{ x: ox, y: a.y }, { x: ox, y: oy }, { x: b.x, y: oy }]);
+    el.setAttribute('style', mergeStyle(el.getAttribute('style'), { jettySize: 0 }));
+  }
+
   const resp = await computeRoutesSafe(vertices, edges, opts || {});
   if (resp.error != null) return { ids: [], failed: resp.error };
   const routes = resp.routes;
@@ -160,26 +181,31 @@ export async function routePage(model, edgeIds, opts) {
     const cInfo = cellInfo(cellEl);
     const src = byId.get(e.source), tgt = byId.get(e.target);
     let out = pts;
-    // fil vers/depuis une JONCTION : L canonique si le chemin est libre
-    const isJct = (cc) => cc != null && cc.style.map.has('drawioApiJunction');
-    const jTarget = isJct(tgt), jSource = isJct(src);
-    if ((jTarget || jSource) && !(jTarget && jSource)) {
+    // PLANIFICATION DÉTERMINISTE D'ABORD (règle 31b) : les coordonnées des
+    // pins sont connues — droit si aligné et libre, L canonique si le L est
+    // libre (deux coins essayés), libavoid seulement en dernier recours
+    {
       const a = endAbs(cInfo, 'exit', src), b = endAbs(cInfo, 'entry', tgt);
-      const pinEnd = jTarget ? a : b;
-      const jEnd = jTarget ? b : a;
-      const ex = cInfo.style.map.get(jTarget ? 'exitX' : 'entryX');
-      const ey = cInfo.style.map.get(jTarget ? 'exitY' : 'entryY');
-      const vertFirst = ey === '0' || ey === '1' || (ex !== '0' && ex !== '1');
-      const corner = vertFirst ? { x: pinEnd.x, y: jEnd.y } : { x: jEnd.x, y: pinEnd.y };
       const clear = (p, q) => !vertices.some((v) =>
         v.id !== e.source && v.id !== e.target &&
         Math.max(p.x, q.x) > v.x + 3 && Math.min(p.x, q.x) < v.x + v.w - 3 &&
         Math.max(p.y, q.y) > v.y + 3 && Math.min(p.y, q.y) < v.y + v.h - 3);
-      if (clear(pinEnd, corner) && clear(corner, jEnd)) {
-        out = (Math.abs(pinEnd.x - jEnd.x) < 1 || Math.abs(pinEnd.y - jEnd.y) < 1) ? [] : [corner];
-        setEdgePoints(cellEl, out);
-        // le jetty auto du renderer fabrique des marches sur ces fils courts :
-        // sortie de pin directe
+      const aligned = Math.abs(a.x - b.x) < 1 || Math.abs(a.y - b.y) < 1;
+      if (aligned && clear(a, b)) {
+        setEdgePoints(cellEl, []);
+        cellEl.setAttribute('style', mergeStyle(cellEl.getAttribute('style'), { jettySize: 0 }));
+        routed.push(e.id);
+        continue;
+      }
+      const ex = cInfo.style.map.get('exitX'), ey = cInfo.style.map.get('exitY');
+      const vertFirst = ey === '0' || ey === '1' || (ex !== '0' && ex !== '1');
+      const c1 = vertFirst ? { x: a.x, y: b.y } : { x: b.x, y: a.y };
+      const c2 = vertFirst ? { x: b.x, y: a.y } : { x: a.x, y: b.y };
+      let corner = null;
+      if (clear(a, c1) && clear(c1, b)) corner = c1;
+      else if (clear(a, c2) && clear(c2, b)) corner = c2;
+      if (corner != null) {
+        setEdgePoints(cellEl, [corner]);
         cellEl.setAttribute('style', mergeStyle(cellEl.getAttribute('style'), { jettySize: 0 }));
         routed.push(e.id);
         continue;

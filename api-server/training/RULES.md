@@ -257,3 +257,26 @@ LVS 5/5, toutes les règles utilisateur intactes (invariants).
 Note : la variance du faisceau fait osciller le Gilbert 9↔17 coudes selon la
 trajectoire (ablation : règles 29-30 neutres, v2 brut identique) — la sortie
 déterministe reste le gabarit de quad (S4).
+
+### « As-tu conscience des coordonnées ? » — réponse architecturale (règles 31)
+
+Oui : chaque pin (pinAbs, flip/rotation compris), waypoint et jonction est
+connu exactement. Le défaut était ARCHITECTURAL : des passes locales, fil par
+fil, sans planification du net comme un tout — d'où étoiles redondantes et
+fils de même potentiel qui se longent.
+
+31. **Un net = un arbre couvrant minimal** (Prim, distance de Manhattan,
+    coût ÷2 pour les liaisons colinéaires → l'arbre préfère les troncs
+    d'axe puis les dérivations courtes). Plus d'étoile systématique, plus
+    de jonctions artificielles, plus de fil de diode séparé : la gate est
+    un terminal comme un autre. Les dots naissent aux tés (règle 30).
+31b. **Routage déterministe d'abord** : pour chaque fil, droit si aligné et
+    libre, L canonique si un des deux coins est libre — libavoid seulement
+    en dernier recours. Le pipeline UTILISE enfin les coordonnées qu'il
+    connaît au lieu de les redécouvrir par recherche.
+Rappel : les self-edges (liaisons diode) gardent leur cadre extérieur
+(règle 24, pré-passe dédiée).
+
+Bilan (optimize=12) : biquad 1c/3b/0e (SOUS le papier), OTA 1c/8b/0e,
+LNA complet 0c/9b/0e, Gilbert 0c/10b (zéro croisement !), VCO 1c/8b.
+Excès quasi nuls partout. LVS 5/5.

@@ -109,117 +109,47 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
     } else if (terms.length === 2) {
       const [a, b] = terms;
-      wire(null, { source: a.ref, target: b.ref, sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y } });
-    } else {
-      // diode-connectée sur ce net : petit fil direct gate->drain (comme les
-      // figures publiées), et seul le DRAIN participe à l'étoile
-      const seen = new Map();
-      for (const t of [...terms]) {
-        if (!seen.has(t.ref)) { seen.set(t.ref, t); continue; }
-        const other = seen.get(t.ref);
-        // liaison diode : L EXTÉRIEUR au corps (waypoints explicites — le
-        // renderer dessine sinon une diagonale à travers le transistor)
-        const pc2 = placed.get(t.ref);
-        const gate = t.pin.x === 0 ? t : other;
-        const drain = gate === t ? other : t;
-        const g = pinAbs(pc2, gate.pin), dr = pinAbs(pc2, drain.pin);
-        const left = g.x <= pc2.x + pc2.w / 2;
-        const ox = left ? Math.min(g.x, pc2.x) - 16 : Math.max(g.x, pc2.x + pc2.w) + 16;
-        const top = dr.y <= pc2.y + pc2.h / 2;
-        const oy = top ? pc2.y - 14 : pc2.y + pc2.h + 14;
-        wire(null, { source: t.ref, target: t.ref,
-          sourcePin: { x: gate.pin.x, y: gate.pin.y }, targetPin: { x: drain.pin.x, y: drain.pin.y },
-          points: [{ x: ox, y: g.y }, { x: ox, y: oy }, { x: dr.x, y: oy }] });
-        const idx = terms.indexOf(gate);
-        if (idx >= 0) terms.splice(idx, 1);
-      }
-      const pts = terms.map((t) => pinAbs(placed.get(t.ref), t.pin));
-      // S1' : point MÉDIAN = optimum L1 exact pour un branchement unique
-      // (esprit HyperedgeRerouter de libavoid, non exporté par le bundle)
-      const med = (arr) => { const a = [...arr].sort((x, y) => x - y); return a[Math.floor((a.length - 1) / 2)]; };
-      let cx = med(pts.map((q) => q.x)), cy = med(pts.map((q) => q.y));
-      let snap = { x: cx, y: cy };
-      const gateCount = terms.filter((t) => {
-        const c = comps.find((k) => k.ref === t.ref);
-        return c != null && (c.prefix === 'M' || c.prefix === 'Q') && info.get(c.ref).gatePin === t.pinName;
-      }).length;
-      const nCols = new Set(pts.map((q) => Math.round((q.x - P.x0) / P.colW))).size;
-      const isBus = gateCount >= 2 && nCols >= 3;
-      // axe vertical dominant (pile) : si >=2 pins partagent le même x,
-      // la jonction reste SUR cet axe, entre eux
-      const byX = new Map();
-      for (const q of pts) {
-        const key = Math.round(q.x / 5) * 5;
-        if (!byX.has(key)) byX.set(key, []);
-        byX.get(key).push(q);
-      }
-      const axis = [...byX.entries()].find(([, l]) => l.length >= 2);
-      if (axis != null && !isBus) {
-        const ys = axis[1].map((q) => q.y).sort((a, b) => a - b);
-        snap = { x: axis[1][0].x, y: 0 };
-        cy = (ys[0] + ys[ys.length - 1]) / 2;
-      } else if (!isBus) {
-        // axe horizontal dominant (ligne de chaîne) : dot SUR la ligne, au
-        // droit du pin hors-ligne
-        const byY = new Map();
-        for (const q of pts) {
-          const key = Math.round(q.y / 5) * 5;
-          if (!byY.has(key)) byY.set(key, []);
-          byY.get(key).push(q);
-        }
-        const yAxis = [...byY.entries()].find(([, l]) => l.length >= 2);
-        if (yAxis != null) {
-          const off = pts.find((q) => Math.round(q.y / 5) * 5 !== yAxis[0]);
-          snap = { x: (off || pts[0]).x, y: 0 };
-          cy = yAxis[1][0].y;
-        }
-      }
-      // net de miroir NON-bus : jonction ancrée sur le drain de la diode
-      const diode = (isBus || axis != null) ? null : comps.find((k) => (k.prefix === 'M' || k.prefix === 'Q') &&
-        k.nodes[0] === net && k.nodes[1] === net && placed.has(k.ref));
-      if (diode != null) {
-        const di = info.get(diode.ref);
-        const dpin = getPin(di.shapeKey, di.po[0]);
-        const dabs = pinAbs(placed.get(diode.ref), dpin);
-        const p = placed.get(diode.ref);
-        snap = dabs;
-        cy = isPmos(diode) ? p.y + p.h + 28 : p.y - 28;
-      }
-      let jy = isBus ? Math.max(...pts.map((q) => q.y)) + 55 : cy;
-      {
-        // jamais dans un corps de composant (bus compris)
-        const boxes = [...placed.values()].filter((v) => Math.abs((v.x + v.w / 2) - snap.x) < v.w);
-        const inBox = (yy) => boxes.some((v) => yy > v.y - 8 && yy < v.y + v.h + 8);
-        if (inBox(jy)) {
-          const base = jy;
-          for (let d = 10; d < 400; d += 10) {
-            if (!inBox(base + d)) { jy = base + d; break; }
-            if (!isBus && !inBox(base - d)) { jy = base - d; break; }
-          }
-        }
-      }
-      const id = 'J_' + net.replace(/[^A-Za-z0-9]/g, '_');
-      const hint = P.junctionHint != null ? P.junctionHint.get(id) : null;
-      if (hint != null) { snap = { x: hint.x + 3, y: 0 }; jy = hint.y + 3; }
-      const span = Math.max(...pts.map((q) => q.x)) - Math.min(...pts.map((q) => q.x));
-      if (terms.length >= 4 && span > (P.colW || 190) * 1.5 && hint == null) {
-        // BUS : tronc horizontal à 2 jonctions (comme la ligne vb des papiers),
-        // chaque terminal se raccorde à la jonction de son côté
-        const sorted = [...terms].map((t, i) => ({ t, x: pts[i].x })).sort((a, b) => a.x - b.x);
-        const half = Math.ceil(sorted.length / 2);
-        const left = sorted.slice(0, half), right = sorted.slice(half);
-        const med = (arr) => { const a = arr.map((e) => e.x).sort((x, y) => x - y); return a[Math.floor((a.length - 1) / 2)]; };
-        const id2 = id + '_2';
-        addVertex(model, { id, style: JCT, x: med(left) - 3, y: jy - 3, w: 6, h: 6 });
-        addVertex(model, { id: id2, style: JCT, x: med(right) - 3, y: jy - 3, w: 6, h: 6 });
-        wire(null, { source: id, target: id2 });
-        for (const e of left) wire(null, { source: e.t.ref, target: id, sourcePin: { x: e.t.pin.x, y: e.t.pin.y } });
-        for (const e of right) wire(null, { source: e.t.ref, target: id2, sourcePin: { x: e.t.pin.x, y: e.t.pin.y } });
+      // cross-couplage de quad : gate-gate même rangée, colonnes éloignées
+      // -> diagonale droite assumée (style des figures publiées), non routée
+      const gA = comps.find((k) => k.ref === a.ref), gB = comps.find((k) => k.ref === b.ref);
+      const bothGates = gA != null && gB != null &&
+        (gA.prefix === 'M' || gA.prefix === 'Q') && (gB.prefix === 'M' || gB.prefix === 'Q') &&
+        info.get(gA.ref).gatePin === a.pinName && info.get(gB.ref).gatePin === b.pinName;
+      const pA = pinAbs(placed.get(a.ref), a.pin), pB = pinAbs(placed.get(b.ref), b.pin);
+      if (bothGates && Math.abs(pA.y - pB.y) < 60 && Math.abs(pA.x - pB.x) > (P.colW || 190)) {
+        wire(null, { source: a.ref, target: b.ref,
+          sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y },
+          style: 'edgeStyle=none;html=1;endArrow=none;endFill=0;' });
         continue;
       }
-      addVertex(model, { id, style: JCT, x: snap.x - 3, y: jy - 3, w: 6, h: 6 });
-      for (const t of terms) {
-        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y } });
+      wire(null, { source: a.ref, target: b.ref, sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y } });
+    } else {
+      // règle 31 : net multi-terminal = ARBRE COUVRANT MINIMAL sur les
+      // coordonnées réelles des pins (Prim, distance de Manhattan) — un
+      // tronc et des dérivations comme dans un dessin humain, jamais
+      // d'étoile redondante ni de fil de diode séparé (la gate est un
+      // terminal comme un autre, l'arbre la raccorde au plus court) ;
+      // les points de contact naissent aux pins partagés (règle 30)
+      const pts = terms.map((t) => pinAbs(placed.get(t.ref), t.pin));
+      const inTree = [0];
+      const rest2 = terms.map((_, i2) => i2).slice(1);
+      while (rest2.length) {
+        let bi = -1, bj = -1, bd = Infinity;
+        for (const i2 of inTree) {
+          for (const j2 of rest2) {
+            const dx2 = Math.abs(pts[i2].x - pts[j2].x), dy2 = Math.abs(pts[i2].y - pts[j2].y);
+            // coût orienté axe : une liaison colinéaire (tronc) coûte moitié
+            // prix, l'arbre préfère les troncs puis les dérivations courtes
+            let d2 = dx2 + dy2;
+            if (dx2 < 5 || dy2 < 5) d2 *= 0.5;
+            if (d2 < bd) { bd = d2; bi = i2; bj = j2; }
+          }
+        }
+        const ta = terms[bi], tb = terms[bj];
+        wire(null, { source: ta.ref, target: tb.ref,
+          sourcePin: { x: ta.pin.x, y: ta.pin.y }, targetPin: { x: tb.pin.x, y: tb.pin.y } });
+        inTree.push(bj);
+        rest2.splice(rest2.indexOf(bj), 1);
       }
     }
   }
