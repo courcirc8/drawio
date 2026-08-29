@@ -65,6 +65,10 @@ curl -s -X POST :8770/documents/doc1/route -d '{}' -H 'Content-Type: application
 curl -s -X POST ':8770/documents/doc1/netlist/import?optimize=14' -H 'Content-Type: text/plain' --data-binary @c.cir
 # score de qualité visuelle (géométrie XML + OpenCV ; "reference" optionnelle = PNG à imiter)
 curl -s -X POST :8770/documents/doc1/beauty -H 'Content-Type: application/json' -d '{}'
+# checker de règles (DRC schématique) : violations typées {rule, severity, message, cells}
+# règles vérifiées : through (fil à travers un corps), 22 (nets superposés),
+# 30/30b (points de contact manquants/dupliqués), 32 (diode côté drain), 14/26 (rangées)
+curl -s -X POST :8770/documents/doc1/check -H 'Content-Type: application/json' -d '{}'
 ```
 `?engine=v1|v2` force un moteur sans optimisation. Le score /100 pénalise
 croisements, traversées de composants, coudes, longueur, désalignement,

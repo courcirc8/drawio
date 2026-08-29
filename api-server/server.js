@@ -215,6 +215,12 @@ app.post('/documents/:id/compact', wrap(async (req, res) => {
   res.json(r);
 }));
 
+app.post('/documents/:id/check', wrap(async (req, res) => {
+  const { model: m } = pageOf(req);
+  const { checkDocument } = await import('./lib/check.js');
+  res.json(checkDocument(m));
+}));
+
 app.post('/documents/:id/beauty', wrap(async (req, res) => {
   const { entry, model: m } = pageOf(req);
   const b = req.body || {};

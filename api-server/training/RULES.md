@@ -280,3 +280,43 @@ Rappel : les self-edges (liaisons diode) gardent leur cadre extérieur
 Bilan (optimize=12) : biquad 1c/3b/0e (SOUS le papier), OTA 1c/8b/0e,
 LNA complet 0c/9b/0e, Gilbert 0c/10b (zéro croisement !), VCO 1c/8b.
 Excès quasi nuls partout. LVS 5/5.
+
+### Session « revue sceptique + checker » (2026-08-29)
+
+L'utilisateur a vu des violations sur les rendus finaux. Un vérificateur
+programmatique (`lib/check.js`, `POST /documents/:id/check`) contrôle
+désormais les règles sur la géométrie exacte et a trouvé 32 violations sur
+6 schémas — toutes corrigées, suite à 0 erreur / 0 warning sur les 6.
+
+Ce que le checker vérifie : through (aucun fil, diagonale volontaire
+comprise, à travers un corps non-terminal), 22 (segments colinéaires de
+nets différents à <6 px), 30 (branche ≥3 voies sans point de contact ;
+2 fils au même pin comptent, une jonction en exige 3) + 30b (dots
+dupliqués <10 px), 32 (boucle de diode côté drain), 14/26 (paires et
+miroirs sur la même rangée).
+
+Causes racines trouvées par le checker (invisibles à l'œil ou au score) :
+- dots jamais purgés entre les passes de l'optimiseur → dots fantômes à
+  des coordonnées périmées (purge de contactDot=1 avant recalcul) ;
+- `addContactDots` ignorait les self-edges et les rencontres AU pin ;
+- le L déterministe posait son coin sur le pin d'un net étranger
+  (Gilbert : coin de M2→M5 exactement sur le pin source de M4) ;
+- `separateNets` : ping-pong de shifts (réparer A recréait le conflit B,
+  interdit de re-réparation par le done-set) → une lane cible doit être
+  LIBRE de tout net étranger ; fils droits pin-à-pin réparés par
+  synthèse d'un U ; nettoyage des doublons/pointes A→B→A.
+
+32. **Diode (gate-drain) : la connexion passe côté DRAIN** (règle
+    utilisateur) — bas pour un PMOS source en haut, haut pour un NMOS.
+    Implémenté dans la pré-passe self-edge (le côté vient du pin de
+    drain, plus de l'ordre arbitraire des extrémités) et vérifié.
+33. **La ligne de vue d'une diagonale volontaire doit être libre** : la
+    liaison gate-gate droite du quad traversait les corps intérieurs.
+    Sinon : contournement par une lane extérieure claire, tracé figé
+    (drawioApiFixedRoute), hors bande d'étiquettes (18 px sous les corps).
+34. **Paire cross-couplée : gates face au centre + X en diagonales
+    volontaires** (gate → terminal le plus proche du net en ligne de vue
+    libre). Deux tracés orthogonaux qui se disputent les mêmes lanes
+    sont irréparables ; le X des figures publiées est LA solution. La
+    paire étant redétectée comme paire diff (source partagée), le flip
+    cc l'emporte sur le flip diff.

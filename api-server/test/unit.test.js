@@ -245,3 +245,57 @@ test('patterns: structures détectées sur les circuits de référence', async (
   const gil = load('gilbert-mixer.cir');
   assert.equal(gil.diffPairs.length, 3);
 });
+
+// ---- checker de règles (lib/check.js)
+test('check: superposition inter-nets (règle 22) détectée', async () => {
+  const { checkDocument } = await import('../lib/check.js');
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  model.addVertex(m, { id: 'A', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'B', shape: 'mxgraph.electrical.resistors.resistor_2', x: 400, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'C', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 200, w: 100, h: 20 });
+  model.addVertex(m, { id: 'D', shape: 'mxgraph.electrical.resistors.resistor_2', x: 400, y: 200, w: 100, h: 20 });
+  // deux fils de nets différents sur la MÊME lane horizontale y=100
+  model.addWire(m, { id: 'w1', source: 'A', target: 'B', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 },
+    points: [{ x: 150, y: 100 }, { x: 380, y: 100 }] });
+  model.addWire(m, { id: 'w2', source: 'C', target: 'D', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 },
+    points: [{ x: 150, y: 100 }, { x: 380, y: 100 }] });
+  const r = checkDocument(m);
+  assert.ok(r.violations.some((v) => v.rule === '22'), 'règle 22 attendue: ' + JSON.stringify(r.violations));
+});
+
+test('check: branche à 3 voies sans dot (règle 30) détectée, puis satisfaite par un dot', async () => {
+  const { checkDocument } = await import('../lib/check.js');
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  model.addVertex(m, { id: 'A', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'B', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'C', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 200, w: 100, h: 20 });
+  // deux fils partent du MÊME pin de A -> 3 voies au pin (règle 30)
+  model.addWire(m, { id: 'w1', source: 'A', target: 'B', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 } });
+  model.addWire(m, { id: 'w2', source: 'A', target: 'C', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 } });
+  const r1 = checkDocument(m);
+  assert.ok(r1.violations.some((v) => v.rule === '30'), 'règle 30 attendue: ' + JSON.stringify(r1.violations));
+  // un dot posé au pin (100,10) satisfait la règle
+  const dot = m.ownerDocument.createElement('mxCell');
+  dot.setAttribute('id', 'DOTX'); dot.setAttribute('vertex', '1'); dot.setAttribute('parent', '1');
+  dot.setAttribute('style', 'ellipse;fillColor=#000000;drawioApiJunction=1;contactDot=1;');
+  const g = m.ownerDocument.createElement('mxGeometry');
+  g.setAttribute('x', '97'); g.setAttribute('y', '7'); g.setAttribute('width', '6'); g.setAttribute('height', '6');
+  g.setAttribute('as', 'geometry'); dot.appendChild(g);
+  m.getElementsByTagName('root')[0].appendChild(dot);
+  const r2 = checkDocument(m);
+  assert.ok(!r2.violations.some((v) => v.rule === '30'), 'plus de règle 30: ' + JSON.stringify(r2.violations));
+});
+
+test('check: fil à travers un corps (through) détecté', async () => {
+  const { checkDocument } = await import('../lib/check.js');
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  model.addVertex(m, { id: 'A', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 90, w: 100, h: 20 });
+  model.addVertex(m, { id: 'B', shape: 'mxgraph.electrical.resistors.resistor_2', x: 400, y: 90, w: 100, h: 20 });
+  model.addVertex(m, { id: 'M', shape: 'mxgraph.electrical.mosfets1.mosfet_n_no_bulk', x: 220, y: 50, w: 70, h: 110 });
+  model.addWire(m, { id: 'w1', source: 'A', target: 'B', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 } });
+  const r = checkDocument(m);
+  assert.ok(r.violations.some((v) => v.rule === 'through'), 'through attendu: ' + JSON.stringify(r.violations));
+});

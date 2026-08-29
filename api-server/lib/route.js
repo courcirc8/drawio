@@ -133,6 +133,7 @@ export async function routePage(model, edgeIds, opts) {
     if (c.source == null || c.target == null) continue;
     if (c.source === c.target) continue;
     if (c.style.map.get('edgeStyle') === 'none') continue; // diagonale volontaire
+    if (c.style.map.has('drawioApiFixedRoute')) continue; // tracé figé par le placeur
     const src = byId.get(c.source), tgt = byId.get(c.target);
     if (src == null || tgt == null) continue;
     edges.push({
@@ -154,12 +155,17 @@ export async function routePage(model, edgeIds, opts) {
     if (aX == null || bX == null) continue;
     const a = pinAbsOf(body0, parseFloat(aX), parseFloat(aY));
     const b = pinAbsOf(body0, parseFloat(bX), parseFloat(bY));
-    const left = a.x <= bb.x + bb.w / 2;
+    // règle 32 : le pin haut/bas est le drain (la gate est sur le flanc) —
+    // la boucle gate-drain passe du CÔTÉ DRAIN (bas pour un PMOS source en
+    // haut, haut pour un NMOS drain en haut), jamais du côté source
+    const aIsDrain = Math.abs(parseFloat(aY) - 0.5) > 0.25;
+    const g = aIsDrain ? b : a, d = aIsDrain ? a : b;
+    const left = g.x <= bb.x + bb.w / 2;
     const ox = left ? bb.x - 16 : bb.x + bb.w + 16;
-    const top = b.y <= bb.y + bb.h / 2;
-    const oy = top ? bb.y - 14 : bb.y + bb.h + 14;
+    const oy = d.y <= bb.y + bb.h / 2 ? bb.y - 14 : bb.y + bb.h + 14;
     const el = allCells(model).find((x) => x.getAttribute('id') === c.id);
-    setEdgePoints(el, [{ x: ox, y: a.y }, { x: ox, y: oy }, { x: b.x, y: oy }]);
+    const path = [{ x: ox, y: g.y }, { x: ox, y: oy }, { x: d.x, y: oy }];
+    setEdgePoints(el, aIsDrain ? path.slice().reverse() : path);
     el.setAttribute('style', mergeStyle(el.getAttribute('style'), { jettySize: 0 }));
   }
 
@@ -174,6 +180,23 @@ export async function routePage(model, edgeIds, opts) {
     const b = rotatedAabb(cell);
     return { x: b.x + b.w / 2, y: b.y + b.h / 2 }; // attache flottante : centre
   };
+  // pins de tous les fils (nets étrangers = interdits de survol pour les
+  // tracés déterministes : un L qui pose son coin sur le pin d'un autre net
+  // fabrique une superposition électrique — règle 22, vu sur le Gilbert)
+  const edgeNetAll = netGroups(cells);
+  const pinPts = [];
+  for (const c of cells) {
+    if (c.kind !== 'edge' || c.source == null || c.target == null) continue;
+    const s = byId.get(c.source), t = byId.get(c.target);
+    if (s == null || t == null || s.x == null || t.x == null) continue;
+    pinPts.push({ p: endAbs(c, 'exit', s), net: edgeNetAll.get(c.id) });
+    pinPts.push({ p: endAbs(c, 'entry', t), net: edgeNetAll.get(c.id) });
+  }
+  const distPS = (pt, p, q) => {
+    const dx = q.x - p.x, dy = q.y - p.y, L2 = dx * dx + dy * dy;
+    const tt = L2 ? Math.max(0, Math.min(1, ((pt.x - p.x) * dx + (pt.y - p.y) * dy) / L2)) : 0;
+    return Math.hypot(pt.x - (p.x + tt * dx), pt.y - (p.y + tt * dy));
+  };
   for (const e of edges) {
     const pts = routes[e.id];
     if (pts == null) continue;
@@ -186,7 +209,10 @@ export async function routePage(model, edgeIds, opts) {
     // libre (deux coins essayés), libavoid seulement en dernier recours
     {
       const a = endAbs(cInfo, 'exit', src), b = endAbs(cInfo, 'entry', tgt);
-      const clear = (p, q) => !vertices.some((v) =>
+      const myNet = edgeNetAll.get(e.id);
+      const clearPins = (p, q) => !pinPts.some((pp) =>
+        pp.net !== myNet && distPS(pp.p, p, q) < 5);
+      const clear = (p, q) => clearPins(p, q) && !vertices.some((v) =>
         v.id !== e.source && v.id !== e.target &&
         Math.max(p.x, q.x) > v.x + 3 && Math.min(p.x, q.x) < v.x + v.w - 3 &&
         Math.max(p.y, q.y) > v.y + 3 && Math.min(p.y, q.y) < v.y + v.h - 3);
@@ -230,6 +256,8 @@ export async function routePage(model, edgeIds, opts) {
   if (process.env.DISABLE_MERGE !== '1') mergeSameNet(model, vertices);
   // ---- séparation : deux nets différents ne se superposent JAMAIS
   separateNets(model, vertices);
+  // ---- nettoyage : points dupliqués et pointes A->B->A laissés par les réparations
+  cleanupDegeneratePoints(model);
   // ---- points de contact sur les branches >=3 terminaux (après géométrie finale)
   if (process.env.DISABLE_DOTS !== '1') addContactDots(model);
   return { ids: routed };
@@ -339,8 +367,40 @@ function mergeSameNet(model, obstacles) {
   }
 }
 
+/** Retire des waypoints les doublons consécutifs et les pointes A->B->A. */
+function cleanupDegeneratePoints(model) {
+  for (const el of allCells(model)) {
+    const c = cellInfo(el);
+    if (c.kind !== 'edge' || !(c.points || []).length) continue;
+    let pts = c.points.slice(), changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        if (Math.hypot(pts[i].x - pts[i + 1].x, pts[i].y - pts[i + 1].y) < 0.6) {
+          pts.splice(i + 1, 1); changed = true; break;
+        }
+      }
+      if (changed) continue;
+      for (let i = 0; i + 2 < pts.length; i++) {
+        if (Math.hypot(pts[i].x - pts[i + 2].x, pts[i].y - pts[i + 2].y) < 0.6) {
+          pts.splice(i + 1, 2); changed = true; break; // pointe aller-retour
+        }
+      }
+    }
+    if (pts.length !== c.points.length) setEdgePoints(el, pts);
+  }
+}
+
 function addContactDots(model) {
   const JDOT = 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;';
+  // les dots sont une DÉCORATION recalculée : purge d'abord ceux des passes
+  // précédentes (sinon ils survivent aux déplacements de l'optimiseur et
+  // flottent en l'air à des coordonnées périmées)
+  for (const el of allCells(model)) {
+    if (el.getAttribute('vertex') === '1' && /contactDot=1/.test(el.getAttribute('style') || '')) {
+      el.parentNode.removeChild(el);
+    }
+  }
   const cells = allCells(model).map(cellInfo);
   const byId2 = new Map(cells.map((c) => [c.id, c]));
   const edgeNet = netGroups(cells);
@@ -363,12 +423,34 @@ function addContactDots(model) {
       for (const pt of [plA[0], plA[plA.length - 1]]) {
         for (let k = 0; k + 1 < plB.length; k++) {
           if (!onSeg(pt, plB[k], plB[k + 1])) continue;
-          if (existingDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 8)) continue;
-          if (newDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 8)) continue;
+          if (existingDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 12)) continue;
+          if (newDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 12)) continue;
           newDots.push({ x: pt.x, y: pt.y });
         }
       }
     }
+  }
+  // règle 30 (suite) : deux fils aboutissant au même PIN d'un composant font,
+  // avec la broche elle-même, une branche à 3 voies -> point de contact ;
+  // sur une cellule de jonction il faut >=3 fils (2 = simple traversée).
+  // Clustering par DISTANCE réelle (pas de grille : une frontière de bucket
+  // faisait rater des points de contact)
+  const meet = [];
+  const selfWires = cells.filter((c) => c.kind === 'edge' && c.source != null && c.source === c.target);
+  for (const A of wires.concat(selfWires)) {
+    const plA = polylineOf(A, byId2);
+    if (plA == null) continue;
+    for (const [pt, cid] of [[plA[0], A.source], [plA[plA.length - 1], A.target]]) {
+      const c0 = meet.find((m) => Math.hypot(m.pt.x - pt.x, m.pt.y - pt.y) < 4);
+      if (c0 != null) { c0.cids.add(cid); c0.n++; } else meet.push({ pt, cids: new Set([cid]), n: 1 });
+    }
+  }
+  for (const { pt, cids, n } of meet) {
+    const onJunction = [...cids].every((cid) => byId2.get(cid)?.style.map.has('drawioApiJunction'));
+    if (n < (onJunction ? 3 : 2)) continue;
+    if (existingDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 12)) continue;
+    if (newDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 12)) continue;
+    newDots.push({ x: pt.x, y: pt.y });
   }
   let dseq = 0;
   for (const dd of newDots) {
@@ -395,7 +477,11 @@ function addContactDots(model) {
  * segment mobile (waypoints intérieurs), sinon insertion d'un dog-leg.
  */
 function separateNets(model, obstacles) {
-  const blocked = (x1, y1, x2, y2) => obstacles.some((v) =>
+  // les gros composants (transistors…) portent leur étiquette sous le corps :
+  // la bande de 18 px sous eux est interdite aux lanes de réparation
+  const zones = obstacles.flatMap((v) => v.h >= 80
+    ? [v, { x: v.x, y: v.y + v.h, w: v.w, h: 18 }] : [v]);
+  const blocked = (x1, y1, x2, y2) => zones.some((v) =>
     Math.max(x1, x2) > v.x + 3 && Math.min(x1, x2) < v.x + v.w - 3 &&
     Math.max(y1, y2) > v.y + 3 && Math.min(y1, y2) < v.y + v.h - 3);
   const done = new Set();
@@ -434,7 +520,7 @@ function separateNets(model, obstacles) {
         if (Math.abs(p.y - q.y) < 0.6 && Math.abs(p.x - q.x) >= 0.6) segs.push({ axis: 'h', lane: p.y, a: Math.min(p.x, q.x), b: Math.max(p.x, q.x), i });
         else if (Math.abs(p.x - q.x) < 0.6 && Math.abs(p.y - q.y) >= 0.6) segs.push({ axis: 'v', lane: p.x, a: Math.min(p.y, q.y), b: Math.max(p.y, q.y), i });
       }
-      edgesInfo.push({ c, a, b, segs, nPl: pl.length });
+      edgesInfo.push({ c, a, b, segs, pl, nPl: pl.length });
     }
     let repaired = false;
     outer:
@@ -448,13 +534,25 @@ function separateNets(model, obstacles) {
             const lo = Math.max(sa.a, sb.a), hi = Math.min(sa.b, sb.b);
             if (hi - lo < 10) continue;
             const pairKey = [A.c.id, Bv.c.id, sa.axis, Math.round(lo), Math.round(hi)].join('|');
-            if (done.has(pairKey)) continue;
+            if (done.has(pairKey)) {
+              if (process.env.DEBUG_SEP === '1') console.error(`[sep] SKIP done ${A.c.source}->${A.c.target} vs ${Bv.c.source}->${Bv.c.target} ${sa.axis} lane=${sa.lane} [${lo},${hi}]`);
+              continue;
+            }
             done.add(pairKey);
+            if (process.env.DEBUG_SEP === '1') console.error(`[sep] repair#${repairs} ${A.c.source}->${A.c.target} vs ${Bv.c.source}->${Bv.c.target} ${sa.axis} lane=${sa.lane} [${lo},${hi}]`);
             const delta = 14;
+            // une lane cible est INTERDITE si un net étranger y possède déjà
+            // un segment colinéaire recouvrant (sinon : ping-pong de shifts
+            // qui recrée le recouvrement initial, vu sur le Gilbert)
+            const laneOccupied = (ei, axis, lane2, l2, h2) => edgesInfo.some((other) =>
+              other !== ei && find(other.a) !== find(ei.a) &&
+              other.segs.some((s2) => s2.axis === axis && Math.abs(s2.lane - lane2) < 6 &&
+                Math.min(s2.b, h2) - Math.max(s2.a, l2) > 10));
             // 1) décaler un segment INTÉRIEUR (2 waypoints)
             const shift = (ei, seg, d) => {
               const npts = ei.c.points || [];
               if (!(seg.i >= 1 && seg.i <= npts.length - 1)) return false;
+              if (laneOccupied(ei, seg.axis, seg.lane + d, seg.a, seg.b)) return false;
               const p = npts[seg.i - 1], q = npts[seg.i];
               if (seg.axis === 'h') {
                 if (blocked(seg.a, seg.lane + d, seg.b, seg.lane + d)) return false;
@@ -467,13 +565,38 @@ function separateNets(model, obstacles) {
               setEdgePoints(el, npts);
               return true;
             };
-            if (shift(A, sa, -delta) || shift(A, sa, delta) || shift(Bv, sb, -delta) || shift(Bv, sb, delta)) {
-              repaired = true; break outer;
+            // 1bis) fil DROIT pin-à-pin (0 waypoint) : on le transforme en U
+            // sur une lane libre — un segment unique entre deux ancres est
+            // sinon immobile (vu : les 2 barres de source du quad Gilbert)
+            const straighten = (ei, seg, d) => {
+              if ((ei.c.points || []).length || ei.segs.length !== 1) return false;
+              if (laneOccupied(ei, seg.axis, seg.lane + d, seg.a, seg.b)) return false;
+              if (seg.axis === 'h' ? blocked(seg.a, seg.lane + d, seg.b, seg.lane + d)
+                                   : blocked(seg.lane + d, seg.a, seg.lane + d, seg.b)) return false;
+              const el2 = allCells(model).find((x) => x.getAttribute('id') === ei.c.id);
+              const p0 = ei.pl[0], p1 = ei.pl[ei.pl.length - 1];
+              setEdgePoints(el2, seg.axis === 'h'
+                ? [{ x: p0.x, y: seg.lane + d }, { x: p1.x, y: seg.lane + d }]
+                : [{ x: seg.lane + d, y: p0.y }, { x: seg.lane + d, y: p1.y }]);
+              return true;
+            };
+            for (const d of [-delta, delta, -2 * delta, 2 * delta, -3 * delta, 3 * delta, -4 * delta, 4 * delta]) {
+              if (shift(A, sa, d) || shift(Bv, sb, d) || straighten(A, sa, d) || straighten(Bv, sb, d)) {
+                repaired = true; break outer;
+              }
             }
             // 2) dog-leg sur le chevauchement de A (index pts = index pl du début de segment)
             const el = allCells(model).find((x) => x.getAttribute('id') === A.c.id);
-            const dgn = blocked(sa.axis === 'h' ? lo : sa.lane - delta, sa.axis === 'h' ? sa.lane - delta : lo,
-                                sa.axis === 'h' ? hi : sa.lane - delta, sa.axis === 'h' ? sa.lane - delta : hi) ? delta : -delta;
+            const laneFreeFor = (d) =>
+              !laneOccupied(A, sa.axis, sa.lane + d, lo, hi) &&
+              !blocked(sa.axis === 'h' ? lo : sa.lane + d, sa.axis === 'h' ? sa.lane + d : lo,
+                       sa.axis === 'h' ? hi : sa.lane + d, sa.axis === 'h' ? sa.lane + d : hi);
+            let dgn = null;
+            for (const d of [-delta, delta, -2 * delta, 2 * delta, -3 * delta, 3 * delta, -4 * delta, 4 * delta]) { if (laneFreeFor(d)) { dgn = d; break; } }
+            if (dgn == null) {
+              if (process.env.DEBUG_SEP === '1') console.error(`[sep] IRRÉPARABLE ${A.c.source}->${A.c.target} vs ${Bv.c.source}->${Bv.c.target} ${sa.axis} lane=${sa.lane} [${lo},${hi}]`);
+              continue; // pas de lane libre : ne pas insérer un dog-leg qui recrée un conflit
+            }
             const pts = A.c.points ? A.c.points.map((p) => ({ ...p })) : [];
             const jog = sa.axis === 'h'
               ? [{ x: lo, y: sa.lane }, { x: lo, y: sa.lane + dgn }, { x: hi, y: sa.lane + dgn }, { x: hi, y: sa.lane }]

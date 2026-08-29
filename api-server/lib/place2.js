@@ -55,6 +55,8 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   const wires = [];
   const wire = (a, b) => wires.push(addWire(model, a === null ? b : a).getAttribute('id'));
   let seq = 0;
+  let ccPairs = [];
+  try { ccPairs = detectStructures({ components: comps }).crossCoupled.map((s) => s.refs); } catch { /* netlist sans MOS */ }
 
   // rails : tap VDD au-dessus de chaque terminal du net vdd ; masse sous chaque terminal de 0
   for (const [net, terms] of netTerms) {
@@ -116,11 +118,55 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         (gA.prefix === 'M' || gA.prefix === 'Q') && (gB.prefix === 'M' || gB.prefix === 'Q') &&
         info.get(gA.ref).gatePin === a.pinName && info.get(gB.ref).gatePin === b.pinName;
       const pA = pinAbs(placed.get(a.ref), a.pin), pB = pinAbs(placed.get(b.ref), b.pin);
+      // la diagonale n'est légitime que si sa ligne de vue est LIBRE : un
+      // fil droit qui traverse un corps est une faute (revue sceptique)
+      const losClear = ![...placed.values()].some((v) => {
+        if (v.id === a.ref || v.id === b.ref) return false;
+        const r = { x: v.x + 3, y: v.y + 3, w: v.w - 6, h: v.h - 6 };
+        const t0 = pA, t1 = pB;
+        const dxy = (u, w2, z) => (w2.x - u.x) * (z.y - u.y) - (w2.y - u.y) * (z.x - u.x);
+        const hit = (c1, c2) => {
+          const d1 = dxy(c1, c2, t0), d2 = dxy(c1, c2, t1), d3 = dxy(t0, t1, c1), d4 = dxy(t0, t1, c2);
+          return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+        };
+        const inside = (p) => p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h;
+        return inside(t0) || inside(t1) ||
+          hit({ x: r.x, y: r.y }, { x: r.x + r.w, y: r.y }) ||
+          hit({ x: r.x + r.w, y: r.y }, { x: r.x + r.w, y: r.y + r.h }) ||
+          hit({ x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h }) ||
+          hit({ x: r.x, y: r.y + r.h }, { x: r.x, y: r.y });
+      });
       if (bothGates && Math.abs(pA.y - pB.y) < 60 && Math.abs(pA.x - pB.x) > (P.colW || 190)) {
-        wire(null, { source: a.ref, target: b.ref,
-          sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y },
-          style: 'edgeStyle=none;html=1;endArrow=none;endFill=0;' });
-        continue;
+        if (losClear) {
+          wire(null, { source: a.ref, target: b.ref,
+            sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y },
+            style: 'edgeStyle=none;html=1;endArrow=none;endFill=0;' });
+          continue;
+        }
+        // ligne de vue bloquée -> contournement par une lane extérieure
+        // CLAIRE (sous ou sur la rangée), comme dans les figures publiées ;
+        // le tracé est figé (drawioApiFixedRoute) pour échapper au routeur
+        const bodies = [...placed.values()].filter((v) => v.id !== a.ref && v.id !== b.ref)
+          .flatMap((v) => v.h >= 80 ? [v, { x: v.x, y: v.y + v.h, w: v.w, h: 18 }] : [v]);
+        const clearSeg = (p, q) => !bodies.some((v) =>
+          Math.max(p.x, q.x) > v.x + 3 && Math.min(p.x, q.x) < v.x + v.w - 3 &&
+          Math.max(p.y, q.y) > v.y + 3 && Math.min(p.y, q.y) < v.y + v.h - 3);
+        const bA = placed.get(a.ref), bB = placed.get(b.ref);
+        const yTop = Math.min(bA.y, bB.y), yBot = Math.max(bA.y + bA.h, bB.y + bB.h);
+        let lane = null;
+        outer: for (let k = 0; k < 6; k++) {
+          for (const yl of [yBot + 24 + k * 12, yTop - 24 - k * 12]) {
+            if (clearSeg(pA, { x: pA.x, y: yl }) && clearSeg({ x: pA.x, y: yl }, { x: pB.x, y: yl }) &&
+                clearSeg({ x: pB.x, y: yl }, pB)) { lane = yl; break outer; }
+          }
+        }
+        if (lane != null) {
+          wire(null, { source: a.ref, target: b.ref,
+            sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y },
+            style: 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;jettySize=0;endArrow=none;endFill=0;drawioApiFixedRoute=1;',
+            points: [{ x: pA.x, y: lane }, { x: pB.x, y: lane }] });
+          continue;
+        }
       }
       wire(null, { source: a.ref, target: b.ref, sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y } });
     } else {
@@ -131,8 +177,55 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       // terminal comme un autre, l'arbre la raccorde au plus court) ;
       // les points de contact naissent aux pins partagés (règle 30)
       const pts = terms.map((t) => pinAbs(placed.get(t.ref), t.pin));
+      // paire cross-couplée : la gate rejoint le drain du PARTENAIRE par une
+      // diagonale volontaire (le X des figures publiées) — deux tracés
+      // orthogonaux qui se disputent les mêmes lanes sont irréparables (VCO)
+      const preLinked = [];
+      for (const [rX, rY] of ccPairs) {
+        for (const gRef of [rX, rY]) {
+          const iG = terms.findIndex((t) => t.ref === gRef && info.get(gRef) != null && t.pinName === info.get(gRef).gatePin);
+          if (iG < 0) continue;
+          // candidats : les autres terminaux du net, du plus proche au plus
+          // loin — premier dont la ligne de vue est libre
+          const cand = terms.map((_, i2) => i2)
+            .filter((i2) => i2 !== iG && terms[i2].ref !== gRef)
+            .sort((u, v) => (Math.abs(pts[u].x - pts[iG].x) + Math.abs(pts[u].y - pts[iG].y))
+                          - (Math.abs(pts[v].x - pts[iG].x) + Math.abs(pts[v].y - pts[iG].y)));
+          let iD = -1;
+          for (const i2 of cand) { if (clearDiagTo(i2)) { iD = i2; break; } }
+          if (iD < 0) continue;
+          function clearDiagTo(i2) {
+            const dRef = terms[i2].ref;
+            return ![...placed.values()].some((v) => {
+              if (v.id === gRef || v.id === dRef) return false;
+              const r = { x: v.x + 3, y: v.y + 3, w: v.w - 6, h: v.h - 6 };
+              const t0 = pts[iG], t1 = pts[i2];
+              const dxy = (u, w2, z) => (w2.x - u.x) * (z.y - u.y) - (w2.y - u.y) * (z.x - u.x);
+              const hit = (c1, c2) => {
+                const d1 = dxy(c1, c2, t0), d2 = dxy(c1, c2, t1), d3 = dxy(t0, t1, c1), d4 = dxy(t0, t1, c2);
+                return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+              };
+              const inside = (p) => p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h;
+              return inside(t0) || inside(t1) ||
+                hit({ x: r.x, y: r.y }, { x: r.x + r.w, y: r.y }) ||
+                hit({ x: r.x + r.w, y: r.y }, { x: r.x + r.w, y: r.y + r.h }) ||
+                hit({ x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h }) ||
+                hit({ x: r.x, y: r.y + r.h }, { x: r.x, y: r.y });
+            });
+          }
+          wire(null, { source: terms[iG].ref, target: terms[iD].ref,
+            sourcePin: { x: terms[iG].pin.x, y: terms[iG].pin.y },
+            targetPin: { x: terms[iD].pin.x, y: terms[iD].pin.y },
+            style: 'edgeStyle=none;html=1;endArrow=none;endFill=0;' });
+          preLinked.push([iG, iD]);
+        }
+      }
+      const linkedOf = (i2) => preLinked.flatMap(([u, v]) => (u === i2 ? [v] : v === i2 ? [u] : []));
       const inTree = [0];
-      const rest2 = terms.map((_, i2) => i2).slice(1);
+      const seen = new Set([0]);
+      const absorb = (i2) => { for (const l of linkedOf(i2)) if (!seen.has(l)) { seen.add(l); inTree.push(l); absorb(l); } };
+      absorb(0);
+      const rest2 = terms.map((_, i2) => i2).filter((i2) => !seen.has(i2));
       while (rest2.length) {
         let bi = -1, bj = -1, bd = Infinity;
         for (const i2 of inTree) {
@@ -148,8 +241,10 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         const ta = terms[bi], tb = terms[bj];
         wire(null, { source: ta.ref, target: tb.ref,
           sourcePin: { x: ta.pin.x, y: ta.pin.y }, targetPin: { x: tb.pin.x, y: tb.pin.y } });
+        seen.add(bj);
         inTree.push(bj);
-        rest2.splice(rest2.indexOf(bj), 1);
+        absorb(bj);
+        rest2.splice(0, rest2.length, ...rest2.filter((k) => !seen.has(k)));
       }
     }
   }
@@ -451,13 +546,22 @@ export function importNetlist2(model, parsed, opts = {}) {
     const toggled = (P.flipPairs || []).includes(pr.refs.join('/'));
     return structures.crossCoupled.includes(pr) ? true : (base !== toggled);
   };
-  for (const pr of [...structures.diffPairs, ...structures.crossCoupled]) {
+  // une paire cross-couplée partage aussi sa source : elle est REdétectée
+  // comme paire diff — le flip cc (gates au centre) doit gagner, pas les deux
+  const ccKeys = new Set(structures.crossCoupled.map((p) => [...p.refs].sort().join('/')));
+  const dedupPairs = [...structures.diffPairs.filter((p) => !ccKeys.has([...p.refs].sort().join('/'))),
+    ...structures.crossCoupled];
+  for (const pr of dedupPairs) {
     if (!wantFlip(pr)) continue;
     const [a, b] = pr.refs;
     const ca = slots.get(a), cb = slots.get(b);
     if (ca == null || cb == null) continue;
     const right = ca.col <= cb.col ? b : a;
-    const rs = slots.get(right);
+    // paire diff : membre DROIT flippé (gates extérieures, règle 18) ;
+    // cross-couplée : membre GAUCHE flippé (gates FACE AU CENTRE, le X des
+    // figures publiées reste compact entre les deux transistors)
+    const isCc = structures.crossCoupled.includes(pr);
+    const rs = slots.get(isCc ? (right === a ? b : a) : right);
     // garde de niveau : la rangée de la paire et en dessous — jamais les
     // charges/miroirs au-dessus (leur gate doit regarder leur diode)
     for (const [ref, sl] of slots) {
