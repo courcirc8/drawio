@@ -295,7 +295,12 @@ export async function routePage(model, edgeIds, opts) {
       const myNet = edgeNetAll.get(e.id);
       const clearPins2 = (p, q) => !pinPts.some((pp) =>
         pp.net !== myNet && distPS(pp.p, p, q) < 5);
-      const segOk = (p, q) => clearPins2(p, q) && !hugsMosFlank(p, q, vertices) && !vertices.some((v) => {
+      const segOk = (p, q) => {
+        if (process.env.DEBUG_FIX === '1' && e.id === process.env.DEBUG_FIX_ID) {
+          const r1 = clearPins2(p, q), r2 = !hugsMosFlank(p, q, vertices);
+          if (!r1 || !r2) console.error(`   segKO (${p.x},${p.y})-(${q.x},${q.y}) pins=${r1} flank=${r2}`);
+        }
+        return clearPins2(p, q) && !hugsMosFlank(p, q, vertices) && !vertices.some((v) => {
         const hit = Math.max(p.x, q.x) > v.x + 1.5 && Math.min(p.x, q.x) < v.x + v.w - 1.5 &&
           Math.max(p.y, q.y) > v.y + 1.5 && Math.min(p.y, q.y) < v.y + v.h - 1.5;
         if (!hit) return false;
@@ -303,15 +308,23 @@ export async function routePage(model, edgeIds, opts) {
         const own = v.id === e.source ? a : b;
         const cx2 = (x2) => Math.max(v.x + 1.5, Math.min(v.x + v.w - 1.5, x2));
         const cy2 = (y2) => Math.max(v.y + 1.5, Math.min(v.y + v.h - 1.5, y2));
-        return Math.max(
+        const bad = Math.max(
           Math.hypot(cx2(p.x) - own.x, cy2(p.y) - own.y),
           Math.hypot(cx2(q.x) - own.x, cy2(q.y) - own.y)) > 8;
+        if (bad && process.env.DEBUG_FIX === '1' && e.id === process.env.DEBUG_FIX_ID) {
+          console.error(`   segKO (${p.x},${p.y})-(${q.x},${q.y}) corps=${v.id}`);
+        }
+        return bad;
       });
+      };
       const pathOk = (wp) => {
         const pl2 = [a, ...wp, b];
         for (let k = 0; k + 1 < pl2.length; k++) if (!segOk(pl2[k], pl2[k + 1])) return false;
         return true;
       };
+      if (process.env.DEBUG_FIX === '1' && e.id === process.env.DEBUG_FIX_ID) {
+        console.error(`[fix] ${e.id} a=(${a.x},${a.y}) b=(${b.x},${b.y}) out=${JSON.stringify(out)} pathOk=${pathOk(out)}`);
+      }
       if (!pathOk(out)) {
         let fixed = null;
         // échappée horizontale d'un pin posé sur un flanc (gate) : on sort
@@ -339,6 +352,10 @@ export async function routePage(model, edgeIds, opts) {
           }
         }
         for (const wp of cands) { if (pathOk(wp)) { fixed = wp; break; } }
+        if (process.env.DEBUG_FIX === '1' && e.id === process.env.DEBUG_FIX_ID) {
+          console.error(`[fix] ${e.id} eA=${eA} eB=${eB} cands=${cands.length} fixed=${JSON.stringify(fixed)}`);
+          for (const wp of cands.slice(0, 6)) console.error('   cand', JSON.stringify(wp), pathOk(wp));
+        }
         if (fixed != null) {
           out = fixed;
           cellEl.setAttribute('style', mergeStyle(cellEl.getAttribute('style'), { jettySize: 0 }));
@@ -468,6 +485,8 @@ function mergeSameNet(model, obstacles) {
             const shiftTo = (ei, seg, lane) => {
               const npts = ei.points || [];
               if (!(seg.i >= 1 && seg.i <= npts.length - 1)) return false;
+              // la lane de fusion ne doit pas longer un canal de MOS
+              if (seg.axis === 'v' && hugsMosFlank({ x: lane, y: seg.a }, { x: lane, y: seg.b }, obstacles)) return false;
               const p = npts[seg.i - 1], q = npts[seg.i];
               if (seg.axis === 'h') { p.y = lane; q.y = lane; } else { p.x = lane; q.x = lane; }
               const el = allCells(model).find((x) => x.getAttribute('id') === ei.id);
@@ -1074,7 +1093,10 @@ function polishJogs(model, obstacles, tol) {
   const cells = allCells(model).map(cellInfo);
   const byId2 = new Map(cells.map((c) => [c.id, c]));
   const boxes = obstacles.map((v) => ({ x: v.x + 3, y: v.y + 3, w: v.w - 6, h: v.h - 6, id: v.id }));
-  const blocked = (x1, y1, x2, y2, skip) => boxes.some((b) => !skip.has(b.id) &&
+  // le lissage ne doit pas recoller un fil sur un canal de MOS (il écrasait
+  // les échappées de 14 px, plus petites que sa tolérance)
+  const blocked = (x1, y1, x2, y2, skip) => hugsMosFlank({ x: x1, y: y1 }, { x: x2, y: y2 }, obstacles) ||
+    boxes.some((b) => !skip.has(b.id) &&
     Math.max(x1, x2) > b.x && Math.min(x1, x2) < b.x + b.w &&
     Math.max(y1, y2) > b.y && Math.min(y1, y2) < b.y + b.h);
   for (const c of cells) {

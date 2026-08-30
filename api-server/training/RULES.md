@@ -464,3 +464,24 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     - passif flottant : dégagement le plus PROCHE de l'idéal dans les 4
       directions, latéral pénalisé x2 (la cap Miller montait au-dessus des
       VDD ; le latéral aveugle écrasait la masse du RC).
+
+49. **Cap de contre-réaction (Miller) : discrète, HORIZONTALE, dans le
+    corridor entre les rangées** (règle utilisateur). Détection : un C
+    flottant dont les deux nets touchent la gate et le drain du même
+    transistor. Placement : horizontal sous le transistor, centre entre
+    les deux verticales, taps courts en té. Leçons de l'itération :
+    - quand TOUS les candidats de réparation échouent, c'est le PLACEMENT
+      qui a tort (la cap verticale coincée sous M6 n'avait aucun tracé
+      légal — le routeur gardait alors le tracé fautif) ;
+    - polishJogs écrasait les échappées de 14 px (< sa tolérance de 22) et
+      recollait les fils sur les canaux : le lissage teste les flancs ;
+    - la lane cible d'une FUSION teste aussi les flancs.
+
+50. **beauty.py réécrit contre les règles courantes** (chantier n°1 de la
+    revue) : étiquettes noLabel ignorées, cellules texte = étiquettes (pas
+    des composants), croisements par NET (union-find par position absolue
+    des extrémités) avec déduplication des points, excès de coudes = vs
+    minimum RÉALISABLE (droit/L bloqués par un corps = pas d'excès),
+    diagonales volontaires et tracés figés exemptés. Scores redevenus
+    signal : LNA 22→75, VCO 72→88, RC 90 — le juge ne punit plus les
+    règles 13/41/43.

@@ -951,6 +951,39 @@ export function importNetlist2(model, parsed, opts = {}) {
       }
       return pts.length ? { n: pts.length, x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length } : { n: 0, x: P.x0, y: P.y0 };
     });
+    // cap de CONTRE-RÉACTION (Miller) : ses deux nets touchent la gate et
+    // le drain du MÊME transistor -> discrète, VERTICALE, collée à côté du
+    // transistor entre les deux niveaux (règle utilisateur : pas de voûtes,
+    // pas de fils au même potentiel qui se longent, pas de coudes)
+    if (c.prefix === 'C') {
+      const fb = comps.find((m2) => {
+        if ((m2.prefix !== 'M' && m2.prefix !== 'Q') || !placed.has(m2.ref)) return false;
+        const mi = info.get(m2.ref);
+        if (mi == null) return false;
+        const nets = [ci.top, ci.bot];
+        return nets.includes(mi.gate) && nets.includes(m2.nodes[0]) && mi.gate !== m2.nodes[0];
+      });
+      if (fb != null) {
+        const mi = info.get(fb.ref);
+        const pM = placed.get(fb.ref);
+        const gAbs = pinAbs(pM, getPin(mi.shapeKey, mi.gatePin));
+        const dAbs = pinAbs(pM, getPin(mi.shapeKey, mi.po[0]));
+        const shape2 = getShape(ci.shapeKey);
+        // HORIZONTALE, dans le corridor SOUS le transistor (entre les
+        // rangées, comme les figures publiées) : taps courts sur les deux
+        // verticales, jamais coincée sous un corps (cul-de-sac vu sur M6)
+        const cxC = (gAbs.x + dAbs.x) / 2;
+        const cyC = Math.max(pM.y + pM.h, Math.max(gAbs.y, dAbs.y)) + 45;
+        const leftNet = gAbs.x <= dAbs.x ? mi.gate : fb.nodes[0];
+        const flipC = ci.top !== leftNet;
+        const xC = cxC - shape2.w / 2, yC = cyC - shape2.h / 2;
+        const cellC = addVertex(model, { id: c.ref, shape: ci.shapeKey, x: xC, y: yC, w: shape2.w, h: shape2.h, rotation: 0, value: c.value || '' });
+        if (flipC) cellC.setAttribute('style', cellC.getAttribute('style') + 'flipH=1;');
+        placed.set(c.ref, { id: c.ref, x: xC, y: yC, w: shape2.w, h: shape2.h, rotation: 0, flipH: flipC });
+        for (let i2 = 0; i2 < ci.po.length; i2++) term(c.nodes[i2], c.ref, ci.po[i2], getPin(ci.shapeKey, ci.po[i2]));
+        continue;
+      }
+    }
     let cx, cy, flipF = false;
     const empty0 = anchors[0].n === 0, empty1 = anchors[1].n === 0;
     if (empty0 !== empty1) {
