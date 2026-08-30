@@ -360,6 +360,10 @@ export async function routePage(model, edgeIds, opts) {
   // ---- simplification finale : un fil en Z/U redevient droit ou L canonique
   // si la géométrie FINALE le permet (corps, pins étrangers, lanes étrangères)
   simplifyBends(model, vertices);
+  // ---- répartition des tés : sur un tronc (H ou V), les dérivations se
+  // placent aux fractions équitables de la portée (règle utilisateur :
+  // « répartis les espaces pour les nœuds verticaux »)
+  distributeTees(model, vertices);
   // ---- fusion finale : le simplificateur déplace des lanes (échappées,
   // té-swaps) APRÈS la 2e fusion — une dernière passe rattrape les
   // parallèles même-net qu'il vient de créer
@@ -601,6 +605,129 @@ function simplifyBends(model, obstacles) {
     if (!changed) break;
   }
 }
+
+/** Répartit les tés le long des troncs : une dérivation qui se branche sur
+ * un fil (vertical ou horizontal) se place à sa fraction équitable de la
+ * portée, comme dans un dessin humain — au lieu de s'agglutiner près des
+ * pins. Déplacement = shift du segment d'approche perpendiculaire, validé
+ * (corps, pins étrangers, lanes étrangères, flancs de MOS). */
+export function distributeTees(model, obstacles) {
+  const cells = allCells(model).map(cellInfo);
+  const byId2 = new Map(cells.map((c) => [c.id, c]));
+  const edgeNet = netGroups(cells);
+  const infos = [];
+  for (const c of cells) {
+    if (c.kind !== 'edge' || c.source == null || c.target == null) continue;
+    if (c.style.map.get('edgeStyle') === 'none') continue;
+    const pl = polylineOf(c, byId2);
+    if (pl == null) continue;
+    infos.push({ c, pl, net: edgeNet.get(c.id) });
+  }
+  const pinPts = infos.flatMap((i) => [{ p: i.pl[0], net: i.net }, { p: i.pl[i.pl.length - 1], net: i.net }]);
+  const dps = (pt, p, q) => {
+    const dx = q.x - p.x, dy = q.y - p.y, L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, ((pt.x - p.x) * dx + (pt.y - p.y) * dy) / L2)) : 0;
+    return Math.hypot(pt.x - (p.x + t * dx), pt.y - (p.y + t * dy));
+  };
+  const segOk2 = (it, p, q) => {
+    if (hugsMosFlank(p, q, obstacles)) return false;
+    if (obstacles.some((v) => {
+      if (v.w < 12 && v.h < 12) return false;
+      const hit = Math.max(p.x, q.x) > v.x + 1.5 && Math.min(p.x, q.x) < v.x + v.w - 1.5 &&
+        Math.max(p.y, q.y) > v.y + 1.5 && Math.min(p.y, q.y) < v.y + v.h - 1.5;
+      if (!hit) return false;
+      return v.id !== it.c.source && v.id !== it.c.target;
+    })) return false;
+    if (pinPts.some((pp) => pp.net !== it.net && dps(pp.p, p, q) < 5)) return false;
+    for (const o of infos) {
+      if (o === it || o.net === it.net) continue;
+      for (let k = 0; k + 1 < o.pl.length; k++) {
+        const b1 = o.pl[k], b2 = o.pl[k + 1];
+        const horiz = Math.abs(p.y - q.y) < 0.6;
+        if (horiz && Math.abs(b1.y - b2.y) < 0.6 && Math.abs(b1.y - p.y) < 10 &&
+            Math.min(Math.max(b1.x, b2.x), Math.max(p.x, q.x)) - Math.max(Math.min(b1.x, b2.x), Math.min(p.x, q.x)) > 6) return false;
+        if (!horiz && Math.abs(b1.x - b2.x) < 0.6 && Math.abs(b1.x - p.x) < 10 &&
+            Math.min(Math.max(b1.y, b2.y), Math.max(p.y, q.y)) - Math.max(Math.min(b1.y, b2.y), Math.min(p.y, q.y)) > 6) return false;
+      }
+    }
+    return true;
+  };
+  for (const T of infos) {
+    for (let si = 0; si + 1 < T.pl.length; si++) {
+      const p = T.pl[si], q = T.pl[si + 1];
+      const vert = Math.abs(p.x - q.x) < 0.6 && Math.abs(p.y - q.y) >= 50;
+      const horz = Math.abs(p.y - q.y) < 0.6 && Math.abs(p.x - q.x) >= 50;
+      if (!vert && !horz) continue;
+      if (process.env.DEBUG_TEES === '1') {
+        const lane0 = vert ? p.x : p.y;
+        const others = [];
+        for (const W of infos) {
+          if (W === T || W.net !== T.net) continue;
+          for (const pt of (W.c.points || [])) {
+            const perp0 = vert ? pt.x : pt.y;
+            if (Math.abs(perp0 - lane0) < 6) others.push(`${W.c.id}(${pt.x.toFixed(0)},${pt.y.toFixed(0)})`);
+          }
+        }
+        console.error(`[tronc] ${T.c.id} ${vert ? 'V' : 'H'} lane=${lane0.toFixed(0)} span=${Math.abs(vert ? q.y - p.y : q.x - p.x).toFixed(0)} corners~lane: ${others.join(' ') || '-'}`);
+      }
+      const lane = vert ? p.x : p.y;
+      const lo = (vert ? Math.min(p.y, q.y) : Math.min(p.x, q.x)) + 14;
+      const hi = (vert ? Math.max(p.y, q.y) : Math.max(p.x, q.x)) - 14;
+      if (hi - lo < 40) continue;
+      // dérivations : coins d'autres fils du même net posés sur le tronc
+      const branches = [];
+      for (const W of infos) {
+        if (W === T || W.net !== T.net) continue;
+        const npts = W.c.points || [];
+        for (let j = 0; j < npts.length; j++) {
+          const pt = npts[j];
+          const along = vert ? pt.y : pt.x, perp = vert ? pt.x : pt.y;
+          if (Math.abs(perp - lane) >= 2.5 || along <= lo || along >= hi) continue;
+          // partenaire : voisin formant le segment d approche perpendiculaire
+          for (const dj of [-1, 1]) {
+            const nb = npts[j + dj];
+            if (nb == null) continue;
+            const straightPerp = vert ? Math.abs(nb.y - pt.y) < 0.6 : Math.abs(nb.x - pt.x) < 0.6;
+            if (!straightPerp) continue;
+            // le partenaire ne doit pas être collé à une ancre alignée
+            const anchorIdx = dj === -1 ? j - 2 : j + 2;
+            const beyond = anchorIdx < 0 ? W.pl[0] : (anchorIdx >= npts.length ? W.pl[W.pl.length - 1] : null);
+            if (beyond != null) {
+              const alignedToAnchor = vert ? Math.abs(beyond.y - pt.y) < 0.6 : Math.abs(beyond.x - pt.x) < 0.6;
+              if (alignedToAnchor) continue;
+            }
+            branches.push({ W, j, dj, along });
+            break;
+          }
+          break;
+        }
+      }
+      if (process.env.DEBUG_TEES === '1' && branches.length > 0) {
+        console.error(`[tees] tronc ${T.c.id} ${vert ? 'V' : 'H'} lane=${lane.toFixed(0)} [${lo.toFixed(0)},${hi.toFixed(0)}] branches=${branches.map((b2) => b2.W.c.id + '@' + b2.along.toFixed(0)).join(' ')}`);
+      }
+      if (branches.length === 0) continue;
+      branches.sort((u, v2) => u.along - v2.along);
+      const n = branches.length;
+      branches.forEach((br, k) => {
+        const target = lo + ((k + 1) * (hi - lo)) / (n + 1);
+        if (process.env.DEBUG_TEES === '1') console.error(`[tees]   ${br.W.c.id}: ${br.along.toFixed(0)} -> ${target.toFixed(0)} ${Math.abs(target - br.along) < 10 ? 'proche' : (segOk2(br.W, vert ? { x: br.W.c.points[br.j].x, y: target } : { x: target, y: br.W.c.points[br.j].y }, vert ? { x: br.W.c.points[br.j + br.dj].x, y: target } : { x: target, y: br.W.c.points[br.j + br.dj].y }) ? 'OK' : 'segOk2-REFUS')}`);
+        if (Math.abs(target - br.along) < 10) return;
+        const npts = br.W.c.points.map((pp) => ({ ...pp }));
+        const a2 = npts[br.j], b2 = npts[br.j + br.dj];
+        const cand1 = vert ? { x: a2.x, y: target } : { x: target, y: a2.y };
+        const cand2 = vert ? { x: b2.x, y: target } : { x: target, y: b2.y };
+        if (!segOk2(br.W, cand1, cand2)) return;
+        if (vert) { a2.y = target; b2.y = target; } else { a2.x = target; b2.x = target; }
+        const el = allCells(model).find((x) => x.getAttribute('id') === br.W.c.id);
+        setEdgePoints(el, npts);
+        br.W.c.points = npts;
+        br.W.pl = polylineOf(br.W.c, byId2);
+      });
+    }
+  }
+}
+
+/** Répartit
 
 /** Retire des waypoints les doublons consécutifs et les pointes A->B->A. */
 function cleanupDegeneratePoints(model) {
@@ -864,9 +991,14 @@ function separateNets(model, obstacles) {
               continue; // pas de lane libre : ne pas insérer un dog-leg qui recrée un conflit
             }
             const pts = A.c.points ? A.c.points.map((p) => ({ ...p })) : [];
-            const jog = sa.axis === 'h'
+            let jog = sa.axis === 'h'
               ? [{ x: lo, y: sa.lane }, { x: lo, y: sa.lane + dgn }, { x: hi, y: sa.lane + dgn }, { x: hi, y: sa.lane }]
               : [{ x: sa.lane, y: lo }, { x: sa.lane + dgn, y: lo }, { x: sa.lane + dgn, y: hi }, { x: sa.lane, y: hi }];
+            // ORDRE = direction réelle du segment (un segment tracé du max
+            // vers le min recevait le jog à l'envers -> boucle dégénérée que
+            // le nettoyage effaçait, conflit marqué réparé à tort)
+            const segA = A.pl[sa.i], segB2 = A.pl[sa.i + 1];
+            if ((sa.axis === 'h' && segA.x > segB2.x) || (sa.axis === 'v' && segA.y > segB2.y)) jog = jog.reverse();
             pts.splice(sa.i, 0, ...jog);
             setEdgePoints(el, pts);
             repaired = true; break outer;
@@ -921,9 +1053,11 @@ function separateNets(model, obstacles) {
             if (dgn2 == null) continue;
             const el3 = allCells(model).find((x) => x.getAttribute('id') === A.c.id);
             const pts3 = A.c.points ? A.c.points.map((pp) => ({ ...pp })) : [];
-            const jog2 = seg.axis === 'h'
+            let jog2 = seg.axis === 'h'
               ? [{ x: lo2, y: seg.lane }, { x: lo2, y: seg.lane + dgn2 }, { x: hi2, y: seg.lane + dgn2 }, { x: hi2, y: seg.lane }]
               : [{ x: seg.lane, y: lo2 }, { x: seg.lane + dgn2, y: lo2 }, { x: seg.lane + dgn2, y: hi2 }, { x: seg.lane, y: hi2 }];
+            const sgA = A.pl[seg.i], sgB = A.pl[seg.i + 1];
+            if ((seg.axis === 'h' && sgA.x > sgB.x) || (seg.axis === 'v' && sgA.y > sgB.y)) jog2 = jog2.reverse();
             pts3.splice(seg.i, 0, ...jog2);
             setEdgePoints(el3, pts3);
             repaired = true; break outer2;

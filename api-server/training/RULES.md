@@ -437,3 +437,18 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     - fusion FINALE après simplify (qui déplace des lanes après la 2e
       fusion). Checker : channel-hug (erreur), edge-hug reste warning pour
       les autres corps ; fixture lna-complet-hug.xml.
+
+47. **Répartition des espaces verticaux** (règle utilisateur). Deux
+    mécanismes : (a) justification des colonnes — les dipôles de pile se
+    répartissent à gaps ÉGAUX entre éléments fixes (transistors), avec
+    déplacement BORNÉ à ±20 px et exclusion des colonnes cross-couplées
+    (la ligne de vue du X est un équilibre fragile) ; les flottants se
+    placent APRÈS la justification ; (b) distributeTees — les dérivations
+    posées sur un tronc (H ou V, ≥50 px) se replacent aux fractions
+    équitables de la portée, sous validation complète.
+    Débusqués au passage : marges anti-collision calculées sur la boîte
+    NON tournée (une self rot90 de 8 px comptait 100 px et chassait la cap
+    série du milieu) ; dog-leg de separateNets inséré à l'envers sur les
+    segments tracés du max vers le min (boucle dégénérée effacée par le
+    nettoyage, conflit marqué réparé à tort) ; port d'interface placé sans
+    test de routabilité (L port->pin désormais exigé libre).

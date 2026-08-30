@@ -273,6 +273,10 @@ export function addWire(model, { id, source, target, sourcePin, targetPin, style
 }
 
 export function setEdgePoints(cell, points) {
+  if (process.env.TRACE_DIAG === '1' && points && points.length &&
+      /edgeStyle=none/.test(cell.getAttribute('style') || '')) {
+    console.error('[TRACE_DIAG] points sur diagonale ' + cell.getAttribute('id') + ' :', JSON.stringify(points), new Error().stack.split('\n').slice(2, 5).join(' | '));
+  }
   const doc = cell.ownerDocument;
   let g = geomOf(cell);
   if (g == null) {

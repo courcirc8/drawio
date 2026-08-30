@@ -285,8 +285,18 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     let px = abs.x + (leftish ? -80 : 56), py = abs.y + 36;
     const clash = () => [...placed.values()].some((v) =>
       px < v.x + v.w + 8 && px + 24 > v.x - 8 && py < v.y + v.h + 8 && py + 24 > v.y - 8);
-    for (let k2 = 0; k2 < 6 && clash(); k2++) px += leftish ? -60 : 60;
-    for (let k2 = 0; k2 < 6 && clash(); k2++) py += 50;
+    // le L port->pin doit être LIBRE de tout corps (le fil du port LO du
+    // Gilbert traversait un transistor du quad)
+    const clearL = () => {
+      const legs = [[{ x: px + 12, y: py }, { x: px + 12, y: abs.y }],
+                    [{ x: px + 12, y: abs.y }, { x: abs.x, y: abs.y }]];
+      return legs.every(([p2, q2]) => ![...placed.values()].some((v) =>
+        v.id !== t.ref &&
+        Math.max(p2.x, q2.x) > v.x + 2 && Math.min(p2.x, q2.x) < v.x + v.w - 2 &&
+        Math.max(p2.y, q2.y) > v.y + 2 && Math.min(p2.y, q2.y) < v.y + v.h - 2));
+    };
+    for (let k2 = 0; k2 < 6 && (clash() || !clearL()); k2++) px += leftish ? -60 : 60;
+    for (let k2 = 0; k2 < 6 && (clash() || !clearL()); k2++) py += 50;
     addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net.toUpperCase() });
     placed.set(id, { id, x: px, y: py, w: 24, h: 24, rotation: 0 });
     wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
@@ -805,6 +815,80 @@ export function importNetlist2(model, parsed, opts = {}) {
     }
   }
 
+  // ---- justification verticale des colonnes : les dipôles de pile se
+  //      répartissent à GAPS ÉGAUX entre les éléments fixes (transistors,
+  //      dont les rangées sont structurelles) — les nœuds/tés verticaux
+  //      tombent alors à espaces réguliers (règle utilisateur)
+  {
+    const drawnBoxOf = (v) => {
+      const rot = ((v.rotation || 0) % 180 + 180) % 180 !== 0;
+      const cx2 = v.x + v.w / 2, cy2 = v.y + v.h / 2;
+      const w2 = rot ? v.h : v.w, h2 = rot ? v.w : v.h;
+      return { top: cy2 - h2 / 2, bot: cy2 + h2 / 2, h: h2 };
+    };
+    // les colonnes d'une paire CROSS-COUPLÉE sont exclues : la ligne de
+    // vue du X (diagonales) est un équilibre géométrique voulu que le
+    // moindre décalage vertical casse (vu : VCO)
+    const ccCols = new Set();
+    for (const pr of (structures.crossCoupled || [])) {
+      for (const r of pr.refs) {
+        const sl2 = slots.get(r);
+        if (sl2 != null) ccCols.add(Math.round(sl2.col));
+      }
+    }
+    const cols = new Map();
+    for (const c of comps) {
+      const sl = slots.get(c.ref);
+      if (sl == null || !Number.isInteger(sl.col) || !placed.has(c.ref)) continue;
+      if (floating.has(c.ref) || chainRefs.has(c.ref)) continue;
+      if (ccCols.has(sl.col)) continue;
+      if (!cols.has(sl.col)) cols.set(sl.col, []);
+      cols.get(sl.col).push(c);
+    }
+    for (const [, items] of cols) {
+      const sorted = items.map((c) => ({ c, p: placed.get(c.ref) }))
+        .sort((u, v2) => u.p.y - v2.p.y);
+      // segments entre éléments FIXES (MOS/Q) consécutifs
+      let segStart = null; // {bot} borne haute du segment
+      let mobiles = [];
+      const flush = (boundBot) => {
+        if (mobiles.length === 0) { mobiles = []; return; }
+        const boxes = mobiles.map((m) => drawnBoxOf(m.p));
+        const topLim = segStart != null ? segStart : boxes[0].top;
+        const botLim = boundBot;
+        if (botLim == null) { mobiles = []; return; }
+        const space = botLim - topLim - boxes.reduce((a2, b2) => a2 + b2.h, 0);
+        if (space < mobiles.length + 1) { mobiles = []; return; }
+        const gap = space / (mobiles.length + 1);
+        let cursor = topLim + gap;
+        mobiles.forEach((m, i2) => {
+          const bx = boxes[i2];
+          // déplacement BORNÉ : l'équilibrage ne doit pas casser les
+          // lignes de vue et corridors accordés autour de la grille
+          const dy = Math.max(-20, Math.min(20, cursor - bx.top));
+          if (Math.abs(dy) > 1) {
+            m.p.y += dy;
+            updateCell(model, m.c.ref, { dy });
+          }
+          cursor += bx.h + gap;
+        });
+        mobiles = [];
+      };
+      for (const it of sorted) {
+        const fixed = it.c.prefix === 'M' || it.c.prefix === 'Q';
+        const bx = drawnBoxOf(it.p);
+        if (fixed) {
+          flush(bx.top);
+          segStart = bx.bot;
+        } else {
+          mobiles.push(it);
+        }
+      }
+      flush(null);
+    }
+  }
+
+
   // passifs flottants : horizontaux, centrés entre les positions moyennes de leurs deux nets
   for (const c of comps) {
     if (!floating.has(c.ref)) continue;
@@ -843,8 +927,18 @@ export function importNetlist2(model, parsed, opts = {}) {
     let x = cx - shape.w / 2, y = cy - shape.h / 2;
     // JAMAIS sur un autre corps : on remonte (puis descend) jusqu'à une
     // position libre — la capa du tank VCO se posait sur les transistors
-    const overlaps = () => [...placed.values()].some((v) =>
-      x < v.x + v.w + 24 && x + shape.w > v.x - 24 && y < v.y + v.h + 24 && y + shape.h > v.y - 24);
+    // boîte DESSINÉE (une self rot90 fait 8 px de large, pas 100 : la
+    // boîte brute chassait la cap série à 48 px du milieu du tronc)
+    const drawn = (v) => {
+      const rot = ((v.rotation || 0) % 180 + 180) % 180 !== 0;
+      const cx2 = v.x + v.w / 2, cy2 = v.y + v.h / 2;
+      const w2 = rot ? v.h : v.w, h2 = rot ? v.w : v.h;
+      return { x: cx2 - w2 / 2, y: cy2 - h2 / 2, w: w2, h: h2 };
+    };
+    const overlaps = () => [...placed.values()].some((v0) => {
+      const v = drawn(v0);
+      return x < v.x + v.w + 24 && x + shape.w > v.x - 24 && y < v.y + v.h + 24 && y + shape.h > v.y - 24;
+    });
     if (overlaps()) {
       const y00 = y;
       for (let k = 1; k <= 12 && overlaps(); k++) y = y00 - k * 20;
@@ -885,10 +979,16 @@ export function importNetlist2(model, parsed, opts = {}) {
   for (let pass = 0; pass < 4; pass++) {
     let moved = false;
     const ids = [...placed.keys()].filter((r) => slots.has(r) && placed.get(r).w >= 20);
+    const drawnBox = (v) => {
+      const rot = ((v.rotation || 0) % 180 + 180) % 180 !== 0;
+      const cx2 = v.x + v.w / 2, cy2 = v.y + v.h / 2;
+      const w2 = rot ? v.h : v.w, h2 = rot ? v.w : v.h;
+      return { x: cx2 - w2 / 2, y: cy2 - h2 / 2, w: w2, h: h2 };
+    };
     for (const r1 of ids) {
       for (const r2 of ids) {
         if (r1 === r2) continue;
-        const a2 = placed.get(r1), b2 = placed.get(r2);
+        const a2 = drawnBox(placed.get(r1)), b2 = drawnBox(placed.get(r2));
         const ox = Math.min(a2.x + a2.w, b2.x + b2.w) - Math.max(a2.x, b2.x);
         const oy = Math.min(a2.y + a2.h, b2.y + b2.h) - Math.max(a2.y, b2.y);
         if (ox <= 4 || oy <= 4) continue;
