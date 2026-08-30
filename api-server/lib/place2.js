@@ -14,7 +14,7 @@
  *     aux nets >2 terminaux, condensateurs flottants placés entre colonnes.
  * Paramètres exposés dans `opts` pour la boucle d'optimisation.
  */
-import { addVertex, addWire, updateCell, httpError } from './model.js';
+import { addVertex, addWire, updateCell, getCell, httpError } from './model.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES, GROUND_SHAPE, GROUND_PIN } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs } from './route.js';
@@ -51,6 +51,34 @@ export function condInfo(c) {
   return null;
 }
 
+/** Une diagonale volontaire est bloquée si elle traverse un corps — y
+ * compris un corps TERMINAL au-delà de 12 px autour de son propre pin
+ * (jamais traverser un transistor pour rejoindre son pin du côté opposé). */
+function diagBlocked(placed, t0, t1, refA, refB) {
+  const clip = (pp, qq, r) => {
+    const dx = qq.x - pp.x, dy = qq.y - pp.y;
+    let u0 = 0, u1 = 1;
+    for (const [pv, qv] of [[-dx, pp.x - r.x], [dx, r.x + r.w - pp.x], [-dy, pp.y - r.y], [dy, r.y + r.h - pp.y]]) {
+      if (pv === 0) { if (qv < 0) return null; continue; }
+      const t = qv / pv;
+      if (pv < 0) { if (t > u1) return null; u0 = Math.max(u0, t); }
+      else { if (t < u0) return null; u1 = Math.min(u1, t); }
+    }
+    if (u0 >= u1) return null;
+    return [{ x: pp.x + dx * u0, y: pp.y + dy * u0 }, { x: pp.x + dx * u1, y: pp.y + dy * u1 }];
+  };
+  return [...placed.values()].some((v) => {
+    const r = { x: v.x + 3, y: v.y + 3, w: Math.max(0, v.w - 6), h: Math.max(0, v.h - 6) };
+    if (r.w <= 0 || r.h <= 0) return false;
+    const c = clip(t0, t1, r);
+    if (c == null || Math.hypot(c[1].x - c[0].x, c[1].y - c[0].y) < 1) return false;
+    if (v.id !== refA && v.id !== refB) return true;
+    const own = v.id === refA ? t0 : t1;
+    return Math.max(Math.hypot(c[0].x - own.x, c[0].y - own.y),
+                    Math.hypot(c[1].x - own.x, c[1].y - own.y)) > 12;
+  });
+}
+
 export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   const wires = [];
   const wire = (a, b) => wires.push(addWire(model, a === null ? b : a).getAttribute('id'));
@@ -67,7 +95,9 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         const id = 'VT' + (++seq);
         // position ancrée sur le PIN ABSOLU (les formes tournées ont leur pin
         // ailleurs que le haut de leur bbox) + écart franc de 30 px
-        addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: abs.y - 26 - 30, w: 40, h: 26, value: 'VDD' });
+        const tapCell = addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: abs.y - 26 - 30, w: 40, h: 26, value: 'VDD' });
+        tapCell.setAttribute('style', tapCell.getAttribute('style')
+          .replace('verticalLabelPosition=bottom;verticalAlign=top;', 'verticalLabelPosition=top;verticalAlign=bottom;'));
         wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: 0.5, y: 1 } });
       }
     } else if (net === '0') {
@@ -120,22 +150,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const pA = pinAbs(placed.get(a.ref), a.pin), pB = pinAbs(placed.get(b.ref), b.pin);
       // la diagonale n'est légitime que si sa ligne de vue est LIBRE : un
       // fil droit qui traverse un corps est une faute (revue sceptique)
-      const losClear = ![...placed.values()].some((v) => {
-        if (v.id === a.ref || v.id === b.ref) return false;
-        const r = { x: v.x + 3, y: v.y + 3, w: v.w - 6, h: v.h - 6 };
-        const t0 = pA, t1 = pB;
-        const dxy = (u, w2, z) => (w2.x - u.x) * (z.y - u.y) - (w2.y - u.y) * (z.x - u.x);
-        const hit = (c1, c2) => {
-          const d1 = dxy(c1, c2, t0), d2 = dxy(c1, c2, t1), d3 = dxy(t0, t1, c1), d4 = dxy(t0, t1, c2);
-          return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
-        };
-        const inside = (p) => p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h;
-        return inside(t0) || inside(t1) ||
-          hit({ x: r.x, y: r.y }, { x: r.x + r.w, y: r.y }) ||
-          hit({ x: r.x + r.w, y: r.y }, { x: r.x + r.w, y: r.y + r.h }) ||
-          hit({ x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h }) ||
-          hit({ x: r.x, y: r.y + r.h }, { x: r.x, y: r.y });
-      });
+      const losClear = !diagBlocked(placed, pA, pB, a.ref, b.ref);
       if (bothGates && Math.abs(pA.y - pB.y) < 60 && Math.abs(pA.x - pB.x) > (P.colW || 190)) {
         if (losClear) {
           wire(null, { source: a.ref, target: b.ref,
@@ -195,23 +210,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
           for (const i2 of cand) { if (clearDiagTo(i2)) { iD = i2; break; } }
           if (iD < 0) continue;
           function clearDiagTo(i2) {
-            const dRef = terms[i2].ref;
-            return ![...placed.values()].some((v) => {
-              if (v.id === gRef || v.id === dRef) return false;
-              const r = { x: v.x + 3, y: v.y + 3, w: v.w - 6, h: v.h - 6 };
-              const t0 = pts[iG], t1 = pts[i2];
-              const dxy = (u, w2, z) => (w2.x - u.x) * (z.y - u.y) - (w2.y - u.y) * (z.x - u.x);
-              const hit = (c1, c2) => {
-                const d1 = dxy(c1, c2, t0), d2 = dxy(c1, c2, t1), d3 = dxy(t0, t1, c1), d4 = dxy(t0, t1, c2);
-                return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
-              };
-              const inside = (p) => p.x > r.x && p.x < r.x + r.w && p.y > r.y && p.y < r.y + r.h;
-              return inside(t0) || inside(t1) ||
-                hit({ x: r.x, y: r.y }, { x: r.x + r.w, y: r.y }) ||
-                hit({ x: r.x + r.w, y: r.y }, { x: r.x + r.w, y: r.y + r.h }) ||
-                hit({ x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h }) ||
-                hit({ x: r.x, y: r.y + r.h }, { x: r.x, y: r.y });
-            });
+            return !diagBlocked(placed, pts[iG], pts[i2], gRef, terms[i2].ref);
           }
           wire(null, { source: terms[iG].ref, target: terms[iD].ref,
             sourcePin: { x: terms[iG].pin.x, y: terms[iG].pin.y },
@@ -249,6 +248,35 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     }
   }
 
+  // ports d'interface : un net multi-terminal NOMMÉ (in/out/lo/rf/vb...)
+  // sans étiquette est illisible — l'OL du Gilbert n'existait nulle part
+  for (const [net, terms] of netTerms) {
+    if (net === vddNet || net === '0' || terms.length < 2) continue;
+    if (!/(^|_)(in|out|rf|lo|if|clk|bias|osc|vb)/i.test(net)) continue;
+    const withAbs = terms.map((t) => ({ t, abs: pinAbs(placed.get(t.ref), t.pin) }));
+    const cxm = withAbs.reduce((s2, w2) => s2 + w2.abs.x, 0) / withAbs.length;
+    // préférer un terminal dont le pin REGARDE vers l'extérieur (sinon le
+    // fil du port doit contourner — ou pire, traverser — le corps)
+    const facing = (w2) => {
+      const pl2 = (w2.t.pin.x <= 0.5) !== !!(placed.get(w2.t.ref) || {}).flipH;
+      return (pl2 ? -1 : 1) === (w2.abs.x <= cxm ? -1 : 1);
+    };
+    const pool = withAbs.filter(facing);
+    const cands2 = (pool.length ? pool : withAbs)
+      .sort((u, v) => Math.abs(v.abs.x - cxm) - Math.abs(u.abs.x - cxm));
+    const { t, abs } = cands2[0];
+    const id = 'PN' + (++seq);
+    const leftish = (t.pin.x <= 0.5) !== !!(placed.get(t.ref) || {}).flipH;
+    let px = abs.x + (leftish ? -80 : 56), py = abs.y + 36;
+    const clash = () => [...placed.values()].some((v) =>
+      px < v.x + v.w + 8 && px + 24 > v.x - 8 && py < v.y + v.h + 8 && py + 24 > v.y - 8);
+    for (let k2 = 0; k2 < 6 && clash(); k2++) px += leftish ? -60 : 60;
+    for (let k2 = 0; k2 < 6 && clash(); k2++) py += 50;
+    addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net.toUpperCase() });
+    placed.set(id, { id, x: px, y: py, w: 24, h: 24, rotation: 0 });
+    wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
+  }
+
   return wires;
 }
 
@@ -266,11 +294,9 @@ export function importNetlist2(model, parsed, opts = {}) {
     byTopNet.get(ci.top).push(c);
   }
   // net d'alimentation : 'vdd' explicite sinon net avec le plus de "tops"
-  let vddNet = [...byTopNet.keys()].find((n) => /^vdd$/i.test(n));
-  if (vddNet == null) {
-    let best = 0;
-    for (const [n, l] of byTopNet) if (n !== '0' && l.length > best) { best = l.length; vddNet = n; }
-  }
+  // rails UNIQUEMENT pour un vrai net d'alimentation nommé — deviner un rail
+  // sur « le net avec le plus de tops » déguisait l'entrée du biquad en VDD
+  const vddNet = [...byTopNet.keys()].find((n) => /^a?v(dd|cc)d?$/i.test(n)) ?? null;
 
   // ---- construction des piles (DFS depuis vdd, fan-out -> colonnes sœurs)
   // slot: {ref, col, level} ; shared: éléments à top multiple (queues) traités après
@@ -532,6 +558,42 @@ export function importNetlist2(model, parsed, opts = {}) {
     }
   }
 
+  // ---- quad : paires ADJACENTES (M3 M4 | M5 M6, style Razavi). Les
+  //      colonnes issues des nets de drain ENTRELACENT les paires, ce qui
+  //      force la barre de sources d'une paire à enjamber le pin de l'autre
+  //      (court-circuit visuel, vu au checker). On réordonne : paire 1 sur
+  //      les 2 premières colonnes, paire 2 sur les 2 suivantes ; chaque
+  //      queue RF au centre de SA paire.
+  for (const q of (structures.quads || [])) {
+    const refs = q.refs.filter((r) => slots.has(r));
+    if (refs.length !== 4) continue;
+    const cols = refs.map((r) => slots.get(r).col).sort((a, b) => a - b);
+    const [p1, p2] = q.pairs;
+    const first = refs.reduce((a, b) => (slots.get(a).col <= slots.get(b).col ? a : b));
+    const A = p1.includes(first) ? p1 : p2;
+    const Bp = A === p1 ? p2 : p1;
+    const ordered = [
+      ...[...A].sort((x, y) => slots.get(x).col - slots.get(y).col),
+      ...[...Bp].sort((x, y) => slots.get(x).col - slots.get(y).col),
+    ];
+    ordered.forEach((r, i) => { slots.get(r).col = cols[i]; });
+    // queues RF : centre de leur paire
+    const mos = comps.filter((c) => c.prefix === 'M' || c.prefix === 'Q');
+    for (const rf of q.rfPair || []) {
+      const sl = slots.get(rf);
+      if (sl == null) continue;
+      const rfc = mos.find((c) => c.ref === rf);
+      const tailNet = rfc != null ? rfc.nodes[0] : null;
+      const pair = [A, Bp].find((pp) => pp.some((r) => {
+        const c = mos.find((k) => k.ref === r);
+        return c != null && c.nodes[2] === tailNet;
+      }));
+      if (pair != null) {
+        sl.col = pair.reduce((a2, r) => a2 + slots.get(r).col, 0) / pair.length;
+      }
+    }
+  }
+
   // ---- flips de symétrie, propagés à toute la colonne. Par défaut :
   //      seulement les paires cross-couplées (gain net) ; les paires diff
   //      sont flippées à la demande de l'optimiseur (P.flipPairs).
@@ -735,7 +797,16 @@ export function importNetlist2(model, parsed, opts = {}) {
       cx = (anchors[0].x + anchors[1].x) / 2;
       cy = (anchors[0].y + anchors[1].y) / 2 + (P.floatDrop || 0);
     }
-    const x = cx - shape.w / 2, y = cy - shape.h / 2;
+    let x = cx - shape.w / 2, y = cy - shape.h / 2;
+    // JAMAIS sur un autre corps : on remonte (puis descend) jusqu'à une
+    // position libre — la capa du tank VCO se posait sur les transistors
+    const overlaps = () => [...placed.values()].some((v) =>
+      x < v.x + v.w + 24 && x + shape.w > v.x - 24 && y < v.y + v.h + 24 && y + shape.h > v.y - 24);
+    if (overlaps()) {
+      const y00 = y;
+      for (let k = 1; k <= 12 && overlaps(); k++) y = y00 - k * 20;
+      if (overlaps()) { y = y00; for (let k = 1; k <= 12 && overlaps(); k++) y = y00 + k * 20; }
+    }
     addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: 0, value: c.value || '' });
     placed.set(c.ref, { id: c.ref, x, y, w: shape.w, h: shape.h, rotation: 0 });
     for (let i = 0; i < ci.po.length; i++) {
@@ -763,6 +834,49 @@ export function importNetlist2(model, parsed, opts = {}) {
       updateCell(model, ref, { dy: med - y });
       pc3.y += med - y;
     });
+  }
+
+  // ---- aucun corps sur un autre : la diode accolée (colonne -0.55) peut
+  //      chevaucher sa voisine quand colW rétrécit -> pousser vers la gauche
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    const ids = [...placed.keys()].filter((r) => slots.has(r) && placed.get(r).w >= 20);
+    for (const r1 of ids) {
+      for (const r2 of ids) {
+        if (r1 === r2) continue;
+        const a2 = placed.get(r1), b2 = placed.get(r2);
+        const ox = Math.min(a2.x + a2.w, b2.x + b2.w) - Math.max(a2.x, b2.x);
+        const oy = Math.min(a2.y + a2.h, b2.y + b2.h) - Math.max(a2.y, b2.y);
+        if (ox <= 4 || oy <= 4) continue;
+        const frac = !Number.isInteger(slots.get(r1).col) ? r1
+          : (!Number.isInteger(slots.get(r2).col) ? r2 : null);
+        if (frac == null) continue;
+        const v = placed.get(frac);
+        const dx = -(ox + 14);
+        v.x += dx;
+        updateCell(model, frac, { dx });
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+
+  // étiquettes : composant à flux VERTICAL (fils en haut/bas) -> étiquette
+  // sur le FLANC gauche, où la place est libre (les taps/sources/selfs
+  // verticales avaient leur valeur posée en travers du fil du bas)
+  for (const c of comps) {
+    const cell2 = getCell(model, c.ref);
+    if (cell2 == null) continue;
+    const st2 = cell2.getAttribute('style') || '';
+    if (/transistor|mosfet|nmos|pmos/.test(st2)) continue;
+    const p2 = placed.get(c.ref);
+    if (p2 == null) continue;
+    const rotated = ((p2.rotation || 0) % 180 + 180) % 180 !== 0;
+    const dw = rotated ? p2.h : p2.w, dh = rotated ? p2.w : p2.h;
+    if (dh >= dw) {
+      cell2.setAttribute('style', st2.replace('verticalLabelPosition=bottom;verticalAlign=top;',
+        'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=left;align=right;spacing=8;'));
+    }
   }
 
   const wires = wireNets(model, { comps, info, placed, netTerms, vddNet, P });

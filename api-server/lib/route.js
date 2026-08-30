@@ -212,10 +212,22 @@ export async function routePage(model, edgeIds, opts) {
       const myNet = edgeNetAll.get(e.id);
       const clearPins = (p, q) => !pinPts.some((pp) =>
         pp.net !== myNet && distPS(pp.p, p, q) < 5);
-      const clear = (p, q) => clearPins(p, q) && !vertices.some((v) =>
-        v.id !== e.source && v.id !== e.target &&
-        Math.max(p.x, q.x) > v.x + 3 && Math.min(p.x, q.x) < v.x + v.w - 3 &&
-        Math.max(p.y, q.y) > v.y + 3 && Math.min(p.y, q.y) < v.y + v.h - 3);
+      // un corps TERMINAL n'est pas exempt : le fil ne peut y pénétrer qu'au
+      // voisinage immédiat de son propre pin (jamais le traverser pour
+      // atteindre le pin du côté opposé — vu : bus de gates à travers M8)
+      const clear = (p, q) => clearPins(p, q) && !vertices.some((v) => {
+        const hit = Math.max(p.x, q.x) > v.x + 1.5 && Math.min(p.x, q.x) < v.x + v.w - 1.5 &&
+          Math.max(p.y, q.y) > v.y + 1.5 && Math.min(p.y, q.y) < v.y + v.h - 1.5;
+        if (!hit) return false;
+        if (v.id !== e.source && v.id !== e.target) return true;
+        const own = v.id === e.source ? a : b;
+        const cx = (x2) => Math.max(v.x + 1.5, Math.min(v.x + v.w - 1.5, x2));
+        const cy = (y2) => Math.max(v.y + 1.5, Math.min(v.y + v.h - 1.5, y2));
+        const far = Math.max(
+          Math.hypot(cx(p.x) - own.x, cy(p.y) - own.y),
+          Math.hypot(cx(q.x) - own.x, cy(q.y) - own.y));
+        return far > 8;
+      });
       const aligned = Math.abs(a.x - b.x) < 1 || Math.abs(a.y - b.y) < 1;
       if (aligned && clear(a, b)) {
         setEdgePoints(cellEl, []);
@@ -247,6 +259,50 @@ export async function routePage(model, edgeIds, opts) {
         out = [vertFirst ? { x: a.x, y: b.y } : { x: b.x, y: a.y }];
       }
     }
+    // VALIDATION FINALE : ni le tracé droit ni libavoid ne garantissent
+    // l'absence de traversée de corps (y compris le SIEN, au-delà du pin)
+    // ou de survol de pin étranger — on re-valide et on synthétise un
+    // détour U/Z sur une lane libre si le chemin est fautif
+    {
+      const a = endAbs(cInfo, 'exit', src), b = endAbs(cInfo, 'entry', tgt);
+      const myNet = edgeNetAll.get(e.id);
+      const clearPins2 = (p, q) => !pinPts.some((pp) =>
+        pp.net !== myNet && distPS(pp.p, p, q) < 5);
+      const segOk = (p, q) => clearPins2(p, q) && !vertices.some((v) => {
+        const hit = Math.max(p.x, q.x) > v.x + 1.5 && Math.min(p.x, q.x) < v.x + v.w - 1.5 &&
+          Math.max(p.y, q.y) > v.y + 1.5 && Math.min(p.y, q.y) < v.y + v.h - 1.5;
+        if (!hit) return false;
+        if (v.id !== e.source && v.id !== e.target) return true;
+        const own = v.id === e.source ? a : b;
+        const cx2 = (x2) => Math.max(v.x + 1.5, Math.min(v.x + v.w - 1.5, x2));
+        const cy2 = (y2) => Math.max(v.y + 1.5, Math.min(v.y + v.h - 1.5, y2));
+        return Math.max(
+          Math.hypot(cx2(p.x) - own.x, cy2(p.y) - own.y),
+          Math.hypot(cx2(q.x) - own.x, cy2(q.y) - own.y)) > 8;
+      });
+      const pathOk = (wp) => {
+        const pl2 = [a, ...wp, b];
+        for (let k = 0; k + 1 < pl2.length; k++) if (!segOk(pl2[k], pl2[k + 1])) return false;
+        return true;
+      };
+      if (!pathOk(out)) {
+        let fixed = null;
+        const cands = [];
+        for (let k = 1; k <= 6 && fixed == null; k++) {
+          for (const lane of [Math.min(a.y, b.y) - k * 14, Math.max(a.y, b.y) + k * 14]) {
+            cands.push([{ x: a.x, y: lane }, { x: b.x, y: lane }]);
+          }
+          for (const lane of [Math.min(a.x, b.x) - k * 14, Math.max(a.x, b.x) + k * 14]) {
+            cands.push([{ x: lane, y: a.y }, { x: lane, y: b.y }]);
+          }
+        }
+        for (const wp of cands) { if (pathOk(wp)) { fixed = wp; break; } }
+        if (fixed != null) {
+          out = fixed;
+          cellEl.setAttribute('style', mergeStyle(cellEl.getAttribute('style'), { jettySize: 0 }));
+        }
+      }
+    }
     setEdgePoints(cellEl, out);
     routed.push(e.id);
   }
@@ -256,6 +312,9 @@ export async function routePage(model, edgeIds, opts) {
   if (process.env.DISABLE_MERGE !== '1') mergeSameNet(model, vertices);
   // ---- séparation : deux nets différents ne se superposent JAMAIS
   separateNets(model, vertices);
+  // ---- fusion, 2e passe : la séparation crée elle-même des parallèles de
+  // même net (elle décale des lanes) que la 1re fusion n'a jamais vus
+  if (process.env.DISABLE_MERGE !== '1') mergeSameNet(model, vertices);
   // ---- nettoyage : points dupliqués et pointes A->B->A laissés par les réparations
   cleanupDegeneratePoints(model);
   // ---- points de contact sur les branches >=3 terminaux (après géométrie finale)
@@ -307,7 +366,7 @@ function mergeSameNet(model, obstacles) {
     const byId2 = new Map(cells.map((c) => [c.id, c]));
     const edgeNet = netGroups(cells);
     const wires = cells.filter((c) => c.kind === 'edge' && c.source != null && c.target != null &&
-      c.style.map.get('edgeStyle') !== 'none' && c.source !== c.target);
+      c.style.map.get('edgeStyle') !== 'none');
     let repaired = false;
     for (let i = 0; i < wires.length && !repaired; i++) {
       for (let j = i + 1; j < wires.length && !repaired; j++) {
@@ -413,14 +472,17 @@ function addContactDots(model) {
     if (Math.abs(p.x - q.x) < 0.6) return Math.abs(pt.x - p.x) <= 2.5 && pt.y > Math.min(p.y, q.y) + 4 && pt.y < Math.max(p.y, q.y) - 4;
     return false;
   };
-  for (const A of wires) {
+  const selfWires0 = cells.filter((c) => c.kind === 'edge' && c.source != null && c.source === c.target);
+  for (const A of wires.concat(selfWires0)) {
     const plA = polylineOf(A, byId2);
     if (plA == null) continue;
-    for (const Bv of wires) {
+    for (const Bv of wires.concat(selfWires0)) {
       if (A === Bv || edgeNet.get(A.id) !== edgeNet.get(Bv.id)) continue;
       const plB = polylineOf(Bv, byId2);
       if (plB == null) continue;
-      for (const pt of [plA[0], plA[plA.length - 1]]) {
+      // TOUS les sommets (extrémités ET coins) : un coin posé sur le segment
+      // d'un autre fil du même net est aussi une branche (té) à pointer
+      for (const pt of plA) {
         for (let k = 0; k + 1 < plB.length; k++) {
           if (!onSeg(pt, plB[k], plB[k + 1])) continue;
           if (existingDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 12)) continue;
@@ -436,10 +498,12 @@ function addContactDots(model) {
   // Clustering par DISTANCE réelle (pas de grille : une frontière de bucket
   // faisait rater des points de contact)
   const meet = [];
-  const selfWires = cells.filter((c) => c.kind === 'edge' && c.source != null && c.source === c.target);
-  for (const A of wires.concat(selfWires)) {
+  for (const A of wires.concat(selfWires0)) {
     const plA = polylineOf(A, byId2);
     if (plA == null) continue;
+    // fil quasi nul (tap collé sur le pin) : ses deux extrémités confondues
+    // feraient un faux cluster à 2 voies -> dot fantôme dans le vide
+    if (Math.hypot(plA[plA.length - 1].x - plA[0].x, plA[plA.length - 1].y - plA[0].y) < 3) continue;
     for (const [pt, cid] of [[plA[0], A.source], [plA[plA.length - 1], A.target]]) {
       const c0 = meet.find((m) => Math.hypot(m.pt.x - pt.x, m.pt.y - pt.y) < 4);
       if (c0 != null) { c0.cids.add(cid); c0.n++; } else meet.push({ pt, cids: new Set([cid]), n: 1 });
@@ -523,6 +587,45 @@ function separateNets(model, obstacles) {
       edgesInfo.push({ c, a, b, segs, pl, nPl: pl.length });
     }
     let repaired = false;
+    const delta = 14;
+    // une lane cible est INTERDITE si un net étranger y possède déjà un
+    // segment colinéaire recouvrant (sinon : ping-pong de shifts qui recrée
+    // le recouvrement initial, vu sur le Gilbert)
+    const laneOccupied = (ei, axis, lane2, l2, h2) => edgesInfo.some((other) =>
+      other !== ei && find(other.a) !== find(ei.a) &&
+      other.segs.some((s2) => s2.axis === axis && Math.abs(s2.lane - lane2) < 6 &&
+        Math.min(s2.b, h2) - Math.max(s2.a, l2) > 10));
+    // décaler un segment INTÉRIEUR (2 waypoints)
+    const shift = (ei, seg, d) => {
+      const npts = ei.c.points || [];
+      if (!(seg.i >= 1 && seg.i <= npts.length - 1)) return false;
+      if (laneOccupied(ei, seg.axis, seg.lane + d, seg.a, seg.b)) return false;
+      const p = npts[seg.i - 1], q = npts[seg.i];
+      if (seg.axis === 'h') {
+        if (blocked(seg.a, seg.lane + d, seg.b, seg.lane + d)) return false;
+        p.y += d; q.y += d;
+      } else {
+        if (blocked(seg.lane + d, seg.a, seg.lane + d, seg.b)) return false;
+        p.x += d; q.x += d;
+      }
+      const el = allCells(model).find((x) => x.getAttribute('id') === ei.c.id);
+      setEdgePoints(el, npts);
+      return true;
+    };
+    // fil DROIT pin-à-pin (0 waypoint) : on le transforme en U sur une lane
+    // libre — un segment unique entre deux ancres est sinon immobile
+    const straighten = (ei, seg, d) => {
+      if ((ei.c.points || []).length || ei.segs.length !== 1) return false;
+      if (laneOccupied(ei, seg.axis, seg.lane + d, seg.a, seg.b)) return false;
+      if (seg.axis === 'h' ? blocked(seg.a, seg.lane + d, seg.b, seg.lane + d)
+                           : blocked(seg.lane + d, seg.a, seg.lane + d, seg.b)) return false;
+      const el2 = allCells(model).find((x) => x.getAttribute('id') === ei.c.id);
+      const p0 = ei.pl[0], p1 = ei.pl[ei.pl.length - 1];
+      setEdgePoints(el2, seg.axis === 'h'
+        ? [{ x: p0.x, y: seg.lane + d }, { x: p1.x, y: seg.lane + d }]
+        : [{ x: seg.lane + d, y: p0.y }, { x: seg.lane + d, y: p1.y }]);
+      return true;
+    };
     outer:
     for (let i = 0; i < edgesInfo.length && !repaired; i++) {
       for (let j = i + 1; j < edgesInfo.length && !repaired; j++) {
@@ -540,46 +643,6 @@ function separateNets(model, obstacles) {
             }
             done.add(pairKey);
             if (process.env.DEBUG_SEP === '1') console.error(`[sep] repair#${repairs} ${A.c.source}->${A.c.target} vs ${Bv.c.source}->${Bv.c.target} ${sa.axis} lane=${sa.lane} [${lo},${hi}]`);
-            const delta = 14;
-            // une lane cible est INTERDITE si un net étranger y possède déjà
-            // un segment colinéaire recouvrant (sinon : ping-pong de shifts
-            // qui recrée le recouvrement initial, vu sur le Gilbert)
-            const laneOccupied = (ei, axis, lane2, l2, h2) => edgesInfo.some((other) =>
-              other !== ei && find(other.a) !== find(ei.a) &&
-              other.segs.some((s2) => s2.axis === axis && Math.abs(s2.lane - lane2) < 6 &&
-                Math.min(s2.b, h2) - Math.max(s2.a, l2) > 10));
-            // 1) décaler un segment INTÉRIEUR (2 waypoints)
-            const shift = (ei, seg, d) => {
-              const npts = ei.c.points || [];
-              if (!(seg.i >= 1 && seg.i <= npts.length - 1)) return false;
-              if (laneOccupied(ei, seg.axis, seg.lane + d, seg.a, seg.b)) return false;
-              const p = npts[seg.i - 1], q = npts[seg.i];
-              if (seg.axis === 'h') {
-                if (blocked(seg.a, seg.lane + d, seg.b, seg.lane + d)) return false;
-                p.y += d; q.y += d;
-              } else {
-                if (blocked(seg.lane + d, seg.a, seg.lane + d, seg.b)) return false;
-                p.x += d; q.x += d;
-              }
-              const el = allCells(model).find((x) => x.getAttribute('id') === ei.c.id);
-              setEdgePoints(el, npts);
-              return true;
-            };
-            // 1bis) fil DROIT pin-à-pin (0 waypoint) : on le transforme en U
-            // sur une lane libre — un segment unique entre deux ancres est
-            // sinon immobile (vu : les 2 barres de source du quad Gilbert)
-            const straighten = (ei, seg, d) => {
-              if ((ei.c.points || []).length || ei.segs.length !== 1) return false;
-              if (laneOccupied(ei, seg.axis, seg.lane + d, seg.a, seg.b)) return false;
-              if (seg.axis === 'h' ? blocked(seg.a, seg.lane + d, seg.b, seg.lane + d)
-                                   : blocked(seg.lane + d, seg.a, seg.lane + d, seg.b)) return false;
-              const el2 = allCells(model).find((x) => x.getAttribute('id') === ei.c.id);
-              const p0 = ei.pl[0], p1 = ei.pl[ei.pl.length - 1];
-              setEdgePoints(el2, seg.axis === 'h'
-                ? [{ x: p0.x, y: seg.lane + d }, { x: p1.x, y: seg.lane + d }]
-                : [{ x: seg.lane + d, y: p0.y }, { x: seg.lane + d, y: p1.y }]);
-              return true;
-            };
             for (const d of [-delta, delta, -2 * delta, 2 * delta, -3 * delta, 3 * delta, -4 * delta, 4 * delta]) {
               if (shift(A, sa, d) || shift(Bv, sb, d) || straighten(A, sa, d) || straighten(Bv, sb, d)) {
                 repaired = true; break outer;
@@ -604,6 +667,63 @@ function separateNets(model, obstacles) {
             pts.splice(sa.i, 0, ...jog);
             setEdgePoints(el, pts);
             repaired = true; break outer;
+          }
+        }
+      }
+    }
+    if (!repaired) {
+      // phase 2 : un segment qui frôle (<6 px) le PIN d'un autre net doit
+      // s'écarter — ni libavoid ni un tracé droit ne connaissent les pins
+      // (vu : la barre de sources du Gilbert posée sur le pin de M5)
+      const dps = (pt, p, q) => {
+        const dx = q.x - p.x, dy = q.y - p.y, L2 = dx * dx + dy * dy;
+        const t = L2 ? Math.max(0, Math.min(1, ((pt.x - p.x) * dx + (pt.y - p.y) * dy) / L2)) : 0;
+        return Math.hypot(pt.x - (p.x + t * dx), pt.y - (p.y + t * dy));
+      };
+      const pinsAll = [];
+      for (const ei of edgesInfo) {
+        pinsAll.push({ pt: ei.pl[0], root: find(ei.a) });
+        pinsAll.push({ pt: ei.pl[ei.pl.length - 1], root: find(ei.a) });
+      }
+      outer2:
+      for (const A of edgesInfo) {
+        for (const seg of A.segs) {
+          const sp = seg.axis === 'h'
+            ? [{ x: seg.a, y: seg.lane }, { x: seg.b, y: seg.lane }]
+            : [{ x: seg.lane, y: seg.a }, { x: seg.lane, y: seg.b }];
+          for (const P of pinsAll) {
+            if (P.root === find(A.a)) continue;
+            if (dps(P.pt, sp[0], sp[1]) >= 6) continue;
+            // pin collé à une extrémité ancrée du fil : indéplaçable
+            if (Math.min(...A.pl.map((pp) => Math.hypot(pp.x - P.pt.x, pp.y - P.pt.y))) < 1 &&
+                seg.i !== 0 && seg.i !== A.nPl - 2) { /* coin exactement sur pin : réparable */ }
+            const key = ['pin', A.c.id, Math.round(P.pt.x), Math.round(P.pt.y)].join('|');
+            if (done.has(key)) continue;
+            done.add(key);
+            if (process.env.DEBUG_SEP === '1') console.error(`[sep] pin-frôlé ${A.c.source}->${A.c.target} près de (${Math.round(P.pt.x)},${Math.round(P.pt.y)})`);
+            for (const d of [-delta, delta, -2 * delta, 2 * delta, -3 * delta, 3 * delta]) {
+              if (shift(A, seg, d) || straighten(A, seg, d)) { repaired = true; break outer2; }
+            }
+            // dog-leg local : contourner le pin sur une lane libre
+            const c0 = seg.axis === 'h' ? P.pt.x : P.pt.y;
+            const lo2 = Math.max(seg.a, c0 - 14), hi2 = Math.min(seg.b, c0 + 14);
+            if (hi2 - lo2 < 6) continue;
+            let dgn2 = null;
+            for (const d of [-delta, delta, -2 * delta, 2 * delta]) {
+              const free = !laneOccupied(A, seg.axis, seg.lane + d, lo2, hi2) &&
+                !blocked(seg.axis === 'h' ? lo2 : seg.lane + d, seg.axis === 'h' ? seg.lane + d : lo2,
+                         seg.axis === 'h' ? hi2 : seg.lane + d, seg.axis === 'h' ? seg.lane + d : hi2);
+              if (free) { dgn2 = d; break; }
+            }
+            if (dgn2 == null) continue;
+            const el3 = allCells(model).find((x) => x.getAttribute('id') === A.c.id);
+            const pts3 = A.c.points ? A.c.points.map((pp) => ({ ...pp })) : [];
+            const jog2 = seg.axis === 'h'
+              ? [{ x: lo2, y: seg.lane }, { x: lo2, y: seg.lane + dgn2 }, { x: hi2, y: seg.lane + dgn2 }, { x: hi2, y: seg.lane }]
+              : [{ x: seg.lane, y: lo2 }, { x: seg.lane + dgn2, y: lo2 }, { x: seg.lane + dgn2, y: hi2 }, { x: seg.lane, y: hi2 }];
+            pts3.splice(seg.i, 0, ...jog2);
+            setEdgePoints(el3, pts3);
+            repaired = true; break outer2;
           }
         }
       }

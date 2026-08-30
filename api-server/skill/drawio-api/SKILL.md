@@ -69,6 +69,8 @@ curl -s -X POST :8770/documents/doc1/beauty -H 'Content-Type: application/json' 
 # règles vérifiées : through (fil à travers un corps), 22 (nets superposés),
 # 30/30b (points de contact manquants/dupliqués), 32 (diode côté drain), 14/26 (rangées)
 curl -s -X POST :8770/documents/doc1/check -H 'Content-Type: application/json' -d '{}'
+# checker Python INDÉPENDANT (le juge de référence, plus strict) :
+python3 tools/check.py schema.xml --netlist circuit.cir --json
 ```
 `?engine=v1|v2` force un moteur sans optimisation. Le score /100 pénalise
 croisements, traversées de composants, coudes, longueur, désalignement,

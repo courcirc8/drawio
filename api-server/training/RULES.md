@@ -320,3 +320,40 @@ Causes racines trouvées par le checker (invisibles à l'œil ou au score) :
     sont irréparables ; le X des figures publiées est LA solution. La
     paire étant redétectée comme paire diff (source partagée), le flip
     cc l'emporte sur le flip diff.
+
+### Checker Python indépendant + générateur à 0 erreur (2026-08-30)
+
+Leçon de biais (demande utilisateur : « pourquoi es-tu biaisé ? ») : le
+checker JS avait été écrit par l'auteur du générateur, APRÈS ses corrections,
+avec les mêmes primitives géométriques, les mêmes seuils calibrés pour que la
+sortie du jour passe, et les mêmes angles morts copiés (exemption des corps
+terminaux, extrémités seules, buckets d'arrondi). Un vérificateur qui partage
+le modèle mental du générateur ne peut pas voir ce que le générateur ne voit
+pas. Antidote : `tools/check.py` — autre langage, lecture du XML brut, zéro
+code partagé, seuils PLUS stricts que le réparateur, et un harnais
+(`tools/test-check.py`) qui l'oblige à retrouver chaque faute documentée par
+la revue adversariale (fixtures figées dans benchmark/regression/) plus les
+faux négatifs synthétiques. Il est branché dans `npm test` ET comme juge des
+finalistes de l'optimiseur (moins d'erreurs d'abord, score ensuite).
+
+Règles nouvelles nées de cette passe :
+35. **Aucun fil ne traverse un corps — même le sien** : un fil peut pénétrer
+    son propre composant de 8 px autour de SON pin, jamais le traverser pour
+    atteindre le pin du côté opposé (bus de gates à travers M8). Idem pour
+    les diagonales volontaires (12 px). Validation FINALE de chaque tracé
+    (droit, L, libavoid) + détour U/Z sur lane libre.
+36. **Quad = paires ADJACENTES** (M3 M4 | M5 M6, style Razavi) : les colonnes
+    héritées des nets de drain entrelacent les paires et forcent la barre de
+    sources de l'une à enjamber le pin de l'autre — irréparable au routage.
+    Chaque queue RF au centre de SA paire.
+37. **Aucun corps sur un autre** (comp-overlap) : diode accolée poussée hors
+    recouvrement ; passif flottant dégagé à 24 px (corridor de routage).
+38. **Un net multi-terminal NOMMÉ reçoit un port** (in/out/rf/lo/if/vb…) du
+    côté où le pin regarde — l'OL du Gilbert n'existait nulle part.
+39. **Rails seulement pour un vrai net d'alimentation nommé** (vdd/vcc…) —
+    deviner le rail « au plus grand nombre de tops » déguisait l'entrée du
+    biquad en VDD. Étiquette du tap au-dessus de la barre ; étiquettes des
+    composants à flux vertical sur le flanc gauche.
+
+Bilan : 6/6 circuits à 0 erreur au checker Python (33 erreurs trouvées sur
+les sorties « 0/0 » du checker JS de la veille, toutes résolues).

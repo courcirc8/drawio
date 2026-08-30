@@ -11,6 +11,27 @@ import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 import { scoreDocument } from './beauty.js';
 import { compactPage, fastScore } from './compact.js';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE2 = path.dirname(fileURLToPath(import.meta.url));
+let chkSeq = 0;
+/** Erreurs du checker Python indépendant (tools/check.py) sur un document.
+ * C'est LE juge final : un candidat plus joli mais fautif ne gagne jamais. */
+function checkErrors(doc) {
+  try {
+    const tmp = path.join(os.tmpdir(), `optchk-${process.pid}-${++chkSeq}.xml`);
+    fs.writeFileSync(tmp, serialize(doc));
+    const r = spawnSync('python3', [path.join(HERE2, '../tools/check.py'), tmp, '--json'],
+      { encoding: 'utf8', timeout: 15000 });
+    fs.unlinkSync(tmp);
+    const j = JSON.parse(r.stdout || '{}');
+    return Number.isInteger(j.errors) ? j.errors : 99;
+  } catch { return 99; }
+}
 
 function mulberry(seed) {
   let a = seed >>> 0;
@@ -105,11 +126,14 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   const finalists = [seed0, ...beam.slice(0, 3).filter((b) => b !== seed0)];
   for (const fin of finalists) {
     const full = await evaluate(parsed, fin.params, reference, false);
-    if (full.ok && (best == null || full.score > best.score)) best = full;
-    else if (!full.ok) finReasons.push(full.reason);
+    if (!full.ok) { finReasons.push(full.reason); continue; }
+    // gate du checker indépendant : moins d'erreurs d'abord, score ensuite
+    full.checkErrors = checkErrors(full.doc);
+    if (best == null || full.checkErrors < best.checkErrors ||
+        (full.checkErrors === best.checkErrors && full.score > best.score)) best = full;
   }
   if (best == null) throw new Error('aucun finaliste valide: ' + finReasons.join(','));
-  history.push({ iter: 'final', score: best.score, accepted: true });
+  history.push({ iter: 'final', score: best.score, checkErrors: best.checkErrors, accepted: true });
   // S3 : compaction finale, gardée par LVS + score (avec restauration)
   try {
     const backup = serialize(best.doc);
@@ -118,7 +142,8 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
     await compactPage(m);
     const lvs = compare(extractNetlist(m), parsed);
     const b = lvs.match ? await scoreDocument(best.doc, m, { reference }) : null;
-    if (b != null && b.score >= before) {
+    const cAfter = b != null ? checkErrors(best.doc) : 99;
+    if (b != null && b.score >= before && cAfter <= (best.checkErrors ?? 99)) {
       best = { ...best, score: b.score, metrics: b.metrics };
       history.push({ iter: 'compact', score: b.score, accepted: true });
     } else {
