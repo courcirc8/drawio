@@ -61,6 +61,8 @@ def parse(path):
                 'rotation': float(smap.get('rotation', 0)),
                 'flipH': smap.get('flipH') == '1', 'flipV': smap.get('flipV') == '1',
                 'vlp': smap.get('verticalLabelPosition'),
+                'no_label': smap.get('noLabel') == '1',
+                'is_text': style.startswith('text;'),
             }
             if 'contactDot' in smap:
                 dots.append({'id': cid, 'x': v['x'] + v['w'] / 2, 'y': v['y'] + v['h'] / 2})
@@ -256,7 +258,7 @@ class Checker:
             pl = self.polys[e['id']]
             for i, (a, b) in enumerate(self.segs(e['id'])):
                 for cid, v in self.verts.items():
-                    if v.get('junction') or v['w'] < 12:
+                    if v.get('junction') or v.get('is_text') or v['w'] < 12:
                         continue
                     x, y, w, h = aabb(v)
                     r = (x + sh, y + sh, w - 2 * sh, h - 2 * sh)
@@ -441,7 +443,7 @@ class Checker:
                 if ax == 'd':
                     continue
                 for cid, v in self.verts.items():
-                    if v.get('junction') or v['h'] < 60:
+                    if v.get('junction') or v.get('is_text') or v['h'] < 60:
                         continue
                     x, y, w, h = aabb(v)
                     if ax == 'v' and (abs(a[0] - x) < 2.5 or abs(a[0] - (x + w)) < 2.5):
@@ -460,8 +462,10 @@ class Checker:
     # ---- étiquettes : jamais sur un fil, jamais l'une sur l'autre
     def label_box(self, v):
         txt = v['value']
-        if not txt:
+        if not txt or v.get('no_label'):
             return None
+        if v.get('is_text'):
+            return (v['x'], v['y'], v['w'], v['h'])
         lw, lh = 7.2 * len(txt) + 6, 16
         cx = v['x'] + v['w'] / 2
         if v.get('vlp') == 'top':
@@ -641,7 +645,8 @@ class Checker:
 
     def check_comp_overlap(self):
         ids = [cid for cid, v in self.verts.items()
-               if not v.get('junction') and v['w'] >= 20 and v['h'] >= 20]
+               if not v.get('junction') and not v.get('is_text')
+               and v['w'] >= 20 and v['h'] >= 20]
         for i, c1 in enumerate(ids):
             for c2 in ids[i + 1:]:
                 x1, y1, w1, h1 = aabb(self.verts[c1])

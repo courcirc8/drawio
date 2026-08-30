@@ -357,3 +357,14 @@ Règles nouvelles nées de cette passe :
 
 Bilan : 6/6 circuits à 0 erreur au checker Python (33 erreurs trouvées sur
 les sorties « 0/0 » du checker JS de la veille, toutes résolues).
+
+40. **Selfs = bobine à spires partout** (remarque utilisateur : les
+    rectangles IEC inductor_2 dénotaient) : la self verticale est la MÊME
+    bobine que l'horizontale (inductor_3), tournée de 90° — la ligne de
+    pins d'un dipôle tourné est ramenée exactement sur l'axe de conduction
+    (formule générale, corrige aussi le décalage d'1 px des résistances).
+41. **Étiquettes toujours horizontales** : le label d'un dipôle tourné
+    tournerait avec lui — on le masque (noLabel=1) et on pose une cellule
+    TEXTE horizontale sur le flanc gauche, qui devient un obstacle que le
+    routeur contourne. Deux jonctions distinctes à ≥5 px gardent chacune
+    leur point de contact (la dédup à 12 px avalait le dot du pin voisin).

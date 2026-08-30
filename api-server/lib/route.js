@@ -485,8 +485,8 @@ function addContactDots(model) {
       for (const pt of plA) {
         for (let k = 0; k + 1 < plB.length; k++) {
           if (!onSeg(pt, plB[k], plB[k + 1])) continue;
-          if (existingDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 12)) continue;
-          if (newDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 12)) continue;
+          if (existingDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 5)) continue;
+          if (newDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 5)) continue;
           newDots.push({ x: pt.x, y: pt.y });
         }
       }
@@ -512,8 +512,8 @@ function addContactDots(model) {
   for (const { pt, cids, n } of meet) {
     const onJunction = [...cids].every((cid) => byId2.get(cid)?.style.map.has('drawioApiJunction'));
     if (n < (onJunction ? 3 : 2)) continue;
-    if (existingDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 12)) continue;
-    if (newDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 12)) continue;
+    if (existingDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 5)) continue;
+    if (newDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 5)) continue;
     newDots.push({ x: pt.x, y: pt.y });
   }
   let dseq = 0;

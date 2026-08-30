@@ -689,19 +689,17 @@ export function importNetlist2(model, parsed, opts = {}) {
     // axe de conduction UNIQUE par colonne, indépendant des flips (un flip
     // décalait l'axe de ±15 px et désalignait les piles mixtes -> baïonnettes)
     const axisX = cx + 15;
-    let w2 = w, h2 = h, shapeKey2 = ci.shapeKey, rot2 = rotation;
-    if (c.prefix === 'L' && rotation !== 0) {
-      // inductance VERTICALE : symbole vertical natif (pins traversants sur
-      // l'axe) au lieu d'une bobine tournée aux pins en coin -> zéro coude
-      shapeKey2 = 'mxgraph.electrical.inductors.inductor_2';
-      const vs = getShape(shapeKey2);
-      w2 = vs.w; h2 = vs.h; rot2 = 0;
-      ci.shapeKey = shapeKey2;
-    }
+    // selfs verticales = la MÊME bobine que l'horizontale (inductor_3),
+    // simplement tournée — l'inductor_2 « rectangle IEC » dénotait avec les
+    // figures publiées (remarque utilisateur)
+    const w2 = w, h2 = h, shapeKey2 = ci.shapeKey, rot2 = rotation;
     let x = axisX - w2 / 2, y = cy - h2 / 2;
     if (c.prefix === 'M' || c.prefix === 'Q') x = flipped ? axisX : axisX - w2;
-    if (shapeKey2 === 'mxgraph.electrical.inductors.inductor_2') {
-      x = axisX - (flipped ? (1 - 0.6977) : 0.6977) * w2;
+    else if (rot2 !== 0) {
+      // dipôle tourné (+90) : amener la LIGNE DE PINS (rel y=py, tournée en
+      // x = cx - (py-0.5)*h) exactement sur l'axe de conduction
+      const py = (getPin(shapeKey2, ci.po[0]) || { y: 0.5 }).y;
+      x = axisX + (py - 0.5) * h2 - w2 / 2;
     }
     const cell = addVertex(model, { id: c.ref, shape: shapeKey2, x, y, w: w2, h: h2, rotation: rot2, value: c.value || '' });
     if (flipped) cell.setAttribute('style', cell.getAttribute('style') + 'flipH=1;');
@@ -737,13 +735,14 @@ export function importNetlist2(model, parsed, opts = {}) {
       // dérivations : bias en haut (vertical), shunt masse en bas (vertical)
       for (const h of e.hangers) {
         const hi = info.get(h.c.ref);
-        let hShape = hi.shapeKey, hRot = h.up ? -90 : 90;
-        if (h.c.prefix === 'L') { hShape = 'mxgraph.electrical.inductors.inductor_2'; hRot = 0; hi.shapeKey = hShape; }
+        const hShape = hi.shapeKey, hRot = h.up ? -90 : 90;
         const hs = getShape(hShape);
         const hx = cx + 85;
-        const hh = hRot === 0 ? hs.h : hs.w;
+        const hh = hs.w;
         const hy = h.up ? cy - 80 - hh / 2 : cy + 80 + hh / 2;
-        const hxpos = hShape === 'mxgraph.electrical.inductors.inductor_2' ? hx - 0.6977 * hs.w : hx - hs.w / 2;
+        // ligne de pins du dipôle tourné sur l'axe vertical hx
+        const hpy = (getPin(hShape, hi.po[0]) || { y: 0.5 }).y;
+        const hxpos = hx + (hRot === 90 ? 1 : -1) * (hpy - 0.5) * hs.h - hs.w / 2;
         addVertex(model, { id: h.c.ref, shape: hShape, x: hxpos, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: hRot, value: h.c.value || '' });
         placed.set(h.c.ref, { id: h.c.ref, x: hxpos, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: hRot });
         for (let i = 0; i < hi.po.length; i++) term(h.c.nodes[i], h.c.ref, hi.po[i], getPin(hShape, hi.po[i]));
@@ -862,8 +861,10 @@ export function importNetlist2(model, parsed, opts = {}) {
   }
 
   // étiquettes : composant à flux VERTICAL (fils en haut/bas) -> étiquette
-  // sur le FLANC gauche, où la place est libre (les taps/sources/selfs
-  // verticales avaient leur valeur posée en travers du fil du bas)
+  // sur le FLANC gauche, où la place est libre. Pour un dipôle TOURNÉ, le
+  // label du symbole tournerait avec lui (texte couché, remarque
+  // utilisateur) : on le masque (noLabel) et on pose une CELLULE TEXTE
+  // horizontale à gauche — qui devient au passage un obstacle de routage.
   for (const c of comps) {
     const cell2 = getCell(model, c.ref);
     if (cell2 == null) continue;
@@ -873,10 +874,21 @@ export function importNetlist2(model, parsed, opts = {}) {
     if (p2 == null) continue;
     const rotated = ((p2.rotation || 0) % 180 + 180) % 180 !== 0;
     const dw = rotated ? p2.h : p2.w, dh = rotated ? p2.w : p2.h;
-    if (dh >= dw) {
+    if (dh < dw) continue;
+    if (!rotated) {
       cell2.setAttribute('style', st2.replace('verticalLabelPosition=bottom;verticalAlign=top;',
         'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=left;align=right;spacing=8;'));
+      continue;
     }
+    const txt = c.value || '';
+    if (!txt) continue;
+    cell2.setAttribute('style', st2 + 'noLabel=1;');
+    const lw = Math.round(7.2 * String(txt).length + 6), lh = 16;
+    const cxb = p2.x + p2.w / 2, cyb = p2.y + p2.h / 2;
+    const lx = cxb - dw / 2 - 6 - lw, ly = cyb - lh / 2;
+    const lid = 'LBL_' + c.ref;
+    addVertex(model, { id: lid, style: 'text;html=1;align=right;verticalAlign=middle;fontSize=12;', x: lx, y: ly, w: lw, h: lh, value: String(txt) });
+    placed.set(lid, { id: lid, x: lx, y: ly, w: lw, h: lh, rotation: 0 });
   }
 
   const wires = wireNets(model, { comps, info, placed, netTerms, vddNet, P });
