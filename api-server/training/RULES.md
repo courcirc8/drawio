@@ -452,3 +452,15 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     segments tracés du max vers le min (boucle dégénérée effacée par le
     nettoyage, conflit marqué réparé à tort) ; port d'interface placé sans
     test de routabilité (L port->pin désormais exigé libre).
+
+48. **Petites conventions de lisibilité** (revue adversariale) :
+    - transistors étiquetés par REFDES (M1…Mn) en cellule texte sous le
+      corps (obstacle de routage) ; le modèle reste dans value (masqué,
+      noLabel) pour l'extraction/LVS ;
+    - paires de ports différentiels (OUTP/OUTM, LOP/LOM…) alignées à la
+      MÊME hauteur ; port d'interface multi-terminal : préférence aux pins
+      qui regardent en HAUT (port au-dessus, jamais pendu dans la
+      structure) ;
+    - passif flottant : dégagement le plus PROCHE de l'idéal dans les 4
+      directions, latéral pénalisé x2 (la cap Miller montait au-dessus des
+      VDD ; le latéral aveugle écrasait la masse du RC).

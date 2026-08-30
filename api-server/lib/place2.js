@@ -276,11 +276,24 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const pl2 = (w2.t.pin.x <= 0.5) !== !!(placed.get(w2.t.ref) || {}).flipH;
       return (pl2 ? -1 : 1) === (w2.abs.x <= cxm ? -1 : 1);
     };
+    const upFacing = (w2) => {
+      const p2 = placed.get(w2.t.ref);
+      return p2 != null && Math.abs(w2.abs.y - p2.y) < 3 &&
+        Math.abs(w2.abs.x - (p2.x + p2.w / 2)) < Math.max(14, p2.w / 3);
+    };
+    const ups = withAbs.filter(upFacing);
     const pool = withAbs.filter(facing);
-    const cands2 = (pool.length ? pool : withAbs)
+    const cands2 = (ups.length ? ups : (pool.length ? pool : withAbs))
       .sort((u, v) => Math.abs(v.abs.x - cxm) - Math.abs(u.abs.x - cxm));
     const { t, abs } = cands2[0];
     const id = 'PN' + (++seq);
+    if (ups.length) {
+      const cellUp2 = addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, value: net.toUpperCase() });
+      cellUp2.setAttribute('style', cellUp2.getAttribute('style') + 'flipV=1;verticalLabelPosition=top;verticalAlign=bottom;');
+      placed.set(id, { id, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, rotation: 0, flipV: true });
+      wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
+      continue;
+    }
     const leftish = (t.pin.x <= 0.5) !== !!(placed.get(t.ref) || {}).flipH;
     let px = abs.x + (leftish ? -80 : 56), py = abs.y + 36;
     const clash = () => [...placed.values()].some((v) =>
@@ -300,6 +313,29 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net.toUpperCase() });
     placed.set(id, { id, x: px, y: py, w: 24, h: 24, rotation: 0 });
     wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
+  }
+
+  // paires de ports différentiels (XP/XM) : MÊME hauteur — un circuit
+  // symétrique ne pique pas OUTP et OUTM à deux niveaux différents
+  {
+    const ports = [...placed.entries()].filter(([id2]) => /^(P_|PN)/.test(id2));
+    const stems = new Map();
+    for (const [id2, p2] of ports) {
+      const cell2 = getCell(model, id2);
+      const val = (cell2 && cell2.getAttribute('value') || '').toUpperCase();
+      const m2 = /^(.*)(P|M)$/.exec(val);
+      if (m2 == null || m2[1] === '') continue;
+      if (!stems.has(m2[1])) stems.set(m2[1], []);
+      stems.get(m2[1]).push({ id: id2, p: p2 });
+    }
+    for (const [, pair] of stems) {
+      if (pair.length !== 2) continue;
+      const target = Math.min(pair[0].p.y, pair[1].p.y);
+      for (const pr of pair) {
+        const dy = target - pr.p.y;
+        if (Math.abs(dy) > 1) { pr.p.y += dy; updateCell(model, pr.id, { dy }); }
+      }
+    }
   }
 
   return wires;
@@ -728,6 +764,16 @@ export function importNetlist2(model, parsed, opts = {}) {
     }
     const cell = addVertex(model, { id: c.ref, shape: shapeKey2, x, y, w: w2, h: h2, rotation: rot2, value: c.value || '' });
     if (flipped) cell.setAttribute('style', cell.getAttribute('style') + 'flipH=1;');
+    // transistors : afficher le REFDES (M1...) comme dans les figures
+    // publiées — le modèle (NMOS/PMOS) reste dans value pour l'extraction,
+    // masqué (noLabel) ; le texte est un obstacle que le routeur évite
+    if (c.prefix === 'M' || c.prefix === 'Q') {
+      cell.setAttribute('style', cell.getAttribute('style') + 'noLabel=1;');
+      const lw = Math.round(7.2 * c.ref.length + 6), lh = 16;
+      const lx = x + w2 / 2 - lw / 2, ly = y + h2 + 4;
+      addVertex(model, { id: 'LBL_' + c.ref, style: 'text;html=1;align=center;verticalAlign=middle;fontSize=12;', x: lx, y: ly, w: lw, h: lh, value: c.ref });
+      placed.set('LBL_' + c.ref, { id: 'LBL_' + c.ref, x: lx, y: ly, w: lw, h: lh, rotation: 0 });
+    }
     const pc = { id: c.ref, x, y, w: w2, h: h2, rotation: rot2, flipH: flipped };
     placed.set(c.ref, pc);
     // enregistrer les terminaux
@@ -940,9 +986,23 @@ export function importNetlist2(model, parsed, opts = {}) {
       return x < v.x + v.w + 24 && x + shape.w > v.x - 24 && y < v.y + v.h + 24 && y + shape.h > v.y - 24;
     });
     if (overlaps()) {
-      const y00 = y;
-      for (let k = 1; k <= 12 && overlaps(); k++) y = y00 - k * 20;
-      if (overlaps()) { y = y00; for (let k = 1; k <= 12 && overlaps(); k++) y = y00 + k * 20; }
+      // dégagement le plus PROCHE de l'idéal, dans les 4 directions — le
+      // push aveugle vers le haut envoyait la cap Miller au-dessus des VDD
+      const x00 = x, y00 = y;
+      let best = null;
+      for (const [dx2, dy2] of [[0, -20], [0, 20], [-20, 0], [20, 0], [-20, -20], [20, -20], [-20, 20], [20, 20]]) {
+        for (let k = 1; k <= 12; k++) {
+          x = x00 + dx2 * k; y = y00 + dy2 * k;
+          if (!overlaps()) {
+            // le vertical est préféré : le latéral coûte double (il ignore
+            // les masses/taps qui naîtront plus tard au droit des pins)
+            const d2 = Math.hypot(x - x00, y - y00) * (dx2 !== 0 ? 2 : 1);
+            if (best == null || d2 < best.d2) best = { x, y, d2 };
+            break;
+          }
+        }
+      }
+      if (best != null) { x = best.x; y = best.y; } else { x = x00; y = y00; }
     }
     const cellF = addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: 0, value: c.value || '' });
     if (flipF) cellF.setAttribute('style', cellF.getAttribute('style') + 'flipH=1;');
