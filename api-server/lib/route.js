@@ -466,7 +466,7 @@ function simplifyBends(model, obstacles) {
     };
     let changed = false;
     for (const it of infos) {
-      if ((it.c.points || []).length < 2) continue;
+      if ((it.c.points || []).length < 1) continue; // 1 coude : éligible au té-swap
       const a = it.pl[0], b = it.pl[it.pl.length - 1];
       const okSeg = (p, q) => {
         if (obstacles.some((v) => {
@@ -506,8 +506,33 @@ function simplifyBends(model, obstacles) {
           cands.push([{ x: mx + d, y: a.y }, { x: mx + d, y: b.y }]);
         }
       }
+      // un L « fait té » si un de ses segments se superpose à un tronc du
+      // même net : la dérivation plonge sur le fil au lieu de rejoindre le
+      // pin par un décroché (préférence humaine, remarque Cm/Lb1)
+      const makesTee = (pl3) => {
+        for (let k = 0; k + 1 < pl3.length; k++) {
+          const cs = segsOf([pl3[k], pl3[k + 1]]);
+          if (cs.length === 0) continue;
+          const sc = cs[0];
+          for (const o of infos) {
+            if (o === it || o.net !== it.net) continue;
+            for (const so of segsOf(o.pl)) {
+              if (so.axis === sc.axis && Math.abs(so.lane - sc.lane) < 0.6 &&
+                  Math.min(so.b, sc.b) - Math.max(so.a, sc.a) > 10) return true;
+            }
+          }
+        }
+        return false;
+      };
       for (const wp of cands) {
-        if (wp.length >= (it.c.points || []).length) continue; // pas une amélioration
+        const cur = it.c.points || [];
+        const better = wp.length < cur.length;
+        let teeSwap = false;
+        if (!better && wp.length === 1 && cur.length === 1) {
+          teeSwap = makesTee([a, ...wp, b]) &&
+            !makesTee([a, ...cur.map((p) => ({ x: p.x, y: p.y })), b]);
+        }
+        if (!better && !teeSwap) continue;
         const pl2 = [a, ...wp, b];
         let ok = true;
         for (let k = 0; k + 1 < pl2.length; k++) { if (!okSeg(pl2[k], pl2[k + 1])) { ok = false; break; } }

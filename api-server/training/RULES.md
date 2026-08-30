@@ -401,3 +401,11 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
       un cadre de diode (self-edge, 3 coudes imposés par la règle 24) est
       exempté.
     Bilan : 7/7 circuits à 0 erreur ET 0 coude en excès.
+
+44. **Les dérivations plongent au MILIEU du fil, pas sur un pin** (remarque
+    utilisateur : « un humain aurait mis la cap entre les inducteurs pour
+    répartir les espaces »). Axe d'un hanger = milieu du segment de
+    jonction (pin de son élément <-> pin du voisin côté ancre). Et dans le
+    simplificateur : à nombre de coudes ÉGAL, préférer le L dont un segment
+    se fond dans un tronc du même net (té propre) plutôt que le L qui
+    rejoint le pin par un décroché — les fils à 1 coude sont éligibles.

@@ -747,10 +747,22 @@ export function importNetlist2(model, parsed, opts = {}) {
       placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, flipH: eFlip });
       for (let i = 0; i < ci.po.length; i++) term(e.c.nodes[i], e.c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
       // dérivations : bias en haut (vertical), shunt masse en bas (vertical)
-      // AXE = le pin de jonction de l'élément (zéro coude : le fil du
-      // hanger tombe droit sur le nœud, remarque utilisateur sur Lb1)
+      // AXE = le MILIEU du fil de jonction (entre le pin de cet élément et
+      // celui du voisin côté ancre) : le té répartit les espaces comme dans
+      // un dessin humain (remarque utilisateur sur Cm), et le fil du hanger
+      // tombe droit dessus (zéro coude, remarque sur Lb1)
       const jPin = getPin(ci.shapeKey, ci.po[Math.max(0, e.c.nodes.indexOf(e.net))]) || { x: 1, y: 0.5 };
-      const junctionX = pinAbs(placed.get(e.c.ref), jPin).x;
+      const jSelfX = pinAbs(placed.get(e.c.ref), jPin).x;
+      let jPrevX = ga.x;
+      const kIdx = ch.elems.indexOf(e);
+      if (kIdx > 0) {
+        const pe = ch.elems[kIdx - 1].c;
+        const pi = info.get(pe.ref);
+        const pPin = getPin(pi.shapeKey, pi.po[Math.max(0, pe.nodes.indexOf(e.net))]) || { x: 0, y: 0.5 };
+        const pp2 = placed.get(pe.ref);
+        if (pp2 != null) jPrevX = pinAbs(pp2, pPin).x;
+      }
+      const junctionX = (jSelfX + jPrevX) / 2;
       let upK = 0, downK = 0;
       for (const h of e.hangers) {
         const hi = info.get(h.c.ref);
