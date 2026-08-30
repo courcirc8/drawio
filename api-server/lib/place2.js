@@ -359,8 +359,12 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     const riNet = quadRail.get(net);
     if (riNet != null && riNet.endRef != null) {
       const id2 = 'PN' + (++seq);
-      addVertex(model, { id: id2, shape: PORT, x: riNet.endX + 46, y: riNet.lane, w: 24, h: 24, value: net.toUpperCase() });
-      placed.set(id2, { id: id2, x: riNet.endX + 46, y: riNet.lane, w: 24, h: 24, rotation: 0, railPort: true });
+      let pxR = riNet.endX + 46;
+      const clashR = () => [...placed.values()].some((v) =>
+        pxR < v.x + v.w + 8 && pxR + 24 > v.x - 8 && riNet.lane < v.y + v.h + 8 && riNet.lane + 24 > v.y - 8);
+      for (let k3 = 0; k3 < 8 && clashR(); k3++) pxR += 40;
+      addVertex(model, { id: id2, shape: PORT, x: pxR, y: riNet.lane, w: 24, h: 24, value: net.toUpperCase() });
+      placed.set(id2, { id: id2, x: pxR, y: riNet.lane, w: 24, h: 24, rotation: 0, railPort: true });
       wire(null, { source: id2, target: riNet.endRef, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: riNet.endPin.x, y: riNet.endPin.y } });
       continue;
     }
@@ -1214,6 +1218,62 @@ export function importNetlist2(model, parsed, opts = {}) {
       }
     }
     if (!moved) break;
+  }
+
+  // ---- source de polarisation au-dessus de sa diode : alignée sur le pin
+  //      de drain (plongée droite, pas de baïonnette — remarque utilisateur)
+  for (const c of comps) {
+    if (c.prefix !== 'I' && c.prefix !== 'V') continue;
+    const p2 = placed.get(c.ref); const ci2 = info.get(c.ref);
+    if (p2 == null || ci2 == null) continue;
+    const diode = comps.find((m2) => m2.prefix === 'M' && m2.nodes[0] === m2.nodes[1] &&
+      m2.nodes[0] === ci2.bot && placed.has(m2.ref));
+    if (diode == null) continue;
+    const dpin = pinAbs(placed.get(diode.ref), getPin(info.get(diode.ref).shapeKey, info.get(diode.ref).po[0]));
+    const bot = pinAbs(p2, getPin(ci2.shapeKey, ci2.botPin || ci2.po[1]));
+    const dx2 = dpin.x - bot.x;
+    if (Math.abs(dx2) > 2 && Math.abs(dx2) < 150) { p2.x += dx2; updateCell(model, c.ref, { dx: dx2 }); }
+  }
+
+  // ---- RÈGLE 52 : sens de lecture européen — entrées à GAUCHE, sorties à
+  //      DROITE. Si le placement sort inversé, miroir GLOBAL avant câblage
+  //      (x réfléchi, flipH basculé, rotation opposée ; cellules texte : x
+  //      seulement)
+  {
+    const inRe = /^(in\d*$|inp|inm|vin|rf|lo|clk)/i, outRe = /^(out|vout|sa$|if)/i;
+    const xs = { i: [], o: [] };
+    for (const c of comps) {
+      const p2 = placed.get(c.ref);
+      if (p2 == null) continue;
+      for (const n2 of c.nodes) {
+        if (inRe.test(n2)) xs.i.push(p2.x + p2.w / 2);
+        else if (outRe.test(n2)) xs.o.push(p2.x + p2.w / 2);
+      }
+    }
+    const mean2 = (a2) => a2.reduce((s2, v2) => s2 + v2, 0) / a2.length;
+    if (xs.i.length && xs.o.length && mean2(xs.i) > mean2(xs.o) + 20) {
+      const boxes2 = [...placed.values()];
+      const M2 = Math.min(...boxes2.map((v2) => v2.x)) + Math.max(...boxes2.map((v2) => v2.x + v2.w));
+      for (const [ref2, p2] of placed) {
+        const cell2 = getCell(model, ref2);
+        const isText = ref2.startsWith('LBL_');
+        const nx = M2 - p2.x - p2.w;
+        p2.x = nx;
+        if (cell2 != null) {
+          const g2 = cell2.getElementsByTagName('mxGeometry')[0];
+          if (g2 != null) g2.setAttribute('x', String(nx));
+        }
+        if (isText) continue;
+        p2.flipH = !p2.flipH;
+        if (p2.rotation) p2.rotation = -p2.rotation;
+        if (cell2 != null) {
+          let st3 = cell2.getAttribute('style') || '';
+          st3 = st3.includes('flipH=1') ? st3.replace('flipH=1;', '') : st3 + 'flipH=1;';
+          st3 = st3.replace(/rotation=(-?\d+(?:\.\d+)?)/, (m3, r3) => 'rotation=' + (-parseFloat(r3)));
+          cell2.setAttribute('style', st3);
+        }
+      }
+    }
   }
 
   // étiquettes : composant à flux VERTICAL (fils en haut/bas) -> étiquette

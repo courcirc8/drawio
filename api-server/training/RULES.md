@@ -502,3 +502,13 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
       rail échappent à la symétrisation XP/XM (leur hauteur EST leur rail).
     Gilbert : 6 croisements -> 1 (minimum topologique), score 40 -> 65.
     Chaîne du LNA compactée (pas 160 -> 125).
+
+52. **Sens de lecture européen : entrées à GAUCHE, sorties à DROITE**
+    (règle utilisateur : « on écrit dans quel sens en Europe ? »). Décision
+    pré-câblage : si le barycentre des pins des nets d'entrée (in/vin/rf/
+    lo/clk) est à droite de celui des sorties (out/vout/sa/if), MIROIR
+    GLOBAL du placement : x réfléchi, flipH basculé, rotation opposée
+    (cellules texte : x seulement). Le RC coulait de droite à gauche
+    depuis le début. Corollaires : source de polarisation ALIGNÉE sur le
+    drain de sa diode (plongée droite, pas de baïonnette) ; port de bout
+    de rail avec évitement de collision.
