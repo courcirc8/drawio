@@ -1070,8 +1070,12 @@ export function importNetlist2(model, parsed, opts = {}) {
     // transistor entre les deux niveaux (règle utilisateur : pas de voûtes,
     // pas de fils au même potentiel qui se longent, pas de coudes)
     if (c.prefix === 'C') {
+      const ccRefs = new Set(structures.crossCoupled.flatMap((pr) => pr.refs));
       const fb = comps.find((m2) => {
         if ((m2.prefix !== 'M' && m2.prefix !== 'Q') || !placed.has(m2.ref)) return false;
+        // cross-couplé : gate/drain sont les nets l'un de l'autre — la cap
+        // de RÉSERVOIR n'est pas une Miller
+        if (ccRefs.has(m2.ref)) return false;
         const mi = info.get(m2.ref);
         if (mi == null) return false;
         const nets = [ci.top, ci.bot];

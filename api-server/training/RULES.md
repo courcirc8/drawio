@@ -468,7 +468,8 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
 49. **Cap de contre-réaction (Miller) : discrète, HORIZONTALE, dans le
     corridor entre les rangées** (règle utilisateur). Détection : un C
     flottant dont les deux nets touchent la gate et le drain du même
-    transistor. Placement : horizontal sous le transistor, centre entre
+    transistor — SAUF s'il est cross-couplé (gate/drain y sont les nets
+    l'un de l'autre : la cap de RÉSERVOIR du VCO n'est pas une Miller). Placement : horizontal sous le transistor, centre entre
     les deux verticales, taps courts en té. Leçons de l'itération :
     - quand TOUS les candidats de réparation échouent, c'est le PLACEMENT
       qui a tort (la cap verticale coincée sous M6 n'avait aucun tracé
