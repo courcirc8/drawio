@@ -409,3 +409,13 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     simplificateur : à nombre de coudes ÉGAL, préférer le L dont un segment
     se fond dans un tronc du même net (té propre) plutôt que le L qui
     rejoint le pin par un décroché — les fils à 1 coude sont éligibles.
+
+45. **Un point de contact n'existe qu'à ≥3 DIRECTIONS de cuivre distinctes**
+    (règle utilisateur : « un nœud au milieu d'une ligne — 2 connexions au
+    lieu de 3 — est interdit »). Compter les fils ne suffit pas : deux fils
+    colinéaires qui s'enchaînent à un pin font une simple traversée, pas
+    une branche. Le poseur de dots compte les directions incidentes
+    (segments + broche du composant vers son corps, quantifiées à 8
+    secteurs) ; les tés colinéaires (recouvrement même net) ne comptent
+    pas. Checker : règle inverse dot-2way (erreur) + exigence 30 alignée
+    sur les directions ; fixture lna-complet-dot2way.xml au harnais.

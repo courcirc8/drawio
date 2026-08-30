@@ -353,6 +353,47 @@ class Checker:
                     nets.add(self.net[e['id']])
         return nets
 
+    def _dir8(self, a, b):
+        if math.hypot(b[0] - a[0], b[1] - a[1]) < 0.5:
+            return None
+        return (round(math.atan2(b[1] - a[1], b[0] - a[0]) / math.pi * 4)) % 8
+
+    def _dirs_at(self, pt):
+        """Directions de cuivre distinctes au point pt : segments (intérieur
+        = 2 directions, extrémité = 1) + broches de composants (vers le
+        corps)."""
+        dirs = set()
+        for eid, pl in self.polys.items():
+            for k in range(len(pl) - 1):
+                a, b = pl[k], pl[k + 1]
+                if d_point_seg(pt, a, b) >= 4.5:
+                    continue
+                da = math.hypot(pt[0] - a[0], pt[1] - a[1])
+                db = math.hypot(pt[0] - b[0], pt[1] - b[1])
+                if da > 4 and db > 4:
+                    d1 = self._dir8(a, b)
+                    if d1 is not None:
+                        dirs.add(d1)
+                        dirs.add((d1 + 4) % 8)
+                elif da <= 4:
+                    d1 = self._dir8(a, b)
+                    if d1 is not None:
+                        dirs.add(d1)
+                elif db <= 4:
+                    d1 = self._dir8(b, a)
+                    if d1 is not None:
+                        dirs.add(d1)
+        for p2 in self.pins:
+            if math.hypot(p2['pt'][0] - pt[0], p2['pt'][1] - pt[1]) >= 4:
+                continue
+            v = self.verts.get(p2['cell'])
+            if v is None or v.get('junction') or v.get('is_text'):
+                continue
+            d1 = self._dir8(pt, (v['x'] + v['w'] / 2, v['y'] + v['h'] / 2))
+            if d1 is not None:
+                dirs.add(d1)
+        return dirs
+
     def check_dots(self):
         for d in self.dots:
             pt = (d['x'], d['y'])
@@ -364,38 +405,62 @@ class Checker:
                 self.add('dot-foreign', 'error',
                          f"point de contact {d['id']} touche {len(nets)} nets différents "
                          '(lecture de court-circuit)', pt)
+            elif len(self._dirs_at(pt)) < 3:
+                # RÈGLE UTILISATEUR : un point au milieu d'une ligne
+                # (2 connexions au lieu de 3) est INTERDIT
+                self.add('dot-2way', 'error',
+                         f"point de contact {d['id']} sur une simple traversée "
+                         f'({len(self._dirs_at(pt))} directions) — interdit', pt)
         for i, d1 in enumerate(self.dots):
             for d2 in self.dots[i + 1:]:
                 if math.hypot(d1['x'] - d2['x'], d1['y'] - d2['y']) < TOL['dot_dup']:
                     self.add('30b', 'warning',
                              f"dots dupliqués {d1['id']} / {d2['id']}", (d1['x'], d1['y']))
-        # dots requis : (a) >=2 extrémités même net au même pin de composant
+        # dots REQUIS : tout point à >=3 directions distinctes (clusters
+        # d'extrémités aux pins, et tés sur segment du même net)
         clusters = []
-        for p in self.pins:
-            v = self.verts.get(p['cell'])
-            if v is None or v.get('junction'):
+        for w in self.edges:
+            pl = self.polys.get(w['id'])
+            if pl is None or math.hypot(pl[-1][0] - pl[0][0], pl[-1][1] - pl[0][1]) < 3:
                 continue
-            for c in clusters:
-                if c['net'] == p['net'] and math.hypot(c['pt'][0] - p['pt'][0], c['pt'][1] - p['pt'][1]) < 3:
-                    c['n'] += 1
-                    break
-            else:
-                clusters.append({'pt': p['pt'], 'net': p['net'], 'n': 1})
+            for pt, cid in ((pl[0], w['src']), (pl[-1], w['tgt'])):
+                net = self.net[w['id']]
+                c0 = next((m for m in clusters if m['net'] == net and
+                           math.hypot(m['pt'][0] - pt[0], m['pt'][1] - pt[1]) < 5), None)
+                if c0 is None:
+                    clusters.append({'net': net, 'pt': pt, 'n': 1})
+                else:
+                    c0['n'] += 1
         for c in clusters:
-            if c['n'] >= 2 and not self._dot_at(c['pt']):
+            if c['n'] < 2:
+                continue
+            if len(self._dirs_at(c['pt'])) >= 3 and not self._dot_at(c['pt']):
                 self.add('30', 'error',
-                         f"branche à {c['n'] + 1} voies sans point de contact", c['pt'])
-        # (b) té : tout sommet (extrémité OU coin) d'un fil posé sur
-        # l'intérieur d'un segment du même net = branche -> dot requis
+                         'branche à >=3 directions sans point de contact', c['pt'])
+        # té : sommet d'un fil sur l'intérieur d'un segment du même net,
+        # avec une direction incidente NON colinéaire au segment hôte
         for ea in self.polys:
             pl = self.polys[ea]
-            for pt in pl:
+            for pi, pt in enumerate(pl):
+                inc = []
+                if pi > 0:
+                    d1 = self._dir8(pt, pl[pi - 1])
+                    if d1 is not None:
+                        inc.append(d1)
+                if pi < len(pl) - 1:
+                    d1 = self._dir8(pt, pl[pi + 1])
+                    if d1 is not None:
+                        inc.append(d1)
                 for eb in self.polys:
                     if ea == eb or self.net[ea] != self.net[eb]:
                         continue
                     for b1, b2 in self.segs(eb):
                         if d_point_seg(pt, b1, b2) < 2.5 and \
                            min(math.hypot(pt[0] - q[0], pt[1] - q[1]) for q in (b1, b2)) > 4:
+                            horiz = abs(b1[1] - b2[1]) < 0.6
+                            axis = (0, 4) if horiz else (2, 6)
+                            if inc and all(d1 in axis for d1 in inc):
+                                continue
                             if not self._dot_at(pt):
                                 self.add('30', 'error',
                                          f'té {ea} sur {eb} (même net) sans point de contact', pt)

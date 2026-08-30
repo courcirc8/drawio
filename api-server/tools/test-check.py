@@ -111,6 +111,10 @@ def main():
     lw = run(os.path.join(REG, 'lna-complet-wrap.xml'))
     fails += expect(lw, 'lna-complet-wrap', 'wrap-around')
 
+    # fixture 2026-08-30 : dots de simple traversée (2 connexions) — interdits
+    l2 = run(os.path.join(REG, 'lna-complet-dot2way.xml'))
+    fails += expect(l2, 'lna-complet-dot2way', 'dot-2way', count=3)
+
     # les 3 restantes ne doivent pas PLANTER, et leurs violations sont listées
     for name in ('vco-lc', 'rc-filter', 'lna-shaeffer-lee'):
         run(os.path.join(REG, name + '.xml'))

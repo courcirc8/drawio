@@ -574,6 +574,11 @@ function cleanupDegeneratePoints(model) {
 
 function addContactDots(model) {
   const JDOT = 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;';
+  const dirOf = (from, to) => {
+    const dx = to.x - from.x, dy = to.y - from.y;
+    if (Math.hypot(dx, dy) < 0.5) return null;
+    return ((Math.round((Math.atan2(dy, dx) / Math.PI) * 4) % 8) + 8) % 8;
+  };
   // les dots sont une DÉCORATION recalculée : purge d'abord ceux des passes
   // précédentes (sinon ils survivent aux déplacements de l'optimiseur et
   // flottent en l'air à des coordonnées périmées)
@@ -603,10 +608,19 @@ function addContactDots(model) {
       const plB = polylineOf(Bv, byId2);
       if (plB == null) continue;
       // TOUS les sommets (extrémités ET coins) : un coin posé sur le segment
-      // d'un autre fil du même net est aussi une branche (té) à pointer
-      for (const pt of plA) {
+      // d'un autre fil du même net est aussi une branche (té) à pointer —
+      // SAUF si toutes ses directions incidentes sont colinéaires au segment
+      // hôte (recouvrement, pas une branche : règle utilisateur du 2-voies)
+      for (let pi = 0; pi < plA.length; pi++) {
+        const pt = plA[pi];
+        const inc = [];
+        if (pi > 0) { const d = dirOf(pt, plA[pi - 1]); if (d != null) inc.push(d); }
+        if (pi < plA.length - 1) { const d = dirOf(pt, plA[pi + 1]); if (d != null) inc.push(d); }
         for (let k = 0; k + 1 < plB.length; k++) {
           if (!onSeg(pt, plB[k], plB[k + 1])) continue;
+          const horiz = Math.abs(plB[k].y - plB[k + 1].y) < 0.6;
+          const axisDirs = horiz ? [0, 4] : [2, 6];
+          if (inc.length > 0 && inc.every((d) => axisDirs.includes(d))) continue;
           if (existingDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 5)) continue;
           if (newDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 5)) continue;
           newDots.push({ x: pt.x, y: pt.y });
@@ -626,14 +640,25 @@ function addContactDots(model) {
     // fil quasi nul (tap collé sur le pin) : ses deux extrémités confondues
     // feraient un faux cluster à 2 voies -> dot fantôme dans le vide
     if (Math.hypot(plA[plA.length - 1].x - plA[0].x, plA[plA.length - 1].y - plA[0].y) < 3) continue;
-    for (const [pt, cid] of [[plA[0], A.source], [plA[plA.length - 1], A.target]]) {
+    for (const [pt, cid, nb] of [[plA[0], A.source, plA[1]], [plA[plA.length - 1], A.target, plA[plA.length - 2]]]) {
       const c0 = meet.find((m) => Math.hypot(m.pt.x - pt.x, m.pt.y - pt.y) < 4);
-      if (c0 != null) { c0.cids.add(cid); c0.n++; } else meet.push({ pt, cids: new Set([cid]), n: 1 });
+      const d = nb != null ? dirOf(pt, nb) : null;
+      if (c0 != null) { c0.cids.add(cid); if (d != null) c0.dirs.add(d); }
+      else meet.push({ pt, cids: new Set([cid]), dirs: new Set(d != null ? [d] : []) });
     }
   }
-  for (const { pt, cids, n } of meet) {
-    const onJunction = [...cids].every((cid) => byId2.get(cid)?.style.map.has('drawioApiJunction'));
-    if (n < (onJunction ? 3 : 2)) continue;
+  // RÈGLE UTILISATEUR : un point au milieu d'une ligne (2 directions de
+  // cuivre) est INTERDIT — le dot n'existe qu'à >=3 directions distinctes
+  // (la broche du composant compte comme une direction, vers son corps)
+  for (const { pt, cids, dirs } of meet) {
+    const all = new Set(dirs);
+    for (const cid of cids) {
+      const cell = byId2.get(cid);
+      if (cell == null || cell.style.map.has('drawioApiJunction') || cell.x == null) continue;
+      const d = dirOf(pt, { x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 });
+      if (d != null) all.add(d);
+    }
+    if (all.size < 3) continue;
     if (existingDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 5)) continue;
     if (newDots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 5)) continue;
     newDots.push({ x: pt.x, y: pt.y });
