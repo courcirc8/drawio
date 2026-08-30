@@ -498,7 +498,9 @@ class Checker:
                                      + ('superposés' if exact else f'parallèles à {d:.0f}px')
                                      + f' sur {hi - lo:.0f}px non fusionnés ({ea} / {eb})', at)
 
-    # ---- fil collé au bord d'un corps (cadre de diode du mauvais côté, etc.)
+    # ---- fil collé au bord d'un corps ; sur le FLANC d'un transistor
+    #      (canal/leads) c'est une ERREUR (règle utilisateur : on sort du
+    #      nœud horizontalement, jamais le long du canal)
     def check_edge_hug(self):
         for e in self.edges:
             if e['id'] not in self.polys:
@@ -513,7 +515,11 @@ class Checker:
                     x, y, w, h = aabb(v)
                     if ax == 'v' and (abs(a[0] - x) < 2.5 or abs(a[0] - (x + w)) < 2.5):
                         lo, hi = max(min(a[1], b[1]), y), min(max(a[1], b[1]), y + h)
-                        if hi - lo > TOL['edge_hug_len']:
+                        if mos_kind(v['shape']) and hi - lo > 12 and e['src'] != e['tgt']:
+                            self.add('channel-hug', 'error',
+                                     f"fil {e['id']} longe le CANAL de {cid} sur {hi - lo:.0f}px "
+                                     '— sortir du nœud horizontalement', (a[0], lo))
+                        elif hi - lo > TOL['edge_hug_len']:
                             self.add('edge-hug', 'warning',
                                      f"fil {e['id']} colle le flanc de {cid} sur {hi - lo:.0f}px "
                                      '(se lit comme le symbole)', (a[0], lo))

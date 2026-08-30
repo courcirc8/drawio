@@ -105,7 +105,7 @@ def main():
     fails += expect(b, 'biquad', 'through')                           # w1080 à travers gm1
 
     l = run(os.path.join(REG, 'lna-complet.xml'))
-    fails += expect(l, 'lna-complet', 'edge-hug')                     # boucle de diode collée au flanc de M4
+    fails += expect(l, 'lna-complet', 'channel-hug')                  # boucle de diode collée au flanc de M4 (promue erreur)
 
     # fixture 2026-08-30 : Lb1 monté à l'envers, fil en Π autour de la bobine
     lw = run(os.path.join(REG, 'lna-complet-wrap.xml'))
@@ -114,6 +114,10 @@ def main():
     # fixture 2026-08-30 : dots de simple traversée (2 connexions) — interdits
     l2 = run(os.path.join(REG, 'lna-complet-dot2way.xml'))
     fails += expect(l2, 'lna-complet-dot2way', 'dot-2way', count=3)
+
+    # fixture 2026-08-30 : fil le long du canal d'un transistor — interdit
+    l3 = run(os.path.join(REG, 'lna-complet-hug.xml'))
+    fails += expect(l3, 'lna-complet-hug', 'channel-hug')
 
     # les 3 restantes ne doivent pas PLANTER, et leurs violations sont listées
     for name in ('vco-lc', 'rc-filter', 'lna-shaeffer-lee'):

@@ -186,10 +186,15 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
           }
         }
         if (lane != null) {
+          // échappée horizontale : la plongée se fait à 14 px du flanc
+          // (jamais le long du canal, règle utilisateur)
+          const escA = (a.pin.x <= 0.5) !== !!placed.get(a.ref).flipH ? -14 : 14;
+          const escB = (b.pin.x <= 0.5) !== !!placed.get(b.ref).flipH ? -14 : 14;
           wire(null, { source: a.ref, target: b.ref,
             sourcePin: { x: a.pin.x, y: a.pin.y }, targetPin: { x: b.pin.x, y: b.pin.y },
             style: 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;jettySize=0;endArrow=none;endFill=0;drawioApiFixedRoute=1;',
-            points: [{ x: pA.x, y: lane }, { x: pB.x, y: lane }] });
+            points: [{ x: pA.x + escA, y: pA.y }, { x: pA.x + escA, y: lane },
+                     { x: pB.x + escB, y: lane }, { x: pB.x + escB, y: pB.y }] });
           continue;
         }
       }
@@ -891,7 +896,7 @@ export function importNetlist2(model, parsed, opts = {}) {
           : (!Number.isInteger(slots.get(r2).col) ? r2 : null);
         if (frac == null) continue;
         const v = placed.get(frac);
-        const dx = -(ox + 14);
+        const dx = -(ox + 26); // place pour le cadre de diode (16 px + marge)
         v.x += dx;
         updateCell(model, frac, { dx });
         moved = true;

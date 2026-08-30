@@ -97,6 +97,18 @@ function pinAbsOf(cell, relX, relY) {
   return { x: cx + dx * Math.cos(t) - dy * Math.sin(t), y: cy + dx * Math.sin(t) + dy * Math.cos(t) };
 }
 
+
+/** RÈGLE UTILISATEUR : un segment vertical collé au flanc d'un transistor
+ * (là où sont dessinés le canal et les leads) est interdit — on sort du
+ * nœud horizontalement, quitte à prendre deux coudes. */
+function hugsMosFlank(p, q, vertices) {
+  if (Math.abs(p.x - q.x) >= 0.6) return false;
+  const lo = Math.min(p.y, q.y), hi = Math.max(p.y, q.y);
+  return vertices.some((v) => v.isMos &&
+    (Math.abs(p.x - v.x) < 2.5 || Math.abs(p.x - (v.x + v.w)) < 2.5) &&
+    Math.min(hi, v.y + v.h) - Math.max(lo, v.y) > 12);
+}
+
 /** Axis-aligned bounding box of a rotated cell (the obstacle libavoid sees). */
 function rotatedAabb(cell) {
   const t = ((cell.rotation || 0) * Math.PI) / 180;
@@ -123,7 +135,11 @@ export async function routePage(model, edgeIds, opts) {
   loadHelpers();
   const cells = allCells(model).map(cellInfo);
   const vertices = cells.filter((c) => c.kind === 'vertex' && c.x != null)
-    .map((c) => { const b = rotatedAabb(c); return { id: c.id, x: b.x, y: b.y, w: b.w, h: b.h }; });
+    .map((c) => {
+      const b = rotatedAabb(c);
+      const isMos = /nmos|pmos|mosfet/.test(c.style.map.get('shape') || '');
+      return { id: c.id, x: b.x, y: b.y, w: b.w, h: b.h, isMos };
+    });
   const byId = new Map(cells.map((c) => [c.id, c]));
   const wanted = edgeIds != null ? new Set(edgeIds.map(String)) : null;
   const edges = [];
@@ -161,8 +177,19 @@ export async function routePage(model, edgeIds, opts) {
     const aIsDrain = Math.abs(parseFloat(aY) - 0.5) > 0.25;
     const g = aIsDrain ? b : a, d = aIsDrain ? a : b;
     const left = g.x <= bb.x + bb.w / 2;
-    const ox = left ? bb.x - 16 : bb.x + bb.w + 16;
     const oy = d.y <= bb.y + bb.h / 2 ? bb.y - 14 : bb.y + bb.h + 14;
+    // écart du montant vertical choisi selon la PLACE : un voisin à 14 px
+    // (diode accolée) faisait passer le cadre dans son corps
+    let ox = left ? bb.x - 16 : bb.x + bb.w + 16;
+    for (const cand of (left ? [bb.x - 16, bb.x - 26, bb.x + bb.w + 16, bb.x + bb.w + 26]
+                             : [bb.x + bb.w + 16, bb.x + bb.w + 26, bb.x - 16, bb.x - 26])) {
+      const lo = Math.min(g.y, oy), hi = Math.max(g.y, oy);
+      const hit = vertices.some((v) => v.id !== c.source &&
+        cand > v.x + 1.5 && cand < v.x + v.w - 1.5 &&
+        hi > v.y + 1.5 && lo < v.y + v.h - 1.5) ||
+        hugsMosFlank({ x: cand, y: lo }, { x: cand, y: hi }, vertices.filter((v) => v.id !== c.source));
+      if (!hit) { ox = cand; break; }
+    }
     const el = allCells(model).find((x) => x.getAttribute('id') === c.id);
     const path = [{ x: ox, y: g.y }, { x: ox, y: oy }, { x: d.x, y: oy }];
     setEdgePoints(el, aIsDrain ? path.slice().reverse() : path);
@@ -215,7 +242,7 @@ export async function routePage(model, edgeIds, opts) {
       // un corps TERMINAL n'est pas exempt : le fil ne peut y pénétrer qu'au
       // voisinage immédiat de son propre pin (jamais le traverser pour
       // atteindre le pin du côté opposé — vu : bus de gates à travers M8)
-      const clear = (p, q) => clearPins(p, q) && !vertices.some((v) => {
+      const clear = (p, q) => clearPins(p, q) && !hugsMosFlank(p, q, vertices) && !vertices.some((v) => {
         const hit = Math.max(p.x, q.x) > v.x + 1.5 && Math.min(p.x, q.x) < v.x + v.w - 1.5 &&
           Math.max(p.y, q.y) > v.y + 1.5 && Math.min(p.y, q.y) < v.y + v.h - 1.5;
         if (!hit) return false;
@@ -268,7 +295,7 @@ export async function routePage(model, edgeIds, opts) {
       const myNet = edgeNetAll.get(e.id);
       const clearPins2 = (p, q) => !pinPts.some((pp) =>
         pp.net !== myNet && distPS(pp.p, p, q) < 5);
-      const segOk = (p, q) => clearPins2(p, q) && !vertices.some((v) => {
+      const segOk = (p, q) => clearPins2(p, q) && !hugsMosFlank(p, q, vertices) && !vertices.some((v) => {
         const hit = Math.max(p.x, q.x) > v.x + 1.5 && Math.min(p.x, q.x) < v.x + v.w - 1.5 &&
           Math.max(p.y, q.y) > v.y + 1.5 && Math.min(p.y, q.y) < v.y + v.h - 1.5;
         if (!hit) return false;
@@ -287,10 +314,25 @@ export async function routePage(model, edgeIds, opts) {
       };
       if (!pathOk(out)) {
         let fixed = null;
+        // échappée horizontale d'un pin posé sur un flanc (gate) : on sort
+        // du corps AVANT de plonger — règle utilisateur « sortir du nœud
+        // horizontalement, quitte à avoir deux coudes »
+        const escOf = (pt, cid) => {
+          const v = vertsById.get(cid);
+          if (v == null) return 0;
+          if (Math.abs(pt.x - v.x) < 2.5) return -14;
+          if (Math.abs(pt.x - (v.x + v.w)) < 2.5) return 14;
+          return 0;
+        };
+        const eA = escOf(a, e.source), eB = escOf(b, e.target);
         const cands = [];
         for (let k = 1; k <= 6 && fixed == null; k++) {
           for (const lane of [Math.min(a.y, b.y) - k * 14, Math.max(a.y, b.y) + k * 14]) {
             cands.push([{ x: a.x, y: lane }, { x: b.x, y: lane }]);
+            if (eA !== 0 || eB !== 0) {
+              cands.push([{ x: a.x + eA, y: a.y }, { x: a.x + eA, y: lane },
+                          { x: b.x + eB, y: lane }, { x: b.x + eB, y: b.y }]);
+            }
           }
           for (const lane of [Math.min(a.x, b.x) - k * 14, Math.max(a.x, b.x) + k * 14]) {
             cands.push([{ x: lane, y: a.y }, { x: lane, y: b.y }]);
@@ -318,6 +360,10 @@ export async function routePage(model, edgeIds, opts) {
   // ---- simplification finale : un fil en Z/U redevient droit ou L canonique
   // si la géométrie FINALE le permet (corps, pins étrangers, lanes étrangères)
   simplifyBends(model, vertices);
+  // ---- fusion finale : le simplificateur déplace des lanes (échappées,
+  // té-swaps) APRÈS la 2e fusion — une dernière passe rattrape les
+  // parallèles même-net qu'il vient de créer
+  if (process.env.DISABLE_MERGE !== '1') mergeSameNet(model, vertices);
   // ---- nettoyage : points dupliqués et pointes A->B->A laissés par les réparations
   cleanupDegeneratePoints(model);
   // ---- points de contact sur les branches >=3 terminaux (après géométrie finale)
@@ -337,6 +383,13 @@ function netGroups(cells) {
     if (cell != null && cell.style.map.has('drawioApiJunction')) return 'J:' + cid;
     const X = c.style.map.get(which === 'src' ? 'exitX' : 'entryX');
     const Y = c.style.map.get(which === 'src' ? 'exitY' : 'entryY');
+    // clé par position ABSOLUE arrondie : deux ancres relatives différentes
+    // qui atterrissent sur le même pin physique sont le même nœud (le cadre
+    // de diode et le fil de gate se rataient et passaient pour deux nets)
+    if (X != null && Y != null && cell != null && cell.x != null) {
+      const p = pinAbsOf(cell, parseFloat(X), parseFloat(Y));
+      return cid + '@' + Math.round(p.x / 3) + ',' + Math.round(p.y / 3);
+    }
     return cid + ':' + X + ',' + Y;
   };
   const edgeNet = new Map();
@@ -469,6 +522,7 @@ function simplifyBends(model, obstacles) {
       if ((it.c.points || []).length < 1) continue; // 1 coude : éligible au té-swap
       const a = it.pl[0], b = it.pl[it.pl.length - 1];
       const okSeg = (p, q) => {
+        if (hugsMosFlank(p, q, obstacles)) return false;
         if (obstacles.some((v) => {
           const hit = Math.max(p.x, q.x) > v.x + 1.5 && Math.min(p.x, q.x) < v.x + v.w - 1.5 &&
             Math.max(p.y, q.y) > v.y + 1.5 && Math.min(p.y, q.y) < v.y + v.h - 1.5;
@@ -692,9 +746,11 @@ function separateNets(model, obstacles) {
   // la bande de 18 px sous eux est interdite aux lanes de réparation
   const zones = obstacles.flatMap((v) => v.h >= 80
     ? [v, { x: v.x, y: v.y + v.h, w: v.w, h: 18 }] : [v]);
-  const blocked = (x1, y1, x2, y2) => zones.some((v) =>
-    Math.max(x1, x2) > v.x + 3 && Math.min(x1, x2) < v.x + v.w - 3 &&
-    Math.max(y1, y2) > v.y + 3 && Math.min(y1, y2) < v.y + v.h - 3);
+  const blocked = (x1, y1, x2, y2) =>
+    hugsMosFlank({ x: x1, y: y1 }, { x: x2, y: y2 }, obstacles) ||
+    zones.some((v) =>
+      Math.max(x1, x2) > v.x + 3 && Math.min(x1, x2) < v.x + v.w - 3 &&
+      Math.max(y1, y2) > v.y + 3 && Math.min(y1, y2) < v.y + v.h - 3);
   const done = new Set();
   for (let repairs = 0; repairs < 30; repairs++) {
     const cells = allCells(model).map(cellInfo);

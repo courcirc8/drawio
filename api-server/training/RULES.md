@@ -419,3 +419,21 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     secteurs) ; les tés colinéaires (recouvrement même net) ne comptent
     pas. Checker : règle inverse dot-2way (erreur) + exigence 30 alignée
     sur les directions ; fixture lna-complet-dot2way.xml au harnais.
+
+46. **Jamais le long du canal d'un transistor** (règle utilisateur : « pas le
+    droit de traverser le canal — il faut sortir du nœud horizontalement,
+    quitte à avoir 2 coudes »). Un segment vertical à <2,5 px d'un flanc de
+    MOS (recouvrement >12 px avec le corps) est interdit dans TOUS les
+    validateurs (droit déterministe, validation finale, simplify, lanes de
+    séparation). Conséquences implémentées :
+    - candidats « U à échappées » : sortie horizontale à 14 px du flanc
+      avant la plongée (bus de gates alignés, fils de ports) ;
+    - détour LO figé avec échappées ; cadre de diode : montant choisi par
+      scan de place (un voisin à 14 px le faisait percer M2), diode accolée
+      poussée à 26 px ;
+    - netGroups (JS) clé par position ABSOLUE du pin (deux ancres
+      relatives différentes sur le même pin physique passaient pour deux
+      nets — le cadre de diode et le fil de gate ne fusionnaient jamais) ;
+    - fusion FINALE après simplify (qui déplace des lanes après la 2e
+      fusion). Checker : channel-hug (erreur), edge-hug reste warning pour
+      les autres corps ; fixture lna-complet-hug.xml.
