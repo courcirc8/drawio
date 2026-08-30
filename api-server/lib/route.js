@@ -315,6 +315,9 @@ export async function routePage(model, edgeIds, opts) {
   // ---- fusion, 2e passe : la séparation crée elle-même des parallèles de
   // même net (elle décale des lanes) que la 1re fusion n'a jamais vus
   if (process.env.DISABLE_MERGE !== '1') mergeSameNet(model, vertices);
+  // ---- simplification finale : un fil en Z/U redevient droit ou L canonique
+  // si la géométrie FINALE le permet (corps, pins étrangers, lanes étrangères)
+  simplifyBends(model, vertices);
   // ---- nettoyage : points dupliqués et pointes A->B->A laissés par les réparations
   cleanupDegeneratePoints(model);
   // ---- points de contact sur les branches >=3 terminaux (après géométrie finale)
@@ -423,6 +426,100 @@ function mergeSameNet(model, obstacles) {
       }
     }
     if (!repaired) break;
+  }
+}
+
+/** Re-tente droit/L pour chaque fil à >=2 coudes, avec la connaissance
+ * GLOBALE finale : jamais à travers un corps (le sien : 8 px autour du pin),
+ * jamais sur un pin étranger, jamais à <10 px d'une lane étrangère (les
+ * séparations ne doivent pas être défaites). */
+function simplifyBends(model, obstacles) {
+  // les dots (6x6) ne sont pas des obstacles : un point de contact du même
+  // net posé sur le trajet du L canonique le bloquerait à tort
+  obstacles = obstacles.filter((v) => v.w >= 12 || v.h >= 12);
+  const dps = (pt, p, q) => {
+    const dx = q.x - p.x, dy = q.y - p.y, L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, ((pt.x - p.x) * dx + (pt.y - p.y) * dy) / L2)) : 0;
+    return Math.hypot(pt.x - (p.x + t * dx), pt.y - (p.y + t * dy));
+  };
+  for (let round = 0; round < 3; round++) {
+    const cells = allCells(model).map(cellInfo);
+    const byId2 = new Map(cells.map((c) => [c.id, c]));
+    const edgeNet = netGroups(cells);
+    const infos = [];
+    for (const c of cells) {
+      if (c.kind !== 'edge' || c.source == null || c.target == null) continue;
+      if (c.source === c.target || c.style.map.get('edgeStyle') === 'none') continue;
+      const pl = polylineOf(c, byId2);
+      if (pl == null) continue;
+      infos.push({ c, pl, net: edgeNet.get(c.id) });
+    }
+    const pinPts = infos.flatMap((i) => [{ p: i.pl[0], net: i.net }, { p: i.pl[i.pl.length - 1], net: i.net }]);
+    const segsOf = (pl) => {
+      const out = [];
+      for (let k = 0; k + 1 < pl.length; k++) {
+        const p = pl[k], q = pl[k + 1];
+        if (Math.abs(p.y - q.y) < 0.6 && Math.abs(p.x - q.x) >= 0.6) out.push({ axis: 'h', lane: p.y, a: Math.min(p.x, q.x), b: Math.max(p.x, q.x) });
+        else if (Math.abs(p.x - q.x) < 0.6 && Math.abs(p.y - q.y) >= 0.6) out.push({ axis: 'v', lane: p.x, a: Math.min(p.y, q.y), b: Math.max(p.y, q.y) });
+      }
+      return out;
+    };
+    let changed = false;
+    for (const it of infos) {
+      if ((it.c.points || []).length < 2) continue;
+      const a = it.pl[0], b = it.pl[it.pl.length - 1];
+      const okSeg = (p, q) => {
+        if (obstacles.some((v) => {
+          const hit = Math.max(p.x, q.x) > v.x + 1.5 && Math.min(p.x, q.x) < v.x + v.w - 1.5 &&
+            Math.max(p.y, q.y) > v.y + 1.5 && Math.min(p.y, q.y) < v.y + v.h - 1.5;
+          if (!hit) return false;
+          if (v.id !== it.c.source && v.id !== it.c.target) return true;
+          const own = v.id === it.c.source ? a : b;
+          const cx = (x2) => Math.max(v.x + 1.5, Math.min(v.x + v.w - 1.5, x2));
+          const cy = (y2) => Math.max(v.y + 1.5, Math.min(v.y + v.h - 1.5, y2));
+          return Math.max(Math.hypot(cx(p.x) - own.x, cy(p.y) - own.y),
+            Math.hypot(cx(q.x) - own.x, cy(q.y) - own.y)) > 8;
+        })) return false;
+        if (pinPts.some((pp) => pp.net !== it.net && dps(pp.p, p, q) < 5)) return false;
+        const cs = segsOf([p, q]);
+        if (cs.length === 0) return true;
+        const sc = cs[0];
+        for (const o of infos) {
+          if (o === it || o.net === it.net) continue;
+          for (const so of segsOf(o.pl)) {
+            if (so.axis !== sc.axis) continue;
+            if (Math.abs(so.lane - sc.lane) < 10 && Math.min(so.b, sc.b) - Math.max(so.a, sc.a) > 6) return false;
+          }
+        }
+        return true;
+      };
+      const aligned = Math.abs(a.x - b.x) < 1 || Math.abs(a.y - b.y) < 1;
+      const cands = [];
+      if (aligned) cands.push([]);
+      cands.push([{ x: a.x, y: b.y }], [{ x: b.x, y: a.y }]);
+      // U/Z à 2 coudes : lane médiane puis écarts croissants jusqu'à ±98
+      // (la lane libre d'un bus de gates peut être à 70 px de la rangée)
+      const my = (a.y + b.y) / 2, mx = (a.x + b.x) / 2;
+      for (let k = 0; k <= 7; k++) {
+        for (const d of k === 0 ? [0] : [-14 * k, 14 * k]) {
+          cands.push([{ x: a.x, y: my + d }, { x: b.x, y: my + d }]);
+          cands.push([{ x: mx + d, y: a.y }, { x: mx + d, y: b.y }]);
+        }
+      }
+      for (const wp of cands) {
+        if (wp.length >= (it.c.points || []).length) continue; // pas une amélioration
+        const pl2 = [a, ...wp, b];
+        let ok = true;
+        for (let k = 0; k + 1 < pl2.length; k++) { if (!okSeg(pl2[k], pl2[k + 1])) { ok = false; break; } }
+        if (!ok) continue;
+        const el = allCells(model).find((x) => x.getAttribute('id') === it.c.id);
+        setEdgePoints(el, wp);
+        el.setAttribute('style', mergeStyle(el.getAttribute('style'), { jettySize: 0 }));
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) break;
   }
 }
 

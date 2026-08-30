@@ -747,6 +747,11 @@ export function importNetlist2(model, parsed, opts = {}) {
       placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, flipH: eFlip });
       for (let i = 0; i < ci.po.length; i++) term(e.c.nodes[i], e.c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
       // dérivations : bias en haut (vertical), shunt masse en bas (vertical)
+      // AXE = le pin de jonction de l'élément (zéro coude : le fil du
+      // hanger tombe droit sur le nœud, remarque utilisateur sur Lb1)
+      const jPin = getPin(ci.shapeKey, ci.po[Math.max(0, e.c.nodes.indexOf(e.net))]) || { x: 1, y: 0.5 };
+      const junctionX = pinAbs(placed.get(e.c.ref), jPin).x;
+      let upK = 0, downK = 0;
       for (const h of e.hangers) {
         const hi = info.get(h.c.ref);
         // rot +90 met nodes[0] ('in') en HAUT, -90 en BAS ; le pin du net
@@ -755,7 +760,7 @@ export function importNetlist2(model, parsed, opts = {}) {
         const inShared = h.c.nodes[0] === e.net;
         const hShape = hi.shapeKey, hRot = h.up ? (inShared ? -90 : 90) : (inShared ? 90 : -90);
         const hs = getShape(hShape);
-        const hx = cx + 85;
+        const hx = junctionX + (h.up ? (upK++) : (downK++)) * 40;
         const hh = hs.w;
         const hy = h.up ? cy - 80 - hh / 2 : cy + 80 + hh / 2;
         // ligne de pins du dipôle tourné sur l'axe vertical hx

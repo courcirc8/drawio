@@ -386,3 +386,18 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
       forme (paysage => lead horizontal), MOS/OTA exclus (contournements
       topologiquement forcés : bus de gates, contre-réaction) ; fixture
       figée lna-complet-wrap.xml au harnais.
+
+43. **Zéro coude en excès, mesuré contre le minimum RÉALISABLE** (remarque
+    utilisateur : deux coudes en trop sur Lb1). Trois étages :
+    - placement : l'axe d'un hanger = le pin de jonction de son élément
+      (fini le `cx + 85` arbitraire qui coûtait un dogleg) ;
+    - routage : passe finale `simplifyBends` — chaque fil en Z/U retente
+      droit, L canonique, puis U/Z sur lanes ±14k (k≤7), validé contre
+      corps (8 px autour de son pin), pins étrangers, lanes étrangères et
+      étiquettes (une étiquette bloque : pire qu'un coude) ; les dots ne
+      sont pas des obstacles ;
+    - checker : `excess-bends` compare au minimum FAISABLE (droit s'il est
+      licite, sinon L, sinon U) — un U sur lane séparée n'est pas un excès,
+      un cadre de diode (self-edge, 3 coudes imposés par la règle 24) est
+      exempté.
+    Bilan : 7/7 circuits à 0 erreur ET 0 coude en excès.

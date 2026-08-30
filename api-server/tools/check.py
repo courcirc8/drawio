@@ -571,12 +571,73 @@ class Checker:
                              f"{'haut' if drain_top else 'bas'}", outs[0])
 
     # ---- coudes en excès et croisements (lisibilité)
+    def _seg_feasible(self, e, net, a, b, p, q):
+        """Un segment candidat est licite : pas de corps traversé (le sien :
+        8 px autour du pin), pas de pin étranger à <5 px, pas de lane
+        étrangère à <10 px sur >6 px."""
+        for cid, v in self.verts.items():
+            if v.get('junction') or v['w'] < 12:
+                continue
+            x, y, w, h = aabb(v)
+            r = (x + 1.5, y + 1.5, w - 3, h - 3)
+            if r[2] <= 0 or r[3] <= 0:
+                continue
+            clip = clip_seg_rect(p, q, r)
+            if clip is None:
+                continue
+            if v.get('is_text'):
+                return False  # une étiquette bloque aussi (pire qu'un coude)
+            if cid not in (e['src'], e['tgt']):
+                return False
+            own = a if cid == e['src'] else b
+            p0, p1 = lerp(p, q, clip[0]), lerp(p, q, clip[1])
+            far = max(math.hypot(p0[0] - own[0], p0[1] - own[1]),
+                      math.hypot(p1[0] - own[0], p1[1] - own[1]))
+            if far > 8:
+                return False
+        for pp in self.pins:
+            if pp['net'] != net and d_point_seg(pp['pt'], p, q) < 5:
+                return False
+        ax = seg_axis(p, q)
+        if ax != 'd':
+            for oid, opl in self.polys.items():
+                if oid == e['id'] or self.net.get(oid) == net:
+                    continue
+                for k in range(len(opl) - 1):
+                    b1, b2 = opl[k], opl[k + 1]
+                    if seg_axis(b1, b2) != ax:
+                        continue
+                    if ax == 'h':
+                        dl = abs(p[1] - b1[1])
+                        lo = max(min(p[0], q[0]), min(b1[0], b2[0]))
+                        hi = min(max(p[0], q[0]), max(b1[0], b2[0]))
+                    else:
+                        dl = abs(p[0] - b1[0])
+                        lo = max(min(p[1], q[1]), min(b1[1], b2[1]))
+                        hi = min(max(p[1], q[1]), max(b1[1], b2[1]))
+                    if dl < 10 and hi - lo > 6:
+                        return False
+        return True
+
+    def _min_bends(self, e, net, a, b):
+        """Minimum RÉALISABLE : droit si licite, sinon L, sinon 2 (U) /
+        3 (Z contraint) — un U sur lane séparée n'est pas un excès."""
+        aligned = abs(a[0] - b[0]) < 1 or abs(a[1] - b[1]) < 1
+        if aligned:
+            return 0 if self._seg_feasible(e, net, a, b, a, b) else 2
+        for c in ((a[0], b[1]), (b[0], a[1])):
+            if self._seg_feasible(e, net, a, b, a, c) and self._seg_feasible(e, net, a, b, c, b):
+                return 1
+        return 3
+
     def check_bends_crossings(self):
         for e in self.edges:
             if e['id'] not in self.polys or self.edges is None:
                 continue
             if e['style'].get('edgeStyle') == 'none':
                 continue
+            if e['src'] == e['tgt']:
+                continue  # cadre de diode : 3 coudes IMPOSÉS (règle 24/32)
             pl = self.polys[e['id']]
             segs = self.segs(e['id'])
             if len(segs) < 1:
@@ -584,10 +645,10 @@ class Checker:
             bends = sum(1 for i in range(len(segs) - 1)
                         if seg_axis(*segs[i]) != seg_axis(*segs[i + 1]))
             a, b = pl[0], pl[-1]
-            minb = 0 if (abs(a[0] - b[0]) < 1 or abs(a[1] - b[1]) < 1) else 1
-            if bends > minb + 2:
+            minb = self._min_bends(e, self.net.get(e['id']), a, b)
+            if bends > minb:
                 self.add('excess-bends', 'warning',
-                         f"fil {e['id']} : {bends} coudes (minimum géométrique {minb})",
+                         f"fil {e['id']} : {bends} coudes (minimum réalisable {minb})",
                          pl[1] if len(pl) > 1 else a)
         n = 0
         eids = list(self.polys)
