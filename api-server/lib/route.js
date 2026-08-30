@@ -483,6 +483,7 @@ function mergeSameNet(model, obstacles) {
             if (!laneFree(sa.axis, sb.lane, sa.a, sa.b) && !laneFree(sa.axis, sa.lane, sb.a, sb.b)) continue;
             // MERGE : le segment intérieur mobile rejoint la lane de l'autre
             const shiftTo = (ei, seg, lane) => {
+              if (ei.style.map.has('drawioApiFixedRoute')) return false;
               const npts = ei.points || [];
               if (!(seg.i >= 1 && seg.i <= npts.length - 1)) return false;
               // la lane de fusion ne doit pas longer un canal de MOS
@@ -542,6 +543,7 @@ function simplifyBends(model, obstacles) {
     };
     let changed = false;
     for (const it of infos) {
+      if (it.c.style.map.has('drawioApiFixedRoute')) continue;
       if ((it.c.points || []).length < 1) continue; // 1 coude : éligible au té-swap
       const a = it.pl[0], b = it.pl[it.pl.length - 1];
       const okSeg = (p, q) => {
@@ -697,6 +699,7 @@ export function distributeTees(model, obstacles) {
       const branches = [];
       for (const W of infos) {
         if (W === T || W.net !== T.net) continue;
+        if (W.c.style.map.has('drawioApiFixedRoute')) continue;
         const npts = W.c.points || [];
         for (let j = 0; j < npts.length; j++) {
           const pt = npts[j];
@@ -933,7 +936,8 @@ function separateNets(model, obstacles) {
         if (Math.abs(p.y - q.y) < 0.6 && Math.abs(p.x - q.x) >= 0.6) segs.push({ axis: 'h', lane: p.y, a: Math.min(p.x, q.x), b: Math.max(p.x, q.x), i });
         else if (Math.abs(p.x - q.x) < 0.6 && Math.abs(p.y - q.y) >= 0.6) segs.push({ axis: 'v', lane: p.x, a: Math.min(p.y, q.y), b: Math.max(p.y, q.y), i });
       }
-      edgesInfo.push({ c, a, b, segs, pl, nPl: pl.length });
+      edgesInfo.push({ c, a, b, segs, pl, nPl: pl.length,
+        fixed: c.style.map.has('drawioApiFixedRoute') });
     }
     let repaired = false;
     const delta = 14;
@@ -946,6 +950,7 @@ function separateNets(model, obstacles) {
         Math.min(s2.b, h2) - Math.max(s2.a, l2) > 10));
     // décaler un segment INTÉRIEUR (2 waypoints)
     const shift = (ei, seg, d) => {
+      if (ei.fixed) return false; // tracé figé : c'est l'AUTRE fil qui bouge
       const npts = ei.c.points || [];
       if (!(seg.i >= 1 && seg.i <= npts.length - 1)) return false;
       if (laneOccupied(ei, seg.axis, seg.lane + d, seg.a, seg.b)) return false;
@@ -964,6 +969,7 @@ function separateNets(model, obstacles) {
     // fil DROIT pin-à-pin (0 waypoint) : on le transforme en U sur une lane
     // libre — un segment unique entre deux ancres est sinon immobile
     const straighten = (ei, seg, d) => {
+      if (ei.fixed) return false;
       if ((ei.c.points || []).length || ei.segs.length !== 1) return false;
       if (laneOccupied(ei, seg.axis, seg.lane + d, seg.a, seg.b)) return false;
       if (seg.axis === 'h' ? blocked(seg.a, seg.lane + d, seg.b, seg.lane + d)
@@ -997,28 +1003,30 @@ function separateNets(model, obstacles) {
                 repaired = true; break outer;
               }
             }
-            // 2) dog-leg sur le chevauchement de A (index pts = index pl du début de segment)
-            const el = allCells(model).find((x) => x.getAttribute('id') === A.c.id);
+            // 2) dog-leg sur le chevauchement du fil NON FIGÉ de la paire
+            if (A.fixed && Bv.fixed) continue;
+            const [Adl, sadl] = A.fixed ? [Bv, sb] : [A, sa];
+            const el = allCells(model).find((x) => x.getAttribute('id') === Adl.c.id);
             const laneFreeFor = (d) =>
-              !laneOccupied(A, sa.axis, sa.lane + d, lo, hi) &&
-              !blocked(sa.axis === 'h' ? lo : sa.lane + d, sa.axis === 'h' ? sa.lane + d : lo,
-                       sa.axis === 'h' ? hi : sa.lane + d, sa.axis === 'h' ? sa.lane + d : hi);
+              !laneOccupied(Adl, sadl.axis, sadl.lane + d, lo, hi) &&
+              !blocked(sadl.axis === 'h' ? lo : sadl.lane + d, sadl.axis === 'h' ? sadl.lane + d : lo,
+                       sadl.axis === 'h' ? hi : sadl.lane + d, sadl.axis === 'h' ? sadl.lane + d : hi);
             let dgn = null;
             for (const d of [-delta, delta, -2 * delta, 2 * delta, -3 * delta, 3 * delta, -4 * delta, 4 * delta]) { if (laneFreeFor(d)) { dgn = d; break; } }
             if (dgn == null) {
               if (process.env.DEBUG_SEP === '1') console.error(`[sep] IRRÉPARABLE ${A.c.source}->${A.c.target} vs ${Bv.c.source}->${Bv.c.target} ${sa.axis} lane=${sa.lane} [${lo},${hi}]`);
               continue; // pas de lane libre : ne pas insérer un dog-leg qui recrée un conflit
             }
-            const pts = A.c.points ? A.c.points.map((p) => ({ ...p })) : [];
-            let jog = sa.axis === 'h'
-              ? [{ x: lo, y: sa.lane }, { x: lo, y: sa.lane + dgn }, { x: hi, y: sa.lane + dgn }, { x: hi, y: sa.lane }]
-              : [{ x: sa.lane, y: lo }, { x: sa.lane + dgn, y: lo }, { x: sa.lane + dgn, y: hi }, { x: sa.lane, y: hi }];
+            const pts = Adl.c.points ? Adl.c.points.map((p) => ({ ...p })) : [];
+            let jog = sadl.axis === 'h'
+              ? [{ x: lo, y: sadl.lane }, { x: lo, y: sadl.lane + dgn }, { x: hi, y: sadl.lane + dgn }, { x: hi, y: sadl.lane }]
+              : [{ x: sadl.lane, y: lo }, { x: sadl.lane + dgn, y: lo }, { x: sadl.lane + dgn, y: hi }, { x: sadl.lane, y: hi }];
             // ORDRE = direction réelle du segment (un segment tracé du max
             // vers le min recevait le jog à l'envers -> boucle dégénérée que
             // le nettoyage effaçait, conflit marqué réparé à tort)
-            const segA = A.pl[sa.i], segB2 = A.pl[sa.i + 1];
-            if ((sa.axis === 'h' && segA.x > segB2.x) || (sa.axis === 'v' && segA.y > segB2.y)) jog = jog.reverse();
-            pts.splice(sa.i, 0, ...jog);
+            const segA = Adl.pl[sadl.i], segB2 = Adl.pl[sadl.i + 1];
+            if ((sadl.axis === 'h' && segA.x > segB2.x) || (sadl.axis === 'v' && segA.y > segB2.y)) jog = jog.reverse();
+            pts.splice(sadl.i, 0, ...jog);
             setEdgePoints(el, pts);
             repaired = true; break outer;
           }
@@ -1041,6 +1049,7 @@ function separateNets(model, obstacles) {
       }
       outer2:
       for (const A of edgesInfo) {
+        if (A.fixed) continue;
         for (const seg of A.segs) {
           const sp = seg.axis === 'h'
             ? [{ x: seg.a, y: seg.lane }, { x: seg.b, y: seg.lane }]

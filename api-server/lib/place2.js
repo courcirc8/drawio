@@ -84,7 +84,57 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   const wire = (a, b) => wires.push(addWire(model, a === null ? b : a).getAttribute('id'));
   let seq = 0;
   let ccPairs = [];
-  try { ccPairs = detectStructures({ components: comps }).crossCoupled.map((s) => s.refs); } catch { /* netlist sans MOS */ }
+  let quads = [];
+  try {
+    const st2 = detectStructures({ components: comps });
+    ccPairs = st2.crossCoupled.map((s) => s.refs);
+    quads = st2.quads || [];
+  } catch { /* netlist sans MOS */ }
+  // rails de drain du quad : affectation des lanes par COÛT PRÉDICTIF (les
+  // plongées du net du haut traversent le rail du bas si elles tombent dans
+  // sa portée ; idem pour les descentes des résistances de charge)
+  const quadRail = new Map();
+  for (const q of quads) {
+    const qRefs = q.refs.filter((r) => placed.has(r) && info.get(r) != null);
+    if (qRefs.length !== 4) continue;
+    const qTop = Math.min(...qRefs.map((r) => placed.get(r).y));
+    const dnet = (r) => (comps.find((c2) => c2.ref === r) || { nodes: [] }).nodes[0];
+    const nets2 = [...new Set(qRefs.map(dnet))];
+    if (nets2.length !== 2) continue;
+    const dropX = (r) => pinAbs(placed.get(r), getPin(info.get(r).shapeKey, info.get(r).po[0])).x;
+    const span = {};
+    for (const n2 of nets2) {
+      const xs2 = qRefs.filter((r) => dnet(r) === n2).map(dropX);
+      span[n2] = [Math.min(...xs2), Math.max(...xs2)];
+    }
+    const rOf = {};
+    for (const c2 of comps) {
+      if (c2.prefix !== 'R' || !placed.has(c2.ref)) continue;
+      const ciR = info.get(c2.ref);
+      if (ciR == null) continue;
+      for (const n2 of nets2) {
+        if (ciR.top === n2 || ciR.bot === n2) {
+          rOf[n2] = (rOf[n2] || []).concat(placed.get(c2.ref).x + placed.get(c2.ref).w / 2);
+        }
+      }
+    }
+    const crossCost = (upper, lower) => {
+      let k2 = 0;
+      for (const r of qRefs.filter((r2) => dnet(r2) === upper)) {
+        const x2 = dropX(r);
+        if (x2 > span[lower][0] - 5 && x2 < span[lower][1] + 5) k2++;
+      }
+      for (const xr of (rOf[lower] || [])) {
+        if (xr > span[upper][0] - 5 && xr < span[upper][1] + 5) k2++;
+      }
+      return k2;
+    };
+    const [nA2, nB2] = nets2;
+    const upper = crossCost(nA2, nB2) <= crossCost(nB2, nA2) ? nA2 : nB2;
+    const lower = upper === nA2 ? nB2 : nA2;
+    quadRail.set(upper, { lane: qTop - 48 });
+    quadRail.set(lower, { lane: qTop - 28 });
+  }
 
   // rails : tap VDD au-dessus de chaque terminal du net vdd ; masse sous chaque terminal de 0
   for (const [net, terms] of netTerms) {
@@ -207,6 +257,35 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       // terminal comme un autre, l'arbre la raccorde au plus court) ;
       // les points de contact naissent aux pins partagés (règle 30)
       const pts = terms.map((t) => pinAbs(placed.get(t.ref), t.pin));
+      const preLinkedQuad = [];
+      // QUAD (Gilbert) : les deux nets de drain deviennent des RAILS à
+      // lanes dédiées au-dessus de la rangée (style Razavi) — plongées
+      // verticales des drains, lanes affectées par coût prédictif
+      if (quadRail.has(net)) {
+        const q = quads.find((q2) => q2.refs.some((r) => terms.some((t) => t.ref === r)));
+        const members = q ? q.refs.filter((r) => {
+          const mi2 = info.get(r);
+          return mi2 != null && terms.some((t) => t.ref === r && t.pinName === mi2.po[0]);
+        }) : [];
+        if (members.length === 2) {
+          const [mA, mB] = members;
+          const pA2 = pinAbs(placed.get(mA), getPin(info.get(mA).shapeKey, info.get(mA).po[0]));
+          const pB2 = pinAbs(placed.get(mB), getPin(info.get(mB).shapeKey, info.get(mB).po[0]));
+          const ri = quadRail.get(net);
+          wire(null, { source: mA, target: mB,
+            sourcePin: { x: (terms.find((t) => t.ref === mA) || {}).pin.x, y: (terms.find((t) => t.ref === mA) || {}).pin.y },
+            targetPin: { x: (terms.find((t) => t.ref === mB) || {}).pin.x, y: (terms.find((t) => t.ref === mB) || {}).pin.y },
+            style: 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;jettySize=0;endArrow=none;endFill=0;drawioApiFixedRoute=1;',
+            points: [{ x: pA2.x, y: ri.lane }, { x: pB2.x, y: ri.lane }] });
+          const endIsA = pA2.x >= pB2.x;
+          ri.endRef = endIsA ? mA : mB;
+          ri.endX = Math.max(pA2.x, pB2.x);
+          ri.endPin = (terms.find((t) => t.ref === ri.endRef) || {}).pin;
+          const iA = terms.findIndex((t) => t.ref === mA && t.pinName === info.get(mA).po[0]);
+          const iB = terms.findIndex((t) => t.ref === mB && t.pinName === info.get(mB).po[0]);
+          if (iA >= 0 && iB >= 0) preLinkedQuad.push([iA, iB]);
+        }
+      }
       // paire cross-couplée : la gate rejoint le drain du PARTENAIRE par une
       // diagonale volontaire (le X des figures publiées) — deux tracés
       // orthogonaux qui se disputent les mêmes lanes sont irréparables (VCO)
@@ -234,6 +313,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
           preLinked.push([iG, iD]);
         }
       }
+      for (const pl2 of preLinkedQuad) preLinked.push(pl2);
       const linkedOf = (i2) => preLinked.flatMap(([u, v]) => (u === i2 ? [v] : v === i2 ? [u] : []));
       const inTree = [0];
       const seen = new Set([0]);
@@ -276,6 +356,28 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const pl2 = (w2.t.pin.x <= 0.5) !== !!(placed.get(w2.t.ref) || {}).flipH;
       return (pl2 ? -1 : 1) === (w2.abs.x <= cxm ? -1 : 1);
     };
+    const riNet = quadRail.get(net);
+    if (riNet != null && riNet.endRef != null) {
+      const id2 = 'PN' + (++seq);
+      addVertex(model, { id: id2, shape: PORT, x: riNet.endX + 46, y: riNet.lane, w: 24, h: 24, value: net.toUpperCase() });
+      placed.set(id2, { id: id2, x: riNet.endX + 46, y: riNet.lane, w: 24, h: 24, rotation: 0, railPort: true });
+      wire(null, { source: id2, target: riNet.endRef, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: riNet.endPin.x, y: riNet.endPin.y } });
+      continue;
+    }
+    // deux gates FACE À FACE (lom du quad) : port dans l'ENTREFER, dessous
+    if (withAbs.length === 2) {
+      const [u1, u2] = [...withAbs].sort((a2, b2) => a2.abs.x - b2.abs.x);
+      const dir1 = (u1.t.pin.x <= 0.5) !== !!(placed.get(u1.t.ref) || {}).flipH ? -1 : 1;
+      const dir2 = (u2.t.pin.x <= 0.5) !== !!(placed.get(u2.t.ref) || {}).flipH ? -1 : 1;
+      if (dir1 === 1 && dir2 === -1 && Math.abs(u1.abs.y - u2.abs.y) < 8) {
+        const mx2 = (u1.abs.x + u2.abs.x) / 2;
+        const id2 = 'PN' + (++seq);
+        addVertex(model, { id: id2, shape: PORT, x: mx2 - 12, y: u1.abs.y + 40, w: 24, h: 24, value: net.toUpperCase() });
+        placed.set(id2, { id: id2, x: mx2 - 12, y: u1.abs.y + 40, w: 24, h: 24, rotation: 0 });
+        wire(null, { source: id2, target: u1.t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: u1.t.pin.x, y: u1.t.pin.y } });
+        continue;
+      }
+    }
     const upFacing = (w2) => {
       const p2 = placed.get(w2.t.ref);
       return p2 != null && Math.abs(w2.abs.y - p2.y) < 3 &&
@@ -330,6 +432,8 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     }
     for (const [, pair] of stems) {
       if (pair.length !== 2) continue;
+      // un port de bout de rail garde SA hauteur (celle de son rail)
+      if (pair.some((pr) => pr.p.railPort)) continue;
       const target = Math.min(pair[0].p.y, pair[1].p.y);
       for (const pr of pair) {
         const dy = target - pr.p.y;
@@ -637,6 +741,16 @@ export function importNetlist2(model, parsed, opts = {}) {
       ...[...A].sort((x, y) => slots.get(x).col - slots.get(y).col),
       ...[...Bp].sort((x, y) => slots.get(x).col - slots.get(y).col),
     ];
+    // remap oldCol -> newCol, appliqué AUSSI aux charges au-dessus du quad
+    // (R2 restait au-dessus de M5 alors que son net est M4/M6 : croisement
+    // gratuit de son fil de descente avec le rail de l'autre sortie)
+    const colMap = new Map();
+    ordered.forEach((r, i) => { colMap.set(slots.get(r).col, cols[i]); });
+    const qLevel = Math.min(...refs.map((r) => slots.get(r).level));
+    for (const [ref2, sl2] of slots) {
+      if (refs.includes(ref2)) continue;
+      if (sl2.level < qLevel && colMap.has(sl2.col)) sl2.col = colMap.get(sl2.col);
+    }
     ordered.forEach((r, i) => { slots.get(r).col = cols[i]; });
     // queues RF : centre de leur paire
     const mos = comps.filter((c) => c.prefix === 'M' || c.prefix === 'Q');
@@ -794,7 +908,7 @@ export function importNetlist2(model, parsed, opts = {}) {
     for (const e of ch.elems) {
       const ci = info.get(e.c.ref);
       const shape = getShape(ci.shapeKey);
-      const cx = ga.x - 130 - k * 160;
+      const cx = ga.x - 110 - k * 125; // pas compacté (le LNA étirait 800 px de vide)
       // aligner les PINS de l'élément sur la ligne de chaîne (les selfs
       // horizontales ont leurs pins au bord bas, pas au centre)
       const cy = ga.y;
@@ -853,7 +967,7 @@ export function importNetlist2(model, parsed, opts = {}) {
         return o;
       })();
       const vs = getShape(vi.shapeKey);
-      const cx = ga.x - 130 - k * 160;
+      const cx = ga.x - 110 - k * 125; // pas compacté (le LNA étirait 800 px de vide)
       const cy = ga.y + 90;
       addVertex(model, { id: ch.endV.ref, shape: vi.shapeKey, x: cx - vs.w / 2, y: cy - vs.h / 2, w: vs.w, h: vs.h, rotation: 0, value: ch.endV.value || '' });
       placed.set(ch.endV.ref, { id: ch.endV.ref, x: cx - vs.w / 2, y: cy - vs.h / 2, w: vs.w, h: vs.h, rotation: 0 });

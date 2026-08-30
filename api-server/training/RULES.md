@@ -485,3 +485,19 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     diagonales volontaires et tracés figés exemptés. Scores redevenus
     signal : LNA 22→75, VCO 72→88, RC 90 — le juge ne punit plus les
     règles 13/41/43.
+
+51. **Gabarit de quad (S4, réclamé depuis 4 sessions)** :
+    - les CHARGES suivent le remapping de colonnes du quad (R2 restait
+      au-dessus d'un membre de l'autre sortie : croisement gratuit) ;
+    - les deux nets de drain = RAILS à lanes dédiées au-dessus de la rangée
+      (style Razavi), plongées verticales, lanes affectées par COÛT
+      PRÉDICTIF (traversées des plongées et des descentes de R comptées
+      pour chaque affectation, la moins chère gagne) ;
+    - les tracés figés (drawioApiFixedRoute) sont IMMOBILES pour tous les
+      réparateurs — visibles comme sources de conflit, mais c'est l'autre
+      fil qui bouge (separateNets redescendait le rail sur les pins) ;
+    - ports : OUT± en BOUT de rail (le fil prolonge le rail) ; deux gates
+      FACE À FACE (lom) -> port dans l'entrefer, dessous ; les ports de
+      rail échappent à la symétrisation XP/XM (leur hauteur EST leur rail).
+    Gilbert : 6 croisements -> 1 (minimum topologique), score 40 -> 65.
+    Chaîne du LNA compactée (pas 160 -> 125).
