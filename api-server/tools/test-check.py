@@ -107,6 +107,10 @@ def main():
     l = run(os.path.join(REG, 'lna-complet.xml'))
     fails += expect(l, 'lna-complet', 'edge-hug')                     # boucle de diode collée au flanc de M4
 
+    # fixture 2026-08-30 : Lb1 monté à l'envers, fil en Π autour de la bobine
+    lw = run(os.path.join(REG, 'lna-complet-wrap.xml'))
+    fails += expect(lw, 'lna-complet-wrap', 'wrap-around')
+
     # les 3 restantes ne doivent pas PLANTER, et leurs violations sont listées
     for name in ('vco-lc', 'rc-filter', 'lna-shaeffer-lee'):
         run(os.path.join(REG, name + '.xml'))

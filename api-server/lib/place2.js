@@ -123,10 +123,20 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const p = placed.get(t.ref);
       const abs = pinAbs(p, t.pin);
       const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
-      if (t.pin.y === 0 && t.pin.x > 0.25 && t.pin.x < 0.75) {
+      // direction PHYSIQUE du pin (flips/rotations compris) : un pin qui
+      // regarde en haut reçoit son port AU-DESSUS, en bas AU-DESSOUS —
+      // jamais un port de côté relié par un détour
+      const midX = Math.abs(abs.x - (p.x + p.w / 2)) < Math.max(14, p.w / 3);
+      if (midX && abs.y <= p.y + 2) {
         const cellUp = addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, value: net.toUpperCase() });
         cellUp.setAttribute('style', cellUp.getAttribute('style') + 'flipV=1;verticalLabelPosition=top;verticalAlign=bottom;');
         placed.set(id, { id, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, rotation: 0, flipV: true });
+        wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
+        continue;
+      }
+      if (midX && abs.y >= p.y + p.h - 2) {
+        addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y + 46, w: 24, h: 24, value: net.toUpperCase() });
+        placed.set(id, { id, x: abs.x - 12, y: abs.y + 46, w: 24, h: 24, rotation: 0 });
         wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
         continue;
       }
@@ -729,13 +739,21 @@ export function importNetlist2(model, parsed, opts = {}) {
       const cy = ga.y;
       const pinRelY = (getPin(ci.shapeKey, ci.po[0]) || { y: 0.5 }).y;
       const y = ga.y - pinRelY * shape.h;
-      addVertex(model, { id: e.c.ref, shape: ci.shapeKey, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, value: e.c.value || '' });
-      placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0 });
+      // ORIENTATION PAR NET : le pin du net côté ancre (e.net) regarde à
+      // DROITE — sinon les fils s'enroulent autour du composant
+      const eFlip = e.c.nodes[0] === e.net;
+      const cellE = addVertex(model, { id: e.c.ref, shape: ci.shapeKey, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, value: e.c.value || '' });
+      if (eFlip) cellE.setAttribute('style', cellE.getAttribute('style') + 'flipH=1;');
+      placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, flipH: eFlip });
       for (let i = 0; i < ci.po.length; i++) term(e.c.nodes[i], e.c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
       // dérivations : bias en haut (vertical), shunt masse en bas (vertical)
       for (const h of e.hangers) {
         const hi = info.get(h.c.ref);
-        const hShape = hi.shapeKey, hRot = h.up ? -90 : 90;
+        // rot +90 met nodes[0] ('in') en HAUT, -90 en BAS ; le pin du net
+        // partagé (e.net) doit regarder la chaîne : bas pour un hanger haut,
+        // haut pour un shunt bas — Lb1 était monté à l'envers (fil en Π)
+        const inShared = h.c.nodes[0] === e.net;
+        const hShape = hi.shapeKey, hRot = h.up ? (inShared ? -90 : 90) : (inShared ? 90 : -90);
         const hs = getShape(hShape);
         const hx = cx + 85;
         const hh = hs.w;
@@ -781,7 +799,7 @@ export function importNetlist2(model, parsed, opts = {}) {
       }
       return pts.length ? { n: pts.length, x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length } : { n: 0, x: P.x0, y: P.y0 };
     });
-    let cx, cy;
+    let cx, cy, flipF = false;
     const empty0 = anchors[0].n === 0, empty1 = anchors[1].n === 0;
     if (empty0 !== empty1) {
       // élément série vers l'extérieur (l'autre net deviendra un port) :
@@ -792,9 +810,13 @@ export function importNetlist2(model, parsed, opts = {}) {
       const dir = a.x >= mid ? 1 : -1;
       cx = a.x + dir * (60 + shape.w / 2);
       cy = a.y;
+      // ORIENTATION : le pin LIBRE (futur port) regarde vers l'extérieur
+      flipF = empty0 ? dir > 0 : dir < 0;
     } else {
       cx = (anchors[0].x + anchors[1].x) / 2;
       cy = (anchors[0].y + anchors[1].y) / 2 + (P.floatDrop || 0);
+      // ORIENTATION : le pin 'in' (nodes[0]) regarde le centroïde de SON net
+      flipF = anchors[0].x > anchors[1].x;
     }
     let x = cx - shape.w / 2, y = cy - shape.h / 2;
     // JAMAIS sur un autre corps : on remonte (puis descend) jusqu'à une
@@ -806,8 +828,9 @@ export function importNetlist2(model, parsed, opts = {}) {
       for (let k = 1; k <= 12 && overlaps(); k++) y = y00 - k * 20;
       if (overlaps()) { y = y00; for (let k = 1; k <= 12 && overlaps(); k++) y = y00 + k * 20; }
     }
-    addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: 0, value: c.value || '' });
-    placed.set(c.ref, { id: c.ref, x, y, w: shape.w, h: shape.h, rotation: 0 });
+    const cellF = addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: 0, value: c.value || '' });
+    if (flipF) cellF.setAttribute('style', cellF.getAttribute('style') + 'flipH=1;');
+    placed.set(c.ref, { id: c.ref, x, y, w: shape.w, h: shape.h, rotation: 0, flipH: flipF });
     for (let i = 0; i < ci.po.length; i++) {
       term(c.nodes[i], c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
     }

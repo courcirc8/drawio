@@ -658,7 +658,57 @@ class Checker:
                              f'corps de {c1} et {c2} se chevauchent ({ox:.0f}x{oy:.0f}px)',
                              (max(x1, x2), max(y1, y2)))
 
+    def check_wrap(self):
+        # DIPÔLE monté à l'envers : le fil part d'un pin qui regarde d'un
+        # côté et finit de l'autre côté du corps (Lb1 en Π). Restreint aux
+        # 2-terminaux : pour un MOS/OTA le contournement peut être forcé par
+        # la topologie (bus de gates, contre-réaction).
+        DIPOLES = ('resistors.', 'capacitors.', 'inductors.', 'diodes.')
+        for e in self.edges:
+            if e['id'] not in self.polys or e['src'] == e['tgt']:
+                continue
+            pl = self.polys[e['id']]
+            for cid, pt, other in ((e['src'], pl[0], pl[-1]), (e['tgt'], pl[-1], pl[0])):
+                v = self.verts.get(cid)
+                if v is None or not any(t in v['shape'] for t in DIPOLES):
+                    continue
+                x, y, w, h = aabb(v)
+                # pin en COIN : le lead d'une forme paysage est horizontal
+                # (côté gauche/droite), celui d'une forme portrait vertical
+                if w >= h:
+                    if pt[0] <= x + 2:
+                        side = 'left'
+                    elif pt[0] >= x + w - 2:
+                        side = 'right'
+                    elif pt[1] <= y + 2:
+                        side = 'top'
+                    elif pt[1] >= y + h - 2:
+                        side = 'bottom'
+                    else:
+                        continue
+                else:
+                    if pt[1] <= y + 2:
+                        side = 'top'
+                    elif pt[1] >= y + h - 2:
+                        side = 'bottom'
+                    elif pt[0] <= x + 2:
+                        side = 'left'
+                    elif pt[0] >= x + w - 2:
+                        side = 'right'
+                    else:
+                        continue
+                bad = (side == 'top' and other[1] > y + h + 10 and x - 40 <= other[0] <= x + w + 40) or \
+                      (side == 'bottom' and other[1] < y - 10 and x - 40 <= other[0] <= x + w + 40) or \
+                      (side == 'left' and other[0] > x + w + 10 and y - 40 <= other[1] <= y + h + 40) or \
+                      (side == 'right' and other[0] < x - 10 and y - 40 <= other[1] <= y + h + 40)
+                if bad:
+                    self.add('wrap-around', 'error',
+                             f"fil {e['id']} : le pin ({side}) de {cid} regarde à "
+                             f"l'opposé de sa destination — dipôle monté à l'envers",
+                             pt)
+
     def run(self):
+        self.check_wrap()
         self.check_comp_overlap()
         self.check_through()
         self.check_net_separation()

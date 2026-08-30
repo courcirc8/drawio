@@ -368,3 +368,21 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     TEXTE horizontale sur le flanc gauche, qui devient un obstacle que le
     routeur contourne. Deux jonctions distinctes à ≥5 px gardent chacune
     leur point de contact (la dédup à 12 px avalait le dot du pin voisin).
+
+42. **Orientation des dipôles PAR NET, jamais par convention** (remarque
+    utilisateur : Lb1 monté à l'envers, fil en Π autour de la bobine, port
+    VBIAS posé de côté). Les « simplifications par rotation/déplacement »
+    n'étaient vérifiées par RIEN : l'orientation était figée par
+    construction (hRot = up ? -90 : 90), l'optimiseur ne l'explorait pas,
+    le checker n'avait pas de règle. Désormais :
+    - hangers : rot ±90 choisi pour que le pin du net partagé regarde la
+      chaîne ; éléments de chaîne : flipH pour que le pin du net côté ancre
+      regarde l'ancre ; passifs flottants : flipH pour que 'in' regarde le
+      centroïde de son net (le R1 du RC était à l'envers depuis toujours) ;
+    - ports 1-terminal : direction PHYSIQUE du pin (flips/rotations compris)
+      — pin vers le haut => port au-dessus, vers le bas => au-dessous ;
+    - checker : règle « wrap-around » (dipôle dont le pin regarde à l'opposé
+      de sa destination), pins de COIN désambiguïsés par l'aspect de la
+      forme (paysage => lead horizontal), MOS/OTA exclus (contournements
+      topologiquement forcés : bus de gates, contre-réaction) ; fixture
+      figée lna-complet-wrap.xml au harnais.
