@@ -48,8 +48,29 @@ def parse(path):
         if model is None:
             raise SystemExit('pas de mxGraphModel dans ' + path)
     verts, edges, dots = {}, [], []
-    for c in model.iter('mxCell'):
-        cid = c.get('id')
+    # BUG (2026-08-31): this iterated bare <mxCell> only. draw.io wraps a cell
+    # that carries user data in <object id=... label=...><mxCell/></object>, and
+    # the id then lives on the WRAPPER -- the inner mxCell has none. Every
+    # vertex the api-server tags with refdes/spice_value is wrapped, so cid was
+    # None, the vertex never entered `verts`, and every wire touching it was
+    # reported as `dangling`. Measured on the two RF matching sheets: 26 and 29
+    # false `dangling` errors plus the `dot-orphan`s that follow from them, on
+    # documents whose LVS round-trip matches and whose ERC is 0/0. Same trap as
+    # model.js's mxCellOf(): resolve the wrapper, never assume a bare mxCell.
+    def _cells(mdl):
+        # yields (id, mxCell element, label) for every cell, wrapper-aware
+        wrapped = set()
+        for obj in mdl.iter('object'):
+            mx = obj.find('mxCell')
+            if mx is None:
+                continue
+            wrapped.add(id(mx))
+            yield obj.get('id'), mx, (obj.get('label') or '')
+        for mx in mdl.iter('mxCell'):
+            if id(mx) in wrapped:
+                continue
+            yield mx.get('id'), mx, (mx.get('value') or '')
+    for cid, c, cvalue in _cells(model):
         style = c.get('style') or ''
         smap = dict(kv.split('=', 1) for kv in style.split(';') if '=' in kv)
         g = c.find('mxGeometry')
@@ -57,7 +78,7 @@ def parse(path):
             v = {
                 'id': cid, 'x': float(g.get('x')), 'y': float(g.get('y')),
                 'w': float(g.get('width') or 0), 'h': float(g.get('height') or 0),
-                'shape': smap.get('shape', ''), 'value': c.get('value') or '',
+                'shape': smap.get('shape', ''), 'value': cvalue,
                 'rotation': float(smap.get('rotation', 0)),
                 'flipH': smap.get('flipH') == '1', 'flipV': smap.get('flipV') == '1',
                 'vlp': smap.get('verticalLabelPosition'),
