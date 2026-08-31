@@ -296,8 +296,19 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
       metrics: best.metrics, params: best.params, history, lvs: lvsReport,
       components: best.placed.components, wires: best.placed.wires });
   }
-  const placed = engine === 'v3' ? place3.importNetlist3(m, parsed) :
-    engine === 'v2' ? place2.importNetlist2(m, parsed) : place.importNetlist(m, parsed);
+  // Four engines now, from two lines of work merged 2026-08-31: v1/v2 and elk
+  // from feature/api-server, v3 (place3, source-less RF chains) from the RF
+  // branch. Kept as a single dispatch rather than nested ternaries because
+  // `elk` is the only async one.
+  let placed;
+  if (engine === 'elk') {
+    const { importNetlistElk } = await import('./lib/place-elk.js');
+    placed = await importNetlistElk(m, parsed);
+  } else if (engine === 'v3') {
+    placed = place3.importNetlist3(m, parsed);
+  } else {
+    placed = engine === 'v2' ? place2.importNetlist2(m, parsed) : place.importNetlist(m, parsed);
+  }
   const routed = await route.routePage(m, placed.wires, {});
   // After routing, not before: edge waypoints are absolute too (see
   // model.normalizeOrigin -- negative coordinates were being clipped off the
@@ -345,6 +356,19 @@ app.get('/documents/:id/bom', wrap((req, res) => {
   const rows = bomLib.bom(m);
   if ((req.query.format || 'json') === 'csv') return res.type('text/csv').send(bomLib.bomCsv(rows));
   res.json(rows);
+}));
+
+app.post('/documents/:id/compact', wrap(async (req, res) => {
+  const { entry, model: m } = pageOf(req);
+  const { compactPage } = await import('./lib/compact.js');
+  const r = await compactPage(m, req.body || {});
+  res.json(r);
+}));
+
+app.post('/documents/:id/check', wrap(async (req, res) => {
+  const { model: m } = pageOf(req);
+  const { checkDocument } = await import('./lib/check.js');
+  res.json(checkDocument(m));
 }));
 
 app.post('/documents/:id/beauty', wrap(async (req, res) => {

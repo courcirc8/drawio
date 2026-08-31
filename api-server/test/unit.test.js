@@ -8,8 +8,8 @@ import { compare, gate } from '../lib/lvs.js';
 import { check as ercCheck } from '../lib/erc.js';
 import { bom } from '../lib/bom.js';
 import { searchShapes, getShape, getPin } from '../lib/stencils.js';
-import { formatComponentValue } from '../lib/components.js';
 import zlib from 'node:zlib';
+import { formatComponentValue } from '../lib/components.js';
 
 const RC = `* RC low-pass
 V1 in 0 DC 5
@@ -227,9 +227,86 @@ test('place2: conduction stacks align drain/source pins vertically (LNA)', async
   assert.ok(m2.y < m1.y, 'cascode M2 stacked above M1');
 });
 
-// place3 golden netlists live in Match_BOM_optimizer (BOM ground truth for
-// the RF matching schematics), not under benchmark/netlists/ — those are the
-// two acceptance targets from the place3 task brief.
+test('patterns: structures détectées sur les circuits de référence', async () => {
+  const fs = await import('node:fs');
+  const { detectStructures } = await import('../lib/patterns.js');
+  const dir = new URL('../benchmark/netlists/', import.meta.url).pathname;
+  const load = (f) => detectStructures(parseSpice(fs.readFileSync(dir + f, 'utf8')));
+  const ota = load('ota-cmos.cir');
+  assert.deepEqual(ota.diffPairs[0].refs.sort(), ['M1', 'M2']);
+  assert.equal(ota.mirrors.length, 2);
+  assert.ok(ota.mirrors.some((m) => m.diode === 'M3'));
+  assert.ok(ota.mirrors.some((m) => m.diode === 'M8' && m.refs.length === 3));
+  const lna = load('lna-shaeffer-lee.cir');
+  assert.deepEqual(lna.cascodes, [{ top: 'M1', bottom: 'M2', net: 'x' }].map((c) => c) .length ? lna.cascodes : lna.cascodes);
+  assert.equal(lna.cascodes.length, 1);
+  const vco = load('vco-lc.cir');
+  assert.equal(vco.crossCoupled.length, 1);
+  assert.deepEqual(vco.crossCoupled[0].refs.sort(), ['M1', 'M2']);
+  const gil = load('gilbert-mixer.cir');
+  assert.equal(gil.diffPairs.length, 3);
+});
+
+test('check: superposition inter-nets (règle 22) détectée', async () => {
+  const { checkDocument } = await import('../lib/check.js');
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  model.addVertex(m, { id: 'A', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'B', shape: 'mxgraph.electrical.resistors.resistor_2', x: 400, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'C', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 200, w: 100, h: 20 });
+  model.addVertex(m, { id: 'D', shape: 'mxgraph.electrical.resistors.resistor_2', x: 400, y: 200, w: 100, h: 20 });
+  // deux fils de nets différents sur la MÊME lane horizontale y=100
+  model.addWire(m, { id: 'w1', source: 'A', target: 'B', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 },
+    points: [{ x: 150, y: 100 }, { x: 380, y: 100 }] });
+  model.addWire(m, { id: 'w2', source: 'C', target: 'D', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 },
+    points: [{ x: 150, y: 100 }, { x: 380, y: 100 }] });
+  const r = checkDocument(m);
+  assert.ok(r.violations.some((v) => v.rule === '22'), 'règle 22 attendue: ' + JSON.stringify(r.violations));
+});
+
+test('check: branche à 3 voies sans dot (règle 30) détectée, puis satisfaite par un dot', async () => {
+  const { checkDocument } = await import('../lib/check.js');
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  model.addVertex(m, { id: 'A', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'B', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'C', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 200, w: 100, h: 20 });
+  // deux fils partent du MÊME pin de A -> 3 voies au pin (règle 30)
+  model.addWire(m, { id: 'w1', source: 'A', target: 'B', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 } });
+  model.addWire(m, { id: 'w2', source: 'A', target: 'C', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 } });
+  const r1 = checkDocument(m);
+  assert.ok(r1.violations.some((v) => v.rule === '30'), 'règle 30 attendue: ' + JSON.stringify(r1.violations));
+  // un dot posé au pin (100,10) satisfait la règle
+  const dot = m.ownerDocument.createElement('mxCell');
+  dot.setAttribute('id', 'DOTX'); dot.setAttribute('vertex', '1'); dot.setAttribute('parent', '1');
+  dot.setAttribute('style', 'ellipse;fillColor=#000000;drawioApiJunction=1;contactDot=1;');
+  const g = m.ownerDocument.createElement('mxGeometry');
+  g.setAttribute('x', '97'); g.setAttribute('y', '7'); g.setAttribute('width', '6'); g.setAttribute('height', '6');
+  g.setAttribute('as', 'geometry'); dot.appendChild(g);
+  m.getElementsByTagName('root')[0].appendChild(dot);
+  const r2 = checkDocument(m);
+  assert.ok(!r2.violations.some((v) => v.rule === '30'), 'plus de règle 30: ' + JSON.stringify(r2.violations));
+});
+
+test('check: fil à travers un corps (through) détecté', async () => {
+  const { checkDocument } = await import('../lib/check.js');
+  const doc = model.newDocument();
+  const m = model.getPage(doc);
+  model.addVertex(m, { id: 'A', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 90, w: 100, h: 20 });
+  model.addVertex(m, { id: 'B', shape: 'mxgraph.electrical.resistors.resistor_2', x: 400, y: 90, w: 100, h: 20 });
+  model.addVertex(m, { id: 'M', shape: 'mxgraph.electrical.mosfets1.mosfet_n_no_bulk', x: 220, y: 50, w: 70, h: 110 });
+  model.addWire(m, { id: 'w1', source: 'A', target: 'B', sourcePin: { x: 1, y: 0.5 }, targetPin: { x: 0, y: 0.5 } });
+  const r = checkDocument(m);
+  assert.ok(r.violations.some((v) => v.rule === 'through'), 'through attendu: ' + JSON.stringify(r.violations));
+});
+
+
+// ---------------------------------------------------------------------------
+// Tests from the RF branch (place3/port glyph/value labels/plugin), merged
+// 2026-08-31. Rebuilt by taking feature/api-server whole and appending the
+// blocks it does not have -- the textual merge interleaved two test bodies.
+// ---------------------------------------------------------------------------
+
 const GOLDEN_DIR = '/eda/dm/home/evandel/CURSOR/PySpectre/Match_BOM_optimizer/multi_agent_opt/rf_schematics/golden/';
 
 test('place3: round-trip LVS + ERC-clean on the 915/2446 golden matching netlists', async () => {
@@ -283,32 +360,16 @@ test('place3: engine=v3 differs from a plain import once optimize runs, and acce
   assert.equal(compare(extractNetlist(model.getPage(best.doc)), parsed).match, true);
   const acceptedCount = history.filter((h) => h.accepted).length;
   assert.ok(acceptedCount >= 1, 'expected at least the seed candidate to be accepted: ' + JSON.stringify(history));
-  // score_raw must be doing real ranking work, not just cosmetic reporting:
-  // at least one non-seed iteration should differ from the seed's params.
-  assert.ok(history.length === 13);
+  // This used to assert `history.length === 13` (seed + 12 hill-climb iters).
+  // The 2026-08-31 merge replaced the hill-climb with feature/api-server's BEAM
+  // search, whose history is g0/g1../final/compact — a different length by
+  // design, so the old assertion tested the algorithm, not the outcome. What
+  // must stay true is that optimising actually MOVED the drawing: that is the
+  // regression the score clamp caused (every candidate pinned to 0.0, nothing
+  // accepted, byte-identical output).
+  assert.notEqual(model.serialize(best.doc), plainXml,
+    'optimize returned a byte-identical document — ranking is inert again');
 });
-
-test('patterns: structures détectées sur les circuits de référence', async () => {
-  const fs = await import('node:fs');
-  const { detectStructures } = await import('../lib/patterns.js');
-  const dir = new URL('../benchmark/netlists/', import.meta.url).pathname;
-  const load = (f) => detectStructures(parseSpice(fs.readFileSync(dir + f, 'utf8')));
-  const ota = load('ota-cmos.cir');
-  assert.deepEqual(ota.diffPairs[0].refs.sort(), ['M1', 'M2']);
-  assert.equal(ota.mirrors.length, 2);
-  assert.ok(ota.mirrors.some((m) => m.diode === 'M3'));
-  assert.ok(ota.mirrors.some((m) => m.diode === 'M8' && m.refs.length === 3));
-  const lna = load('lna-shaeffer-lee.cir');
-  assert.deepEqual(lna.cascodes, [{ top: 'M1', bottom: 'M2', net: 'x' }].map((c) => c) .length ? lna.cascodes : lna.cascodes);
-  assert.equal(lna.cascodes.length, 1);
-  const vco = load('vco-lc.cir');
-  assert.equal(vco.crossCoupled.length, 1);
-  assert.deepEqual(vco.crossCoupled[0].refs.sort(), ['M1', 'M2']);
-  const gil = load('gilbert-mixer.cir');
-  assert.equal(gil.diffPairs.length, 3);
-});
-
-// ------------------------------------------------------------- T1: mandatory LVS on import
 
 test('T1: lvs.gate rejects a mismatch (422) unless forced', async () => {
   const doc = model.newDocument();
@@ -339,8 +400,6 @@ test('T1: lvs.gate downgrades a mismatch to a 200 with warnings when forced', ()
   const clean = gate({ match: true }, { force: false });
   assert.deepEqual(clean, { ok: true, status: 201 });
 });
-
-// ------------------------------------------------------------- T3: pin identity by name
 
 test('T3: exitName/entryName round-trip to the same pin after serialize + reparse', () => {
   const doc = model.newDocument();
@@ -405,8 +464,6 @@ test('T3: a legacy wire with no exitName/entryName resolves exactly as before (b
   assert.equal(conn.netOf.get('R1:out'), conn.netOf.get('R2:in'));
 });
 
-// ------------------------------------------------------------- T4: refdes identity
-
 test('T4: refdes survives an id change (copy/paste re-id); netlist keys on refdes not the mxCell id', () => {
   const doc = model.newDocument();
   const m = model.getPage(doc);
@@ -443,8 +500,6 @@ test('T4: spice_value attribute is stored and preferred by extraction', () => {
   assert.equal(extracted.components.find((c) => c.ref === 'R1').value, '10k');
 });
 
-// ------------------------------------------------------------- T2: ERC severities
-
 test('T2: anchor-off-pin and floating-endpoint are ERC errors, naming the cell and pin', () => {
   const doc = model.newDocument();
   const m = model.getPage(doc);
@@ -459,8 +514,6 @@ test('T2: anchor-off-pin and floating-endpoint are ERC errors, naming the cell a
   assert.deepEqual(off[0].cells, ['w', 'A']);
   assert.match(off[0].message, /pin/);
 });
-
-// ------------------------------------------------ formatComponentValue (Defect 2)
 
 test('formatComponentValue: reformats raw SPICE floats into engineering units for R/L/C only', () => {
   // The two exact regressions from the defect report.
@@ -487,3 +540,4 @@ test('formatComponentValue: reformats raw SPICE floats into engineering units fo
   assert.equal(formatComponentValue('R', ''), '');
   assert.equal(formatComponentValue('R', undefined), '');
 });
+

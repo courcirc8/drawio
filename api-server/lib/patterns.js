@@ -100,10 +100,26 @@ export function detectStructures(parsed) {
     }
   }
 
+  // quads double-équilibrés (Gilbert) : deux paires dont les nets de queue
+  // sont les deux drains d'une même paire inférieure
+  out.quads = [];
+  for (let i = 0; i < out.diffPairs.length; i++) {
+    for (let j = 0; j < out.diffPairs.length; j++) {
+      if (i === j) continue;
+      const P1 = out.diffPairs[i], P2 = out.diffPairs[j];
+      const lower = out.diffPairs.find((P0) => P0 !== P1 && P0 !== P2 &&
+        P0.refs.some((r) => { const c = mos.find((k) => k.ref === r); return c != null && D(c) === P1.tailNet; }) &&
+        P0.refs.some((r) => { const c = mos.find((k) => k.ref === r); return c != null && D(c) === P2.tailNet; }));
+      if (lower != null && i < j) {
+        out.quads.push({ pairs: [P1.refs, P2.refs], rfPair: lower.refs, refs: [...P1.refs, ...P2.refs] });
+      }
+    }
+  }
+
   out.summary = {
     diffPairs: out.diffPairs.length, mirrors: out.mirrors.length,
     cascodes: out.cascodes.length, crossCoupled: out.crossCoupled.length,
-    diodes: out.diodes.length, tails: out.tails.length,
+    diodes: out.diodes.length, tails: out.tails.length, quads: out.quads.length,
   };
   return out;
 }

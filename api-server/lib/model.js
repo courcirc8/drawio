@@ -435,14 +435,18 @@ export function normalizeOrigin(model, margin = 40) {
   return { dx, dy };
 }
 
-export function setEdgePoints(node, points) {
-  const doc = node.ownerDocument;
-  let g = geomOf(node);
+export function setEdgePoints(cell, points) {
+  if (process.env.TRACE_DIAG === '1' && points && points.length &&
+      /edgeStyle=none/.test(cell.getAttribute('style') || '')) {
+    console.error('[TRACE_DIAG] points sur diagonale ' + cell.getAttribute('id') + ' :', JSON.stringify(points), new Error().stack.split('\n').slice(2, 5).join(' | '));
+  }
+  const doc = cell.ownerDocument;
+  let g = geomOf(cell);
   if (g == null) {
     g = doc.createElement('mxGeometry');
     g.setAttribute('relative', '1');
     g.setAttribute('as', 'geometry');
-    mxCellOf(node).appendChild(g);
+    mxCellOf(cell).appendChild(g); // NOT cell.appendChild: cell may be an <object> wrapper
   }
   for (const arr of Array.from(g.childNodes)) {
     if (arr.nodeType === 1 && arr.nodeName === 'Array' && arr.getAttribute('as') === 'points') g.removeChild(arr);

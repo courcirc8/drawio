@@ -91,6 +91,8 @@ def load(xml_path):
                           'x': float(g.get('x', 0)), 'y': float(g.get('y', 0)),
                           'w': float(g.get('width', 0)), 'h': float(g.get('height', 0)),
                           'rot': rot, 'junction': 'drawioApiJunction' in style,
+                          'is_text': style.startswith('text;'),
+                          'no_label': 'noLabel=1' in style,
                           'flipH': 'flipH=1' in style, 'flipV': 'flipV=1' in style}
         elif c.get('edge') == '1':
             st = dict(tok.split('=', 1) for tok in style.split(';') if '=' in tok)
@@ -178,12 +180,53 @@ def near_junction(pt, verts, r=9):
                 return True
     return False
 
+def edge_nets(edges, polys):
+    """Union-find par position ABSOLUE des extrémités : deux fils du même
+    net ne font pas un croisement, leurs superpositions ne comptent pas."""
+    parent = {}
+    def find(k):
+        while parent.get(k, k) != k:
+            k = parent[k]
+        return k
+    def union(a, b):
+        parent.setdefault(a, a); parent.setdefault(b, b)
+        parent[find(a)] = find(b)
+    keys = []
+    for e, pl in zip(edges, polys):
+        ka = (e['src'], round(pl[0][0]/3), round(pl[0][1]/3))
+        kb = (e['tgt'], round(pl[-1][0]/3), round(pl[-1][1]/3))
+        union(ka, kb)
+        keys.append(ka)
+    return [find(k) for k in keys]
+
 def xml_metrics(verts, edges):
     polys = polylines(verts, edges)
+    nets = edge_nets(edges, polys)
     m = {}
     # coudes + longueur + coudes excédentaires (vs minimum géométrique)
+    # (les self-loops de liaison diode sont un idiome délibéré, comme les
+    # diagonales : exemptés)
     bends, excess, length = 0, 0, 0.0
-    for pl in polys:
+    body_boxes = []
+    for cid, v in verts.items():
+        if v['junction'] or v.get('is_text') or v['w'] < 12:
+            continue
+        t = math.radians(v['rot'] or 0)
+        w = abs(v['w']*math.cos(t)) + abs(v['h']*math.sin(t))
+        h = abs(v['w']*math.sin(t)) + abs(v['h']*math.cos(t))
+        cx, cy = v['x']+v['w']/2, v['y']+v['h']/2
+        body_boxes.append((cid, cx-w/2+1.5, cy-h/2+1.5, cx+w/2-1.5, cy+h/2-1.5))
+    def seg_blocked(e, p, q):
+        for cid, x1, y1, x2, y2 in body_boxes:
+            if cid in (e['src'], e['tgt']):
+                continue
+            if max(p[0], q[0]) > x1 and min(p[0], q[0]) < x2 and \
+               max(p[1], q[1]) > y1 and min(p[1], q[1]) < y2:
+                return True
+        return False
+    for e, pl in zip(edges, polys):
+        if e['src'] is not None and e['src'] == e['tgt']:
+            continue
         dirs = []
         for (x1, y1), (x2, y2) in zip(pl, pl[1:]):
             length += math.hypot(x2-x1, y2-y1)
@@ -192,8 +235,19 @@ def xml_metrics(verts, edges):
             dirs.append('h' if abs(x2-x1) >= abs(y2-y1) else 'v')
         wb = max(0, sum(1 for a, b in zip(dirs, dirs[1:]) if a != b))
         bends += wb
+        if e.get('straight') or 'drawioApiFixedRoute' in e['st']:
+            continue  # diagonales volontaires et tracés figés : pas d'excès
         a, z = pl[0], pl[-1]
-        needed = 0 if (abs(a[0]-z[0]) < 1 or abs(a[1]-z[1]) < 1) else 1
+        # minimum RÉALISABLE (règle 43) : droit s'il est libre, sinon L
+        # s'il est libre, sinon le détour est optimal (pas d'excès)
+        if abs(a[0]-z[0]) < 1 or abs(a[1]-z[1]) < 1:
+            needed = 0 if not seg_blocked(e, a, z) else 2
+        else:
+            needed = 3
+            for corner in ((a[0], z[1]), (z[0], a[1])):
+                if not seg_blocked(e, a, corner) and not seg_blocked(e, corner, z):
+                    needed = 1
+                    break
         excess += max(0, wb - needed)
     m['bends'] = bends
     m['excess_bends'] = excess
@@ -208,23 +262,25 @@ def xml_metrics(verts, edges):
     # `300*n_wires/3` flat per-wire budget, which had no relation to geometry.
     m['min_length'] = round(sum(math.hypot(pl[-1][0]-pl[0][0], pl[-1][1]-pl[0][1]) for pl in polys), 1)
     # croisements fil-fil (hors jonctions et hors extrémités partagées)
-    crossings = 0
+    cross_pts = set()
     for i in range(len(polys)):
         for j in range(i+1, len(polys)):
             if edges[i].get('straight') or edges[j].get('straight'):
                 continue  # diagonale volontaire : ses croisements sont assumés
-                          # (les figures publiées font pareil pour le cross-couplage)
+            if nets[i] == nets[j]:
+                continue  # même net : superposition/té, pas un croisement
             for s1 in zip(polys[i], polys[i][1:]):
                 for s2 in zip(polys[j], polys[j][1:]):
                     p = seg_inter(s1[0], s1[1], s2[0], s2[1])
                     if p is not None and not near_junction(p, verts):
                         ends = [s1[0], s1[1], s2[0], s2[1]]
                         if all(math.hypot(p[0]-e[0], p[1]-e[1]) > 3 for e in ends):
-                            crossings += 1
-    m['crossings'] = crossings
+                            cross_pts.add((round(p[0]/3), round(p[1]/3)))
+    m['crossings'] = len(cross_pts)
     # segments traversant un composant (hors ses propres terminaux)
     through = 0
-    comps = [(cid, v) for cid, v in verts.items() if not v['junction']]
+    comps = [(cid, v) for cid, v in verts.items()
+             if not v['junction'] and not v.get('is_text')]
     for e, pl in zip(edges, polys):
         for (x1, y1), (x2, y2) in zip(pl, pl[1:]):
             for cid, v in comps:
@@ -270,8 +326,10 @@ def xml_metrics(verts, edges):
     # sur un autre label
     def label_box(v):
         txt = v.get('value', '')
-        if not txt:
+        if not txt or v.get('no_label'):
             return None
+        if v.get('is_text'):
+            return (v['x'], v['y'], v['x']+v['w'], v['y']+v['h'])
         lw, lh = 7.2*len(txt)+6, 16
         cx = v['x'] + v['w']/2
         vlp = v.get('vlp')
@@ -506,7 +564,8 @@ if __name__ == '__main__':
     ref = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] != '-' else None
     verts, edges = load(xml_path)
     m = xml_metrics(verts, edges)
-    m.update(cv_metrics(png_path, ref))
+    if png_path != '-':
+        m.update(cv_metrics(png_path, ref))
     if len(sys.argv) > 4:
         m.update(json.load(open(sys.argv[4])))
     result = score(m)

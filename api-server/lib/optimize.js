@@ -4,31 +4,34 @@
  * matche pas (gate de correction), puis noté par beauty.py ; on garde le
  * meilleur (hill-climbing avec redémarrages aléatoires légers).
  */
-import { newDocument, getPage, normalizeOrigin } from './model.js';
+import { newDocument, getPage, serialize, parseDrawio } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { importNetlist3 } from './place3.js';
 import { routePage } from './route.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 import { scoreDocument } from './beauty.js';
+import { compactPage, fastScore } from './compact.js';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-/**
- * score_raw is beauty.py's score BEFORE the [0,100] clamp (tools/beauty.py,
- * 2026-08-28). On any drawing whose penalties exceed 100 — every RF netlist
- * this optimizer sees — score_partial/score clamp to exactly 0.0, so
- * `cand.score > best.score` in optimizeNetlist() below was always `0 > 0`:
- * false, every candidate rejected, ?optimize=N returning the plain import
- * byte-for-byte. Rank on score_raw (unclamped, can be negative/over 100),
- * falling back to score_partial/score only when a candidate's beauty.py run
- * did not produce score_raw (e.g. an older beauty.py, or the missing-PNG
- * path) — see rankValue().
- */
-function rankValue(b) {
-  if (b == null) return -Infinity;
-  if (b.score_raw != null) return b.score_raw;
-  if (b.score != null) return b.score;
-  if (b.score_partial != null) return b.score_partial;
-  return -Infinity;
+const HERE2 = path.dirname(fileURLToPath(import.meta.url));
+let chkSeq = 0;
+/** Erreurs du checker Python indépendant (tools/check.py) sur un document.
+ * C'est LE juge final : un candidat plus joli mais fautif ne gagne jamais. */
+function checkErrors(doc) {
+  try {
+    const tmp = path.join(os.tmpdir(), `optchk-${process.pid}-${++chkSeq}.xml`);
+    fs.writeFileSync(tmp, serialize(doc));
+    const r = spawnSync('python3', [path.join(HERE2, '../tools/check.py'), tmp, '--json'],
+      { encoding: 'utf8', timeout: 15000 });
+    fs.unlinkSync(tmp);
+    const j = JSON.parse(r.stdout || '{}');
+    return Number.isInteger(j.errors) ? j.errors : 99;
+  } catch { return 99; }
 }
 
 function mulberry(seed) {
@@ -41,40 +44,43 @@ function mulberry(seed) {
   };
 }
 
-async function evaluate(parsed, params, reference, engine) {
+/**
+ * `engine` passthrough restored in the 2026-08-31 merge. Anything other than
+ * 'v3' regenerates candidates with place2 exactly as before; 'v3' uses place3
+ * (source-less RF chains), which is the placer the RF netlists need — without
+ * this, `?optimize=N&engine=v3` silently optimised a place2 layout and then
+ * returned it, so the answer had nothing to do with the requested engine.
+ */
+async function evaluate(parsed, params, reference, fast = false, engine = 'v2') {
   const doc = newDocument();
   const m = getPage(doc);
-  // Anything other than 'v3' reproduces exactly today's behaviour (place2) —
-  // server.js's ?optimize=N path always used place2 regardless of `engine`
-  // before this change, and gen_baseline.py's 'opt' row never passes an
-  // engine query param at all, so both must keep landing here.
   const placed = engine === 'v3' ? importNetlist3(m, parsed, params) : importNetlist2(m, parsed, params);
-  await routePage(m, placed.wires, {});
-  // Same normalisation the /netlist/import path applies -- and it must happen
-  // BEFORE scoreDocument(), which renders a PNG and would otherwise score a
-  // clipped image (cv2 terms) while the geometry terms saw the full model.
-  normalizeOrigin(m);
+  const r = await routePage(m, placed.wires, {});
+  if (r.failed != null) return { ok: false, reason: r.failed };
   const lvs = compare(extractNetlist(m), parsed);
   if (!lvs.match) return { ok: false, reason: 'lvs', lvs };
+  if (fast) {
+    // score géométrique seul (~10x plus rapide) : pré-filtre du faisceau
+    const s = await fastScore(m);
+    return { ok: true, doc, m, placed, score: s, params, fast: true };
+  }
   const b = await scoreDocument(doc, m, { reference });
-  return { ok: true, doc, placed, score: b.score, score_raw: b.score_raw, score_partial: b.score_partial,
-    metrics: b.metrics, params };
+  return { ok: true, doc, m, placed, score: b.score, score_raw: b.score_raw, metrics: b.metrics, params };
 }
 
 function perturb(rnd, base, placedInfo) {
   const p = { ...base, order: [...(base.order || [])], flip: { ...(base.flip || {}) },
-    flipPairs: [...(base.flipPairs || [])], rowOffset: { ...(base.rowOffset || {}) } };
+    flipPairs: [...(base.flipPairs || [])],
+    childOrder: JSON.parse(JSON.stringify(base.childOrder || {})) };
   const roots = placedInfo.roots || [];
   const flippable = placedInfo.flippable || [];
-  const pairs = placedInfo.pairs || [];
-  // place2 never sets `secondaryRows` (its layout has no equivalent — the
-  // "rows" there are fixed conduction levels, not a repositionable chain),
-  // so `rows.length` is always 0 for a v2 candidate and `n` below reduces to
-  // exactly the old `pairs.length ? 5 : 4` — v2's RNG draw sequence, and
-  // therefore its whole optimize trajectory for a given seed, is unchanged.
-  const rows = placedInfo.secondaryRows || [];
-  const n = (pairs.length ? 5 : 4) + (rows.length ? 1 : 0);
-  const move = Math.floor(rnd() * n);
+  const structured = new Set(placedInfo.structuredRefs || []);
+  const fanouts = placedInfo.fanouts || {};
+  // seuls les fanouts SANS structure reconnue sont permutables : les paires,
+  // quads, miroirs et queues sont des INVARIANTS (règles utilisateur)
+  const fanoutNets = Object.keys(fanouts).filter((n) => !fanouts[n].some((r) => structured.has(r)));
+  const nMoves = 4 + (fanoutNets.length ? 1 : 0);
+  const move = Math.floor(rnd() * nMoves);
   if (move === 0 && roots.length > 1) {
     const order = p.order.length ? p.order : [...roots];
     const i = Math.floor(rnd() * order.length);
@@ -88,40 +94,78 @@ function perturb(rnd, base, placedInfo) {
     p.colW = Math.max(150, Math.min(260, (p.colW || 190) + (rnd() < 0.5 ? -20 : 20)));
   } else if (move === 3) {
     p.rowH = Math.max(150, Math.min(240, (p.rowH || 180) + (rnd() < 0.5 ? -20 : 20)));
-  } else if (move === (pairs.length ? 5 : 4) && rows.length) {
-    // place3-only move: nudge how far a source-less secondary chain (e.g.
-    // the RX branch hanging off the shared node in matching_915/2446) sits
-    // from the axis it hangs off. place2 candidates never reach here (rows
-    // is always empty for them, see comment above).
-    const rid = rows[Math.floor(rnd() * rows.length)];
-    const cur = p.rowOffset[rid] || 0;
-    p.rowOffset[rid] = Math.max(-120, Math.min(120, cur + (rnd() < 0.5 ? -20 : 20)));
-  } else {
-    // symétriser/désymétriser une paire différentielle (flip miroir) — the
-    // original catch-all; unchanged, including its behaviour when
-    // `pairs` is empty (pairs[NaN] -> undefined pushed into flipPairs is a
-    // pre-existing quirk, kept bug-for-bug for v2 compatibility).
-    const key = pairs[Math.floor(rnd() * pairs.length)];
-    const i = p.flipPairs.indexOf(key);
-    if (i >= 0) p.flipPairs.splice(i, 1); else p.flipPairs.push(key);
+  } else if (fanoutNets.length) {
+    // permuter deux colonnes SŒURS sous un même fanout (ex: quad du Gilbert)
+    const net = fanoutNets[Math.floor(rnd() * fanoutNets.length)];
+    const cur = p.childOrder[net] || [...fanouts[net]];
+    const i = Math.floor(rnd() * cur.length);
+    const j = Math.floor(rnd() * cur.length);
+    [cur[i], cur[j]] = [cur[j], cur[i]];
+    p.childOrder[net] = cur;
   }
   return p;
 }
 
-export async function optimizeNetlist(parsed, { iterations = 10, reference = null, seed = 42, engine } = {}) {
+/**
+ * Rank on the UNCLAMPED score when beauty.py provides one. `score` is clamped
+ * to [0,100]; on a drawing that scores badly enough every candidate pins to
+ * exactly 0.0 and any `a.score > b.score` tie-break goes inert -- that is what
+ * made `?optimize=N` return a byte-identical document on the RF netlists.
+ */
+const rankValue = (r) => (r == null ? -Infinity : (r.score_raw != null ? r.score_raw : r.score));
+
+export async function optimizeNetlist(parsed, { iterations = 10, reference = null, seed = 42, engine = 'v2' } = {}) {
   const rnd = mulberry(seed);
   const history = [];
-  let best = await evaluate(parsed, {}, reference, engine);
-  if (!best.ok) throw new Error('placement initial rejeté par le LVS: ' + JSON.stringify(best.lvs).slice(0, 300));
-  history.push({ iter: 0, score: best.score, score_raw: best.score_raw, accepted: true });
-  let bestRank = rankValue(best);
-  for (let i = 1; i <= iterations; i++) {
-    const cand = await evaluate(parsed, perturb(rnd, best.params, best.placed), reference, engine);
-    const candRank = cand.ok ? rankValue(cand) : -Infinity;
-    const accepted = cand.ok && candRank > bestRank;
-    history.push({ iter: i, score: cand.ok ? cand.score : null, score_raw: cand.ok ? cand.score_raw : null,
-      accepted, rejected: cand.ok ? undefined : cand.reason });
-    if (accepted) { best = cand; bestRank = candRank; }
+  // ---- recherche à FAISCEAU sur score rapide (géométrie seule)
+  const beamW = 4;
+  const generations = Math.max(2, Math.round(iterations / 4));
+  const seed0 = await evaluate(parsed, {}, reference, true, engine);
+  if (!seed0.ok) throw new Error('placement initial rejeté par le LVS: ' + JSON.stringify(seed0.lvs).slice(0, 300));
+  let beam = [seed0];
+  history.push({ iter: 'g0', score: seed0.score, accepted: true });
+  for (let g = 1; g <= generations; g++) {
+    const cands = [...beam];
+    for (const parent of beam) {
+      for (let k = 0; k < Math.ceil(8 / beam.length); k++) {
+        const c = await evaluate(parsed, perturb(rnd, parent.params, parent.placed), reference, true, engine);
+        if (c.ok) cands.push(c);
+      }
+    }
+    cands.sort((a, b) => b.score - a.score);
+    beam = cands.slice(0, beamW);
+    history.push({ iter: 'g' + g, score: beam[0].score, beam: beam.map((b) => b.score) });
   }
+  // ---- finalistes : score complet (rendu + OpenCV)
+  let best = null;
+  const finReasons = [];
+  const finalists = [seed0, ...beam.slice(0, 3).filter((b) => b !== seed0)];
+  for (const fin of finalists) {
+    const full = await evaluate(parsed, fin.params, reference, false, engine);
+    if (!full.ok) { finReasons.push(full.reason); continue; }
+    // gate du checker indépendant : moins d'erreurs d'abord, score ensuite
+    full.checkErrors = checkErrors(full.doc);
+    if (best == null || full.checkErrors < best.checkErrors ||
+        (full.checkErrors === best.checkErrors && rankValue(full) > rankValue(best))) best = full;
+  }
+  if (best == null) throw new Error('aucun finaliste valide: ' + finReasons.join(','));
+  history.push({ iter: 'final', score: best.score, checkErrors: best.checkErrors, accepted: true });
+  // S3 : compaction finale, gardée par LVS + score (avec restauration)
+  try {
+    const backup = serialize(best.doc);
+    const m = getPage(best.doc);
+    const before = rankValue(best);
+    await compactPage(m);
+    const lvs = compare(extractNetlist(m), parsed);
+    const b = lvs.match ? await scoreDocument(best.doc, m, { reference }) : null;
+    const cAfter = b != null ? checkErrors(best.doc) : 99;
+    if (b != null && rankValue(b) >= before && cAfter <= (best.checkErrors ?? 99)) {
+      best = { ...best, score: b.score, score_raw: b.score_raw, metrics: b.metrics };
+      history.push({ iter: 'compact', score: b.score, accepted: true });
+    } else {
+      best.doc = parseDrawio(backup);
+      history.push({ iter: 'compact', score: b ? b.score : null, accepted: false });
+    }
+  } catch (e) { history.push({ iter: 'compact', accepted: false, rejected: String(e).slice(0, 120) }); }
   return { best, history };
 }
