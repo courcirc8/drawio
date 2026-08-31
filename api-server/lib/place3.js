@@ -542,6 +542,31 @@ export function importNetlist3(model, parsed, opts = {}) {
     const ry0 = Math.min(p1.y, p2.y) - margin, ry1 = Math.max(p1.y, p2.y) + margin;
     return !boxes.some((b) => !(b.x + b.w < rx0 || b.x > rx1 || b.y + b.h < ry0 || b.y > ry1));
   }
+
+  /**
+   * Which side of a port glyph its wire should leave from, and where the label
+   * goes. The exit pin used to be hard-coded to the TOP (0.5, 0) whatever the
+   * geometry: a port sitting to the LEFT or ABOVE its anchor then had the wire
+   * leave upward and come straight back DOWN THROUGH the glyph, which renders
+   * as a bisected circle (a flattened "D"). feature/api-server's own rule
+   * checker calls this `through ... traverse SON composant au-delA du pin`, and
+   * a reviewer read it as rendering corruption. Face the anchor instead. When
+   * the wire leaves the BOTTOM, the label -- which the port style pins below
+   * the glyph -- would sit on the stub, so move it above.
+   */
+  function portExit(pos, abs, w, h) {
+    const dx = abs.x - (pos.x + w / 2), dy = abs.y - (pos.y + h / 2);
+    // Name the pin as well as its coordinates: erc.js resolves an anchor by NAME
+    // first and only falls back to nearest-match, so an unnamed off-'N' anchor
+    // is reported as anchor-off-pin even when it sits exactly on the perimeter.
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      return dx > 0 ? { pin: { x: 1, y: 0.5, name: 'E' }, labelTop: false }
+                    : { pin: { x: 0, y: 0.5, name: 'W' }, labelTop: false };
+    }
+    return dy > 0 ? { pin: { x: 0.5, y: 1, name: 'S' }, labelTop: true }
+                  : { pin: { x: 0.5, y: 0, name: 'N' }, labelTop: false };
+  }
+
   function addBoundaryPortTap(net, anchor, atId) {
     const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
     const abs = anchor.ref != null ? pinAbs(placed.get(anchor.ref), anchor.pin) : anchor;
@@ -569,12 +594,14 @@ export function importNetlist3(model, parsed, opts = {}) {
     }
     const pos = best || placeAvoiding(abs.x, abs.y - 70, w, h, 0, 0, -14);
     boxes.push(rotatedAabb({ x: pos.x, y: pos.y, w, h, rotation: 0 }));
-    addVertex(model, { id, shape: PORT, x: pos.x, y: pos.y, w, h, value: net });
+    const cellP = addVertex(model, { id, shape: PORT, x: pos.x, y: pos.y, w, h, value: net });
     placed.set(id, { id, x: pos.x, y: pos.y, w, h, rotation: 0 });
+    const ex = portExit(pos, abs, w, h);
+    if (ex.labelTop) cellP.setAttribute('style', cellP.getAttribute('style') + 'verticalLabelPosition=top;verticalAlign=bottom;');
     if (anchor.ref != null) {
-      wire(null, { source: id, target: anchor.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: anchor.pin.x, y: anchor.pin.y, name: anchor.pin.name } });
+      wire(null, { source: id, target: anchor.ref, sourcePin: ex.pin, targetPin: { x: anchor.pin.x, y: anchor.pin.y, name: anchor.pin.name } });
     } else {
-      wire(null, { source: id, target: atId, sourcePin: { x: 0.5, y: 0 } });
+      wire(null, { source: id, target: atId, sourcePin: ex.pin });
     }
   }
 
@@ -602,9 +629,11 @@ export function importNetlist3(model, parsed, opts = {}) {
       const leftish = (t.pin.x <= 0.5) !== !!p.flipH;
       const targetX = abs.x + (leftish ? -80 : 56), targetY = abs.y + 36;
       const pos = placeAvoiding(targetX, targetY, 24, 24, 0, leftish ? -20 : 20, 0);
-      addVertex(model, { id, shape: PORT, x: pos.x, y: pos.y, w: 24, h: 24, value: net });
+      const cellP1 = addVertex(model, { id, shape: PORT, x: pos.x, y: pos.y, w: 24, h: 24, value: net });
       placed.set(id, { id, x: pos.x, y: pos.y, w: 24, h: 24, rotation: 0 });
-      wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y, name: t.pin.name } });
+      const ex1 = portExit(pos, abs, 24, 24);
+      if (ex1.labelTop) cellP1.setAttribute('style', cellP1.getAttribute('style') + 'verticalLabelPosition=top;verticalAlign=bottom;');
+      wire(null, { source: id, target: t.ref, sourcePin: ex1.pin, targetPin: { x: t.pin.x, y: t.pin.y, name: t.pin.name } });
     } else if (terms.length === 2) {
       const [a, b] = terms;
       wire(null, { source: a.ref, target: b.ref, value: net, sourcePin: { x: a.pin.x, y: a.pin.y, name: a.pin.name }, targetPin: { x: b.pin.x, y: b.pin.y, name: b.pin.name } });

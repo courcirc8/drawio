@@ -49,7 +49,12 @@ export const SYNTHETIC_SHAPES = {
   // makes mxGraph render this as a plain ellipse with no stencil at all.
   port: {
     name: 'Port', w: 24, h: 24, aspect: 'fixed',
-    pins: [{ name: 'N', x: 0.5, y: 0 }],
+    // Four cardinal pins, not just 'N'. A port's wire must leave from the side
+    // that FACES its anchor (place3 portExit) or the stub crosses back through
+    // the glyph; with only 'N' declared, every other exit was an unnamed anchor
+    // and erc.js flagged it as `anchor-off-pin` -- 5 errors on 915, 4 on 2446.
+    pins: [{ name: 'N', x: 0.5, y: 0 }, { name: 'S', x: 0.5, y: 1 },
+           { name: 'W', x: 0, y: 0.5 }, { name: 'E', x: 1, y: 0.5 }],
     // DEFECT (2026-08-28) — and note the ROOT CAUSE below is NOT the one a
     // first pass concluded. Symptom: in the shipped 915 render the port label
     // `rx_Bn` painted as `rx  Bn`, its underscore apparently missing, while the

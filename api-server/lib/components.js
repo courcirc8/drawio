@@ -204,8 +204,20 @@ export function formatComponentValue(prefix, rawValue) {
 /** Pins that carry connectivity for a classified component (SPICE pin order if known, else all). */
 export function activePins(cls) {
   if (cls.role === 'ground') return [getPin(cls.shape.key, GROUND_PIN) || cls.shape.pins[0]].filter(Boolean);
-  if (cls.role === 'power' || cls.role === 'port') {
+  if (cls.role === 'power') {
     return [getPin(cls.shape.key, cls.pinName) || cls.shape.pins[0]].filter(Boolean);
+  }
+  if (cls.role === 'port') {
+    // A port is single-terminal ELECTRICALLY but its terminal can be drawn on
+    // any side: place3 picks the side facing the anchor, or the stub crosses
+    // back through the glyph. Returning only PORT_SHAPES[key].pin ('N') made
+    // erc.js measure every other exit against the north pin and report
+    // anchor-off-pin -- 5 errors on the 915 sheet, 4 on 2446, for wires sitting
+    // exactly on the perimeter. Offer every declared pin, the canonical one
+    // first so anything that takes [0] is unchanged.
+    const declared = getPin(cls.shape.key, cls.pinName);
+    const all = cls.shape != null ? cls.shape.pins : [];
+    return [declared, ...all.filter((p) => p !== declared)].filter(Boolean);
   }
   if (cls.mapping != null) {
     return pinOrderFor(cls).map((n) => getPin(cls.shape.key, n)).filter(Boolean);

@@ -4,7 +4,7 @@
  * matche pas (gate de correction), puis noté par beauty.py ; on garde le
  * meilleur (hill-climbing avec redémarrages aléatoires légers).
  */
-import { newDocument, getPage, serialize, parseDrawio } from './model.js';
+import { newDocument, getPage, serialize, parseDrawio, normalizeOrigin } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { importNetlist3 } from './place3.js';
 import { routePage } from './route.js';
@@ -57,6 +57,15 @@ async function evaluate(parsed, params, reference, fast = false, engine = 'v2') 
   const placed = engine === 'v3' ? importNetlist3(m, parsed, params) : importNetlist2(m, parsed, params);
   const r = await routePage(m, placed.wires, {});
   if (r.failed != null) return { ok: false, reason: r.failed };
+  // REGRESSION (2026-08-31 merge): server.js normalises the origin on the plain
+  // import path, but the ?optimize=N path returns a document built HERE and
+  // never went through it -- the pre-merge optimize.js called this itself and
+  // taking feature/api-server's version wholesale dropped the call. place3
+  // legitimately emits negative coordinates, and the headless export clamps the
+  // clip at 0: measured on matching_2446, C8 sat at y=-52 of its 60 height and
+  // came out of the PNG with its top 87% sheared off. After routing, not
+  // before: edge waypoints are absolute too.
+  normalizeOrigin(m);
   const lvs = compare(extractNetlist(m), parsed);
   if (!lvs.match) return { ok: false, reason: 'lvs', lvs };
   if (fast) {
@@ -156,6 +165,7 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
     const m = getPage(best.doc);
     const before = rankValue(best);
     await compactPage(m);
+    normalizeOrigin(m); // compaction moves cells; it can push them negative again
     const lvs = compare(extractNetlist(m), parsed);
     const b = lvs.match ? await scoreDocument(best.doc, m, { reference }) : null;
     const cAfter = b != null ? checkErrors(best.doc) : 99;
