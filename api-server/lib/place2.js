@@ -15,14 +15,39 @@
  * Paramètres exposés dans `opts` pour la boucle d'optimisation.
  */
 import { addVertex, addWire, httpError, mxCellPart } from './model.js';
-import { SPICE_MAP, PIN_ORDER_OVERRIDES, GROUND_SHAPE, GROUND_PIN } from './components.js';
+import { SPICE_MAP, PIN_ORDER_OVERRIDES, GROUND_SHAPE, GROUND_PIN, formatComponentValue } from './components.js';
 import { getShape, getPin } from './stencils.js';
-import { pinAbs } from './route.js';
+import { pinAbs, rotatedAabb } from './route.js';
 import { detectStructures } from './patterns.js';
 
 const JCT = 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;';
 const VDD_TAP = 'mxgraph.electrical.signal_sources.vss2';
-const PORT = 'mxgraph.electrical.signal_sources.equipotential';
+// DEFECT (2026-08-28, api-hardening): was 'equipotential' — a filled triangle
+// visually indistinguishable from ground's filled triangle at reading size.
+// 'port' is a SYNTHETIC shape key (lib/stencils.js SYNTHETIC_SHAPES — an
+// open circle, plain mxGraph ellipse, no stencil XML) — NOT a `mxgraph.*`
+// stencil key, deliberately, so this fix stays inside api-server/ and never
+// touches src/main/webapp/stencils/ (the fork's sidecar invariant). See
+// components.js PORT_SHAPES / shapeKeyOf() for how addVertex resolves it and
+// how it's still recognized on read-back.
+const PORT = 'port';
+const INDUCTOR_3 = 'mxgraph.electrical.inductors.inductor_3';
+// inductor_3 ("Inductor 3", the arc-coil stencil in inductors.xml) is
+// authored at w=100 h=8 with both pins on the w-axis (x=0/x=1, y=1) — that
+// w=100 becomes the VISUAL axis length once rotated 90 for a vertical
+// placement (see the rotation=90 branch below). The stencil it replaced,
+// inductor_2, had its axis on h=60 instead. Swapping stencils without also
+// rescaling silently made every vertical inductor ~1.7x longer than a
+// resistor/capacitor at the same slot, which is most of the crossings/bends/
+// too_close regression measured 2026-08-28 on the 915/2446 golden netlists.
+// aspect="variable" in the XML means w/h are free, so shrink the coil back
+// to a 60px axis, keeping it thin enough to read as a coil, not a bar.
+const VERTICAL_INDUCTOR_LEN = 60, VERTICAL_INDUCTOR_THICK = 5;
+/** Size to place a shape at, correcting the inductor_3 axis length when rotated vertical. */
+function sizeFor(shapeKey, w, h, rotated) {
+  if (rotated && shapeKey === INDUCTOR_3) return { w: VERTICAL_INDUCTOR_LEN, h: VERTICAL_INDUCTOR_THICK };
+  return { w, h };
+}
 
 const DEF = { colW: 190, rowH: 180, x0: 140, y0: 130, order: [], flip: {} };
 
@@ -53,6 +78,16 @@ function condInfo(c) {
 
 export function importNetlist2(model, parsed, opts = {}) {
   const P = { ...DEF, ...opts };
+  /** Drawn label: designator over value. The BOM/LVS value lives in the
+   *  spice_value attribute, so the visible text is free to be readable.
+   *  DEFECT (2026-08-28, api-hardening): this used the raw c.value straight
+   *  from the SPICE netlist ("4.7e-11") — formatComponentValue reformats it
+   *  to engineering units ("47 pF") for the label ONLY; spice_value (set a
+   *  few lines below from c.value, unchanged) is what LVS/BOM compare. */
+  const labelFor = (c) => {
+    const disp = formatComponentValue(c.prefix, c.value);
+    return disp ? c.ref + '\n' + disp : c.ref;
+  };
   const comps = parsed.components;
   if (comps.length === 0) throw httpError(400, 'netlist vide');
   const info = new Map(comps.map((c) => [c.ref, condInfo(c)]));
@@ -66,10 +101,19 @@ export function importNetlist2(model, parsed, opts = {}) {
   }
   // net d'alimentation : 'vdd' explicite sinon net avec le plus de "tops"
   let vddNet = [...byTopNet.keys()].find((n) => /^vdd$/i.test(n));
+  const namedRail = vddNet != null;
   if (vddNet == null) {
     let best = 0;
     for (const [n, l] of byTopNet) if (n !== '0' && l.length > best) { best = l.length; vddNet = n; }
   }
+  // BUG (2026-08-28): the fallback above picks the highest-fanout node and the
+  // rail pass below then stamped a `VDD` tap on every one of its terminals. On a
+  // netlist with NO source at all -- an RF matching network is pure R/L/C -- that
+  // renamed the shared TX/RX node `Up` into `VDD` and drew 6 supply symbols that
+  // assert a supply which does not exist. LVS matches nets STRUCTURALLY, so it
+  // stayed green and nothing caught it. vddNet is still used as the DFS root
+  // (a layout choice, harmless); `hasSupply` gates only the RAIL SEMANTICS.
+  const hasSupply = namedRail || comps.some((c) => c.prefix === 'V' || c.prefix === 'I');
 
   // ---- construction des piles (DFS depuis vdd, fan-out -> colonnes sœurs)
   // slot: {ref, col, level} ; shared: éléments à top multiple (queues) traités après
@@ -336,25 +380,23 @@ export function importNetlist2(model, parsed, opts = {}) {
     // dipôles verticaux : rotation 90 (in en haut) ; MOS natifs (déjà verticaux)
     let rotation = 0;
     if ('RCLD'.includes(c.prefix)) rotation = 90 * flip;
-    const w = shape.w, h = shape.h;
     const cx = P.x0 + s.col * P.colW;
     const cy = P.y0 + s.level * P.rowH;
     // centre la BOÎTE TOURNÉE sur (cx, cy) : le canal (pins NE/SE x=1) des MOS est à +w/2-? — aligner le canal sur l'axe
     const flipped = flipRefs.has(c.ref);
     const axisX = cx + (flipped ? -15 : 15); // axe de conduction de la pile
-    let w2 = w, h2 = h, shapeKey2 = ci.shapeKey, rot2 = rotation;
-    if (c.prefix === 'L' && rotation !== 0) {
-      // inductance VERTICALE : symbole vertical natif (pins traversants sur
-      // l'axe) au lieu d'une bobine tournée aux pins en coin -> zéro coude
-      shapeKey2 = 'mxgraph.electrical.inductors.inductor_2';
-      const vs = getShape(shapeKey2);
-      w2 = vs.w; h2 = vs.h; rot2 = 0;
-      ci.shapeKey = shapeKey2;
-    }
+    // NOTE (2026-08-28): a vertical L used to be swapped to `inductor_2` to get
+    // pins on the conduction axis. That stencil is a filled RECTANGLE with a
+    // small corner circle (inductors.xml "Inductor 2", w=21.5 h=60) -- reviewers
+    // read it as a MOSFET, and it appeared alongside the real coil in the same
+    // sheet. One symbol for one device: `inductor_3` (the arc coil) rotated,
+    // and rescaled by sizeFor() to a 60px axis (see the constant above).
+    // pinAbs() is rotation-aware (route.js:107), so the wiring follows.
+    const sz = sizeFor(ci.shapeKey, shape.w, shape.h, rotation !== 0);
+    let w2 = sz.w, h2 = sz.h, shapeKey2 = ci.shapeKey, rot2 = rotation;
     let x = axisX - w2 / 2, y = cy - h2 / 2;
     if (c.prefix === 'M' || c.prefix === 'Q') x = flipped ? axisX : axisX - w2;
-    if (shapeKey2 === 'mxgraph.electrical.inductors.inductor_2') x = axisX - 0.6977 * w2;
-    const cell = addVertex(model, { id: c.ref, shape: shapeKey2, x, y, w: w2, h: h2, rotation: rot2, value: c.value || '',
+    const cell = addVertex(model, { id: c.ref, shape: shapeKey2, x, y, w: w2, h: h2, rotation: rot2, value: labelFor(c),
       refdes: c.ref, data: { spice_value: c.value || '' } });
     // T4: a refdes-wrapped cell is the <object>, not the styled <mxCell> —
     // mxCellPart() resolves to the inner node that actually carries `style`.
@@ -385,21 +427,25 @@ export function importNetlist2(model, parsed, opts = {}) {
       const cy = ga.y;
       const pinRelY = (getPin(ci.shapeKey, ci.po[0]) || { y: 0.5 }).y;
       const y = ga.y - pinRelY * shape.h;
-      addVertex(model, { id: e.c.ref, shape: ci.shapeKey, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, value: e.c.value || '',
+      addVertex(model, { id: e.c.ref, shape: ci.shapeKey, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, value: labelFor(e.c),
         refdes: e.c.ref, data: { spice_value: e.c.value || '' } });
       placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0 });
       for (let i = 0; i < ci.po.length; i++) term(e.c.nodes[i], e.c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
       // dérivations : bias en haut (vertical), shunt masse en bas (vertical)
       for (const h of e.hangers) {
         const hi = info.get(h.c.ref);
-        let hShape = hi.shapeKey, hRot = h.up ? -90 : 90;
-        if (h.c.prefix === 'L') { hShape = 'mxgraph.electrical.inductors.inductor_2'; hRot = 0; hi.shapeKey = hShape; }
-        const hs = getShape(hShape);
+        const hShape = hi.shapeKey, hRot = h.up ? -90 : 90;  // rotated bias/shunt hanger (R/C/L, see above)
+        const hsRaw = getShape(hShape);
+        // BUG (2026-08-28): this used to place hangers at the shape's raw
+        // catalog size even when rotated. For an inductor_3 hanger that means
+        // a 100px-long coil hanging off a chain element — same axis-length
+        // bug as the main placement loop above, fixed the same way.
+        const hs = sizeFor(hShape, hsRaw.w, hsRaw.h, hRot !== 0);
         const hx = cx + 85;
         const hh = hRot === 0 ? hs.h : hs.w;
         const hy = h.up ? cy - 80 - hh / 2 : cy + 80 + hh / 2;
-        const hxpos = hShape === 'mxgraph.electrical.inductors.inductor_2' ? hx - 0.6977 * hs.w : hx - hs.w / 2;
-        addVertex(model, { id: h.c.ref, shape: hShape, x: hxpos, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: hRot, value: h.c.value || '',
+        const hxpos = hx - hs.w / 2;
+        addVertex(model, { id: h.c.ref, shape: hShape, x: hxpos, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: hRot, value: labelFor(h.c),
           refdes: h.c.ref, data: { spice_value: h.c.value || '' } });
         placed.set(h.c.ref, { id: h.c.ref, x: hxpos, y: hy - hs.h / 2, w: hs.w, h: hs.h, rotation: hRot });
         for (let i = 0; i < hi.po.length; i++) term(h.c.nodes[i], h.c.ref, hi.po[i], getPin(hShape, hi.po[i]));
@@ -416,7 +462,7 @@ export function importNetlist2(model, parsed, opts = {}) {
       const vs = getShape(vi.shapeKey);
       const cx = ga.x - 130 - k * 160;
       const cy = ga.y + 90;
-      addVertex(model, { id: ch.endV.ref, shape: vi.shapeKey, x: cx - vs.w / 2, y: cy - vs.h / 2, w: vs.w, h: vs.h, rotation: 0, value: ch.endV.value || '',
+      addVertex(model, { id: ch.endV.ref, shape: vi.shapeKey, x: cx - vs.w / 2, y: cy - vs.h / 2, w: vs.w, h: vs.h, rotation: 0, value: labelFor(ch.endV),
         refdes: ch.endV.ref, data: { spice_value: ch.endV.value || '' } });
       placed.set(ch.endV.ref, { id: ch.endV.ref, x: cx - vs.w / 2, y: cy - vs.h / 2, w: vs.w, h: vs.h, rotation: 0 });
       for (let i = 0; i < vi.po.length; i++) term(ch.endV.nodes[i], ch.endV.ref, vi.po[i], getPin(vi.shapeKey, vi.po[i]));
@@ -455,7 +501,7 @@ export function importNetlist2(model, parsed, opts = {}) {
       cy = (anchors[0].y + anchors[1].y) / 2 + (P.floatDrop || 0);
     }
     const x = cx - shape.w / 2, y = cy - shape.h / 2;
-    addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: 0, value: c.value || '',
+    addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: 0, value: labelFor(c),
       refdes: c.ref, data: { spice_value: c.value || '' } });
     placed.set(c.ref, { id: c.ref, x, y, w: shape.w, h: shape.h, rotation: 0 });
     for (let i = 0; i < ci.po.length; i++) {
@@ -469,7 +515,7 @@ export function importNetlist2(model, parsed, opts = {}) {
 
   // rails : tap VDD au-dessus de chaque terminal du net vdd ; masse sous chaque terminal de 0
   for (const [net, terms] of netTerms) {
-    if (net === vddNet && vddNet !== '0') {
+    if (net === vddNet && vddNet !== '0' && hasSupply) {
       for (const t of terms) {
         const p = placed.get(t.ref);
         const abs = pinAbs(p, t.pin);
@@ -493,7 +539,7 @@ export function importNetlist2(model, parsed, opts = {}) {
 
   // nets de signal
   for (const [net, terms] of netTerms) {
-    if (net === vddNet || net === '0') continue;
+    if ((net === vddNet && hasSupply) || net === '0') continue;
     if (terms.length === 1) {
       // entrée/sortie : port
       const t = terms[0];
@@ -502,16 +548,24 @@ export function importNetlist2(model, parsed, opts = {}) {
       const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
       const leftish = (t.pin.x <= 0.5) !== !!p.flipH;
       let px = abs.x + (leftish ? -80 : 56), py = abs.y + 36;
-      const clash = () => [...placed.values()].some((v) =>
-        px < v.x + v.w + 8 && px + 24 > v.x - 8 && py < v.y + v.h + 8 && py + 24 > v.y - 8);
+      // BUG (2026-08-28): this overlap test used v.x/v.y/v.w/v.h directly —
+      // the RAW unrotated box. A vertical two-terminal passive (rotation=+-90)
+      // is placed with w=length,h=thickness but drawn thickness-wide/length-
+      // tall, so this let a new port land squarely on top of a rotated
+      // inductor/resistor/capacitor's visual body. Test against the rotated
+      // (visual) AABB instead — rotatedAabb() is a no-op for rotation 0.
+      const clash = () => [...placed.values()].some((v) => {
+        const b = rotatedAabb(v);
+        return px < b.x + b.w + 8 && px + 24 > b.x - 8 && py < b.y + b.h + 8 && py + 24 > b.y - 8;
+      });
       for (let k = 0; k < 6 && clash(); k++) { px += leftish ? -60 : 60; }
       for (let k = 0; k < 6 && clash(); k++) { py += 50; }
-      addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net.toUpperCase() });
+      addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net });
       placed.set(id, { id, x: px, y: py, w: 24, h: 24, rotation: 0 });
       wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y, name: t.pin.name } });
     } else if (terms.length === 2) {
       const [a, b] = terms;
-      wire(null, { source: a.ref, target: b.ref, sourcePin: { x: a.pin.x, y: a.pin.y, name: a.pin.name }, targetPin: { x: b.pin.x, y: b.pin.y, name: b.pin.name } });
+      wire(null, { source: a.ref, target: b.ref, value: net, sourcePin: { x: a.pin.x, y: a.pin.y, name: a.pin.name }, targetPin: { x: b.pin.x, y: b.pin.y, name: b.pin.name } });
     } else {
       let cx = 0, cy = 0;
       const pts = terms.map((t) => pinAbs(placed.get(t.ref), t.pin));
@@ -567,8 +621,13 @@ export function importNetlist2(model, parsed, opts = {}) {
       let jy = isBus ? Math.max(...pts.map((q) => q.y)) + 55 : cy;
       {
         // jamais dans un corps de composant (bus compris)
-        const boxes = [...placed.values()].filter((v) => Math.abs((v.x + v.w / 2) - snap.x) < v.w);
-        const inBox = (yy) => boxes.some((v) => yy > v.y - 8 && yy < v.y + v.h + 8);
+        // Same rotated-box bug as `clash()` above: a rotated dipole's raw
+        // {x,y,w,h} does not describe its visual footprint, so a junction dot
+        // could be placed inside a rotated component's drawn body while this
+        // guard thought it was clear. Use the rotated AABB for both the
+        // x-proximity filter and the y-span test.
+        const boxes = [...placed.values()].map((v) => rotatedAabb(v)).filter((b) => Math.abs((b.x + b.w / 2) - snap.x) < b.w);
+        const inBox = (yy) => boxes.some((b) => yy > b.y - 8 && yy < b.y + b.h + 8);
         if (inBox(jy)) {
           const base = jy;
           for (let d = 10; d < 400; d += 10) {
@@ -579,8 +638,13 @@ export function importNetlist2(model, parsed, opts = {}) {
       }
       const id = 'J_' + net.replace(/[^A-Za-z0-9]/g, '_');
       addVertex(model, { id, style: JCT, x: snap.x - 3, y: jy - 3, w: 6, h: 6 });
+      // label ONE wire of the net (the first): repeating the name on every
+      // spoke of a junction is noise, and connectivity() only needs one.
+      let labelled = false;
       for (const t of terms) {
-        wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y, name: t.pin.name } });
+        wire(null, { source: t.ref, target: id, value: labelled ? undefined : net,
+          sourcePin: { x: t.pin.x, y: t.pin.y, name: t.pin.name } });
+        labelled = true;
       }
     }
   }

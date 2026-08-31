@@ -455,8 +455,22 @@ def score(m):
         evaluated_weight += w
         s -= w * penalty_fn(m)
     score_partial = round(max(0.0, min(100.0, s)), 1)
+    # BUG (2026-08-28): score_partial's clamp to [0,100] destroys the gradient
+    # once total penalties exceed 100 -- which is every RF matching netlist,
+    # since through_component alone is weighted 14/hit and a rough ladder
+    # layout racks up several. lib/optimize.js hill-climbs on `score`, so
+    # every candidate clamped to identical 0.0 was indistinguishable and the
+    # optimizer accepted none of them (?optimize=N returned the unoptimized
+    # import byte-for-byte). score_raw is `s` BEFORE the clamp, over the same
+    # evaluated terms as score_partial -- may be negative, may exceed 100 --
+    # so a caller that needs the gradient (the optimizer) can use it while
+    # score_partial/score keep their existing human-facing [0,100] meaning.
+    # Honesty about missing terms is carried by the existing missing_weight/
+    # missing_terms fields alongside this one, exactly as for score_partial.
+    score_raw = round(s, 1)
     out = {
         'score_partial': score_partial,
+        'score_raw': score_raw,
         'evaluated_weight': round(evaluated_weight, 2),
         'missing_weight': round(missing_weight, 2),
         'missing_terms': missing_terms,

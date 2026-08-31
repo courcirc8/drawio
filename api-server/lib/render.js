@@ -37,17 +37,24 @@ function cacheCandidates() {
   return found;
 }
 
-const CHROME_CANDIDATES = [
+export const CHROME_CANDIDATES = [
   process.env.CHROME_PATH, '/usr/bin/chromium-browser', '/usr/bin/chromium',
   '/snap/bin/chromium', '/usr/bin/google-chrome',
   ...cacheCandidates(),
 ].filter(Boolean);
 
+/** The Chrome this host would actually use, or null. Single source of truth --
+ *  test/e2e.test.js used to carry its OWN hard-coded system-path list and so
+ *  skipped the export test on a host where render.js finds Chrome perfectly. */
+export function findChrome() {
+  return CHROME_CANDIDATES.find((p) => fs.existsSync(p)) || null;
+}
+
 let browserPromise = null;
 
 function launch() {
   if (browserPromise == null) {
-    const executablePath = CHROME_CANDIDATES.find((p) => fs.existsSync(p));
+    const executablePath = findChrome();
     if (executablePath == null) throw new Error('no Chromium/Chrome found; set CHROME_PATH');
     browserPromise = puppeteer.launch({
       executablePath,
@@ -110,11 +117,28 @@ export async function exportDocument(doc, model, { format = 'png', scale = 2, bo
       return { buffer: Buffer.from('<?xml version="1.0" encoding="UTF-8"?>\n' + svg, 'utf8'), contentType: 'image/svg+xml' };
     }
 
+    // BUG (2026-08-28): this used to clamp the clip origin with
+    // `Math.max(0, floor(bounds.x))`. When export3.html reports a NEGATIVE
+    // bounds origin the clamp silently ate the left/top border and everything
+    // outside it -- a capacitor plate sheared off at y=0, a wire that appeared
+    // to run off the page. Raising `border` did not help: it pushes bounds.x
+    // further negative, so the clamp just ate more. Measured on
+    // matching_2446 (engine=v3): a 94 px vertical wire segment sitting exactly
+    // on column 0 of the PNG, at border=10 AND at border=40.
+    // Ask the live DOM for the rendered SVG's box instead -- it is the actual
+    // painted extent, borders included, and it cannot be negative.
+    const domBox = await page.evaluate(() => {
+      const s = document.body.getElementsByTagName('svg')[0];
+      if (s == null) return null;
+      const r = s.getBoundingClientRect();
+      return { x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height };
+    });
+    const src = (domBox != null && domBox.width > 0 && domBox.height > 0) ? domBox : bounds;
     let clip = {
-      x: Math.max(0, Math.floor(bounds.x || 0)),
-      y: Math.max(0, Math.floor(bounds.y || 0)),
-      width: Math.ceil(bounds.width),
-      height: Math.ceil(bounds.height),
+      x: Math.max(0, Math.floor(src.x || 0)),
+      y: Math.max(0, Math.floor(src.y || 0)),
+      width: Math.ceil(src.width),
+      height: Math.ceil(src.height),
     };
     if (region != null) {
       // pixel = (diagram_pt - content_origin) * scale + border

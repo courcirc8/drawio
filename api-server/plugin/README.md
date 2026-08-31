@@ -37,82 +37,115 @@ Check now") instead of throwing or silently doing nothing.
 
 ## Loading the plugin into draw.io
 
-draw.io's plugin loader (`App.loadPlugins`, `js/diagramly/App.js`) accepts a
-plugin by URL through the `p=` query parameter, or interactively through
-**Extras > Edit Diagram... > Plugins** (actually **Extras > Plugins...** in
-current builds) which prompts for a URL and remembers it in local storage.
-Either path shows draw.io's **plugin security confirmation dialog**
-("Plugins can access and modify your data... Only load plugins from sources
-you trust") before the code executes — there is no way around this from
-inside the plugin itself; it is a draw.io security gate, not something this
-plugin controls.
+**The supported way is `/editor`** (`server.js`): open
+`http://<api-server-host>:<port>/editor/` and the plugin is already loaded —
+no URL param, no dialog, nothing to paste. This is a real HTTP route on the
+api-server, not a doc convention: it serves the fork's own
+`src/main/webapp/index.html`, rewritten **per response** (nothing on disk
+under `src/` is touched — `git diff` against upstream outside `api-server/`
+stays empty) to add `<base href="/editor/">` and inject the plugin script.
+Same origin as the API itself, so the plugin's `fetch()` calls to
+`/documents/...` are same-origin and `window.EDA_VALIDATE_SERVER` is set
+automatically to match whatever host/port the server is actually running on
+(see "why this needed fixing" below) — nothing to configure.
 
-Two ways to load it, once the api-server is serving the file (see "Server
-wiring" below):
+### Why a dedicated route, and not `?p=` or the Plugins dialog
 
-1. **URL parameter** (best for a fixed dev setup):
-   ```
-   https://<your-drawio-host>/?p=http://127.0.0.1:8770/plugin/eda-validate.js
-   ```
-   Accept the security prompt once; draw.io loads and runs the plugin.
+**Found 2026-08-28**, the first time this plugin was ever loaded in a
+browser: the two loading paths draw.io itself documents do **not** work in
+this fork's build.
 
-2. **Extras > Plugins... dialog**: open draw.io normally, go to
-   `Extras > Plugins...`, add `http://127.0.0.1:8770/plugin/eda-validate.js`,
-   confirm the security prompt, then reload the diagram (draw.io reloads
-   plugins from the stored list on next load, or immediately depending on
-   build — check the dialog's own instructions).
+- **`?p=<url>` is a registry-key lookup, not a raw-URL loader.**
+  `urlParams['p']` is handed to `App.loadPlugins` (the *static* function,
+  `js/diagramly/App.js:1653`), which does `App.pluginRegistry[plugins[i]]` —
+  i.e. it treats the `p=` value as a **key** into the built-in plugin
+  registry (`App.pluginRegistry`, `App.js:326`), never as a URL to fetch.
+  `eda-validate` is not in that registry, so
+  `?p=http://127.0.0.1:8770/plugin/eda-validate.js` logs
+  `Unknown plugin: http://127.0.0.1:8770/plugin/eda-validate.js` to the
+  console and loads nothing. Confirmed live: Chrome for Testing 147 via
+  Puppeteer, `console` capture, no other output.
+- **The Extras > Plugins... dialog cannot accept a custom URL either**, for
+  the same reason one layer up: the dialog's inline "Add" control only lists
+  entries from `App.pluginRegistry` (`Dialogs.js:15756-15797`), and the
+  "Custom..." button that would let you type an arbitrary URL only renders
+  `if (ALLOW_CUSTOM_PLUGINS)` (`Dialogs.js:15799`). `ALLOW_CUSTOM_PLUGINS`
+  defaults to `false` (`js/diagramly/Init.js:76`) and nothing in this fork's
+  webapp sets it — so the button is simply absent from the dialog. (Even if
+  it were enabled, that path feeds `mxSettings`'s plugin list, which is
+  checked separately in `App.js:988-1058` against `App.isSameDomain` — a
+  second gate the `p=` path never even reaches.)
 
-### Configuring the api-server URL
+Registering `eda-validate` in `App.pluginRegistry`, or flipping
+`ALLOW_CUSTOM_PLUGINS`, would both touch `src/main/webapp/js/diagramly/`,
+breaking the "fork stays a sidecar" rule this change was built under. `/editor`
+sidesteps both: it goes straight through `Draw.loadPlugin` (the plugin's own
+single entry point, unrelated to either gate above), which is a queue until
+the App/EditorUi instance exists and an **immediate invoke** after
+(`App.js:161`) — any script that calls it runs the moment it does, regardless
+of how it got onto the page. draw.io's plugin security confirmation dialog
+does **not** appear on this path (it is a gate on the two mechanisms above,
+not on `Draw.loadPlugin` itself), so there is no prompt to accept.
 
-Default is `http://127.0.0.1:8770`. To point at a different host/port,
-set `window.EDA_VALIDATE_SERVER` **before** the plugin script runs — e.g. via
-a second, tiny inline plugin, or a `<script>` tag on a custom draw.io host
-page:
+### Two more bugs `/editor` itself needed fixing (found + fixed 2026-08-28)
+
+Both in `server.js`'s `wrapEditor`, both covered by
+`api-server/test/plugin.test.js` so they can't silently regress:
+
+1. **`ReferenceError: Draw is not defined`, 100% reproducible.** The first
+   version of `/editor` injected a plain
+   `<script src="/plugin/eda-validate.js"></script>` right before `</body>`.
+   index.html's own last script (`js/main.js`, also right before `</body>`)
+   is a synchronous, blocking `<script src>`: the browser runs it to
+   completion, in source order, before moving on to the injected tag
+   immediately after it. But `js/main.js` is only the entry point for this
+   fork's unbundled dev build — it does not itself build the App/EditorUi
+   instance. `window.Draw` is created by `App.initPluginCallback()`
+   (`App.js:1627`), called from deep inside App's own async bootstrap
+   (`App.js:1015`, behind config/`mxSettings` loading the surrounding code
+   comments say can be deferred) — well after `js/main.js`'s script tag has
+   already returned. Re-ordering the injection point relative to `</body>`
+   would **not** have fixed this, since App.js's own async chain, not DOM
+   position, decides when `Draw` appears. Fix: the injected snippet now
+   polls for `window.Draw.loadPlugin` (20 ms interval) before creating the
+   real `<script>` tag, instead of assuming it exists.
+2. **Hardcoded default `SERVER` silently pointed at the wrong origin.** The
+   plugin's own default (`eda-validate.js:26`,
+   `'http://127.0.0.1:8770'`) is correct only when the api-server happens to
+   run on its historical default port. `/editor` is same-origin with the API
+   by design, but the first version of the injected snippet never actually
+   set `window.EDA_VALIDATE_SERVER` — so on any other port the plugin quietly
+   talked to whatever (if anything) was listening on 8770 instead of the
+   server it was served from. This went undetected in the first round of
+   manual testing purely because another api-server instance happened to be
+   on 8770 at the time; since mxfile cell ids (`R1`, `R2`, ...) are embedded
+   in the posted XML itself, not server-assigned, the wrong server returned
+   matching-looking ERC results by coincidence. On a host with nothing on
+   8770 this degrades to "api-server unreachable" pointing at the wrong port
+   while a reachable server sits one line above it. Fixed: `wrapEditor` now
+   derives the origin from the request (`req.protocol` + `req.get('host')`,
+   proxy-safe) and injects `window.EDA_VALIDATE_SERVER` set to it.
+
+### Configuring the api-server URL for OTHER hosting setups
+
+If you serve `eda-validate.js` some other way (not via `/editor`) — e.g. a
+custom host page that injects it itself — set `window.EDA_VALIDATE_SERVER`
+**before** the plugin script runs:
 ```html
 <script>window.EDA_VALIDATE_SERVER = 'http://myhost:8770';</script>
 ```
-
-## Server wiring required (NOT done by this change)
-
-Two things the running `server.js` needs to add — written here for whoever
-wires it in, since `server.js` is owned by another agent right now and this
-change does not touch it:
-
-1. **Serve the plugin file** so draw.io can fetch it by URL:
-   ```js
-   app.use('/plugin', express.static(new URL('./plugin', import.meta.url).pathname));
-   ```
-   (or any equivalent static mount for `api-server/plugin/`). After this,
-   `GET http://127.0.0.1:8770/plugin/eda-validate.js` serves the file above.
-
-2. **CORS headers**, since the draw.io page (served from wherever the webapp
-   is hosted) and the api-server (`127.0.0.1:8770`) are different origins for
-   both the plugin fetch and its `fetch()` calls to `/documents/...`:
-   ```js
-   app.use((req, res, next) => {
-     res.header('Access-Control-Allow-Origin', '*');
-     res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
-     res.header('Access-Control-Allow-Headers', 'Content-Type');
-     if (req.method === 'OPTIONS') return res.sendStatus(204);
-     next();
-   });
-   ```
-   Add this near the top of `server.js`, before the route definitions
-   (currently there is no CORS middleware at all — confirmed by grep, so
-   every plugin `fetch()` call will fail with an opaque CORS error until
-   this is added, even though the endpoints themselves work fine from
-   `curl` or same-origin tools).
-
-Until both are wired, the plugin's own degrade path still applies: it will
-report "api-server unreachable" (a failed/opaque fetch looks the same as a
-down server from the browser's point of view) rather than crashing the
-canvas.
+`/editor` needs none of this; it sets it for you (see above).
 
 ## Known limitations
 
-- **Plugin security prompt is unavoidable and per-browser-profile** — every
-  fresh profile / incognito window re-prompts; there is no way to
-  pre-authorize a plugin URL from the plugin's own code.
+- **Plugin security prompt does not apply to the loading path that actually
+  works.** The two paths where draw.io shows a "Plugins can access and
+  modify your data..." confirmation (the `p=` URL param and the Extras >
+  Plugins... dialog) turned out, on inspection and live testing, not to load
+  this plugin at all in this fork's build — see "Loading the plugin into
+  draw.io" above. The `page.addScriptTag` / `<script src>` injection path
+  that DOES work goes straight through `Draw.loadPlugin`, which has no
+  security gate of its own.
 - **LVS pseudo-findings are not (yet) mapped to cell overlays.** ERC findings
   carry drawio cell ids directly (`lib/erc.js` builds `cells: [cell.id, ...]`
   from the live model), so those get precise overlays. LVS findings
@@ -130,22 +163,35 @@ canvas.
   briefly shows one extra entry per keystroke-triggered check; the DELETE
   is best-effort (fire-and-forget, errors ignored) so a server restart
   mid-run cannot leave the plugin stuck.
-- **Not validated against a real running draw.io instance.** No browser is
-  available in this environment. The file was syntax-checked with
-  `bun build --target=browser eda-validate.js` (bundles cleanly, confirming
-  it parses as valid ES5-ish browser JS matching the style of
-  `src/main/webapp/plugins/props.js` and `number.js`), and every draw.io/
-  mxGraph API it calls was grepped and confirmed to exist at the cited
-  location (`ui.editor.getGraphXml`, `graph.setCellWarning`,
-  `ui.actions.addAction`, `ui.menus.get('extras')`, `ui.addButton`,
-  `mxWindow`, `graph.getModel().addListener(mxEvent.CHANGE, ...)`) and every
-  server endpoint it calls (`POST /documents`, `GET .../erc`,
-  `POST .../lvs`, `DELETE /documents/:id`) was read directly from
-  `server.js`/`lib/erc.js`/`lib/lvs.js` to match request/response shape
-  exactly. But end-to-end behavior in an actual browser — timing of the
-  `CHANGE` event, whether `setCellWarning`'s overlay renders visibly in this
-  draw.io build, whether the toolbar container exists in the default UI —
-  is unverified. Load it in a real draw.io tab and exercise: (a) break a
-  wire and confirm a red overlay appears within ~1s, (b) fix it and confirm
-  the overlay clears, (c) stop the api-server and confirm the "unreachable"
-  message, (d) toggle auto-check off and confirm no repaint happens.
+- **Browser-verified 2026-08-28** (Chrome for Testing 147 via Puppeteer,
+  `findChrome()` in `lib/render.js`; the fork's own
+  `src/main/webapp/index.html` served over `http://127.0.0.1` — file:// was
+  not tried since http:// worked directly and is closer to real deployment).
+  Loaded via the `Draw.loadPlugin` injection path documented above, driving
+  the actual `js/diagramly/App.js` / `mxgraph` source (this build serves
+  unbundled `js/main.js`, not `app.min.js`). All four items this section used
+  to list as unverified now have a direct answer:
+  - (a) breaking a wire (`DELETE .../cells/:id` on the connecting wire, then
+    loading the resulting XML with `ui.editor.setGraphXml`) and running the
+    check paints a real overlay: `graph.getCellOverlays(cell)` returns a
+    tooltip string built from the ERC findings, and it is visibly rendered —
+    a warning triangle on the offending pin in a full-page screenshot.
+  - (b) reconnecting the wire and re-running the check drops the overlay
+    count on the fixed cells back to 0 while leaving it on a cell that is
+    still broken (verified on a 3-component RC chain: breaking R2↔C1 gives
+    all three cells 1 overlay each; reconnecting it gives R2 and C1 zero
+    overlays while R1, still floating, keeps its 1).
+  - (c) pointing `EDA_VALIDATE_SERVER` at a dead port and running the check
+    shows the exact "api-server unreachable at ... — start it ... and click
+    'Check now'" status text, styled red, with no thrown exception.
+  - (d) unchecking "auto-check on edit (debounced)" and then mutating the
+    model (`graph.model.setValue`) produces **zero** requests to the
+    api-server over 1.5 s (> the 800 ms debounce) — confirmed by watching
+    Puppeteer's `request` events, not by reading the code.
+  - The menu entry, toolbar button, and summary window (title, ERC count,
+    findings list, LVS mismatch list) were all confirmed present with real
+    DOM/screenshot evidence, including a live LVS mismatch report (missing
+    component + net mismatches) against a deliberately wrong golden netlist.
+  - What was NOT re-verified: the `p=` URL param and Extras > Plugins...
+    dialog do not work at all in this build (see above) — that supersedes,
+    rather than answers, the old "load it via `p=`" instruction.

@@ -8,6 +8,8 @@
  * Usage: node server.js [--port 8770]
  */
 import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import fsp from 'node:fs/promises';
 import express from 'express';
 import * as model from './lib/model.js';
 import * as documents from './lib/documents.js';
@@ -18,6 +20,7 @@ import * as erc from './lib/erc.js';
 import * as bomLib from './lib/bom.js';
 import * as place from './lib/place.js';
 import * as place2 from './lib/place2.js';
+import * as place3 from './lib/place3.js';
 import * as optimize from './lib/optimize.js';
 import * as route from './lib/route.js';
 import * as render from './lib/render.js';
@@ -48,6 +51,97 @@ app.use((req, res, next) => {
 // Serve plugin/ so draw.io can load it by URL:
 //   https://<drawio-host>/?p=http://127.0.0.1:8770/plugin/eda-validate.js
 app.use('/plugin', express.static(fileURLToPath(new URL('./plugin', import.meta.url))));
+
+// --- /editor : the fork's own draw.io, with the plugin already loaded --------
+// BUG (found 2026-08-28 by loading the plugin in a real browser for the first
+// time): NEITHER documented end-user loading path works in this build.
+//   * `?p=<url>` is a REGISTRY-KEY lookup (App.loadPlugins, src/main/webapp/js/
+//     diagramly/App.js:1653, keyed into App.pluginRegistry) -- it never fetches
+//     a URL, it logs "Unknown plugin" and loads nothing.
+//   * the Extras > Plugins... dialog's "Custom URL" button is rendered only
+//     `if (ALLOW_CUSTOM_PLUGINS)` (Dialogs.js:15799), which defaults false
+//     (Init.js:76) and nothing in this fork sets it true -- the button is not
+//     in the dialog at all.
+// The only mechanism that works is Draw.loadPlugin (App.js:161), a
+// queue-then-invoke with no gate of its own. Rather than patch App.js or flip
+// ALLOW_CUSTOM_PLUGINS -- both of which would edit src/ and break the
+// sidecar property (`git diff` against upstream outside api-server/ must stay
+// empty) -- serve the webapp from THIS origin and inject the script tag on the
+// way out. Nothing on disk is modified; the rewrite is per-response.
+const WEBAPP = fileURLToPath(new URL('../src/main/webapp', import.meta.url));
+// BUG (found 2026-08-28, browser test of THIS route): a plain
+// `<script src="/plugin/eda-validate.js">` placed right before </body> threw
+// `ReferenceError: Draw is not defined` on every load -- 100% reproducible,
+// not a timing flake. index.html's own last script (js/main.js, also right
+// before </body>) is a synchronous, blocking <script src>: the browser runs
+// it to completion, in source order, before moving on to our injected tag
+// immediately after it. But js/main.js is only the entry point for this
+// fork's unbundled dev build -- it does not itself build the App/EditorUi
+// instance. `window.Draw` is created by `App.initPluginCallback()`
+// (App.js:1627), called from deep inside App's own async bootstrap
+// (App.js:1015, behind config/mxSettings loading that the surrounding code
+// comments say can be deferred) -- well after js/main.js's synchronous
+// script tag has already returned. So `Draw` genuinely does not exist yet at
+// the point our tag runs; this is not fixable by re-ordering the injection
+// point relative to </body>, since App.js's own async chain, not DOM
+// position, decides when Draw appears.
+// Fix: don't call Draw.loadPlugin ourselves -- poll for it (same technique
+// already proven live for the addScriptTag-after-networkidle2 path in
+// test/plugin.test.js) and only then fetch the real plugin file. This is a
+// wrong-load-hook bug in the injected snippet, not in eda-validate.js
+// itself, which is untouched.
+//
+// BUG #2 (found 2026-08-28, same browser session): the plugin's own default
+// `SERVER` (eda-validate.js:26) is a HARDCODED 'http://127.0.0.1:8770' --
+// correct only when the api-server happens to run on its historical default
+// port. /editor is designed to be same-origin with the API (the comment
+// above this block says so), but nothing was actually setting
+// `window.EDA_VALIDATE_SERVER` to match. On a non-8770 port this went
+// undetected in manual testing only because ANOTHER drawio-api-server
+// happened to be running on 8770 at the time -- the plugin posted the
+// canvas XML there instead, and got back matching cell ids purely because
+// mxfile cell ids (R1, R2, ...) are embedded in the posted XML itself, not
+// server-assigned, so the ERC result looked right by coincidence. On a host
+// with nothing listening on 8770, this silently degrades to "api-server
+// unreachable" pointing at the WRONG port while /editor's own, reachable,
+// server sits one line above it. Fix: derive the origin from the request
+// (proxy-safe -- respects X-Forwarded-* via express's trust proxy setting,
+// same as `req.protocol`/`req.get('host')` always do) and set
+// `window.EDA_VALIDATE_SERVER` before the plugin script loads.
+function wrapEditor(req, res, next) {
+  fsp.readFile(path.join(WEBAPP, 'index.html'), 'utf8').then((html) => {
+    if (!html.includes('</body>') || !html.includes('<head>')) {
+      return next(new Error('index.html is not the shape this rewrite expects (<head> + </body>)'));
+    }
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const inject = `<script>
+window.EDA_VALIDATE_SERVER = ${JSON.stringify(origin)};
+(function () {
+  var iv = setInterval(function () {
+    if (window.Draw && typeof window.Draw.loadPlugin === 'function') {
+      clearInterval(iv);
+      var s = document.createElement('script');
+      s.src = '/plugin/eda-validate.js';
+      document.body.appendChild(s);
+    }
+  }, 20);
+})();
+</script>
+</body>`;
+    // <base> rather than a redirect to '/editor/': express 4 routes '/editor'
+    // and '/editor/' to the SAME handler (strict routing is off), so a redirect
+    // from one to the other loops forever -- observed, 301 to itself. With the
+    // base tag index.html's relative asset paths (js/bootstrap.js, ...) resolve
+    // under /editor/ whichever form the user typed.
+    res.type('html').send(html
+      .replace('<head>', '<head>\n<base href="/editor/">')
+      .replace('</body>', inject));
+  }).catch(next);
+}
+app.get(['/editor', '/editor/', '/editor/index.html'], wrapEditor);
+// Same origin as the injected script AND as the API, so the plugin's fetches
+// are same-origin here and the CORS headers above are belt-and-braces.
+app.use('/editor', express.static(WEBAPP));
 app.use(express.json({ limit: '20mb' }));
 app.use(express.text({ type: ['application/xml', 'text/xml', 'text/plain'], limit: '20mb' }));
 
@@ -189,16 +283,26 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     // optimize.optimizeNetlist already gates every candidate on an internal
     // LVS round-trip (lib/optimize.js:evaluate) — a returned `best` is
     // guaranteed to match, so no separate mandatory-LVS check is needed here.
+    // `engine` passthrough: optimize.optimizeNetlist defaults to place2 for
+    // anything other than 'v3' (see lib/optimize.js), so an omitted engine
+    // or 'v1'/'v2' here reproduces exactly today's behaviour — only
+    // engine=v3 changes which placer the hill-climb regenerates candidates
+    // with.
     const { best, history } = await optimize.optimizeNetlist(parsed,
-      { iterations: iters, reference: req.query.reference || null });
+      { iterations: iters, reference: req.query.reference || null, engine });
     entry.doc = best.doc;
     const lvsReport = lvs.compare(netlist.extractNetlist(model.getPage(best.doc)), parsed);
-    return res.status(201).json({ engine: 'place2+optimize', score: best.score,
+    return res.status(201).json({ engine: (engine === 'v3' ? 'place3+optimize' : 'place2+optimize'), score: best.score,
       metrics: best.metrics, params: best.params, history, lvs: lvsReport,
       components: best.placed.components, wires: best.placed.wires });
   }
-  const placed = engine === 'v2' ? place2.importNetlist2(m, parsed) : place.importNetlist(m, parsed);
+  const placed = engine === 'v3' ? place3.importNetlist3(m, parsed) :
+    engine === 'v2' ? place2.importNetlist2(m, parsed) : place.importNetlist(m, parsed);
   const routed = await route.routePage(m, placed.wires, {});
+  // After routing, not before: edge waypoints are absolute too (see
+  // model.normalizeOrigin -- negative coordinates were being clipped off the
+  // exported PNG without any error).
+  model.normalizeOrigin(m);
   // T1: LVS is now mandatory on import — extract the netlist back out of the
   // document we just built and compare against the input. A mismatch used to
   // be silently returned as a 201 success with only ?optimize=N or an

@@ -9,12 +9,12 @@ import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findChrome } from '../lib/render.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 8000 + Math.floor(Math.random() * 1000);
 const BASE = `http://127.0.0.1:${PORT}`;
-const HAS_CHROME = ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/snap/bin/chromium', '/usr/bin/google-chrome', process.env.CHROME_PATH]
-  .filter(Boolean).some((p) => fs.existsSync(p));
+const HAS_CHROME = findChrome() != null;
 
 const RC = 'V1 in 0 DC 5\nR1 in out 10k\nC1 out 0 100n\n.end\n';
 

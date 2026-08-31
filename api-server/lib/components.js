@@ -3,7 +3,7 @@
  * electrical stencils (verified against the fork's stencil pin definitions).
  * pinOrder maps SPICE node order onto stencil pin names.
  */
-import { getShape, getPin, loadCatalog } from './stencils.js';
+import { getShape, getPin, loadCatalog, SYNTHETIC_SHAPE_STYLE_KEY } from './stencils.js';
 
 export const SPICE_MAP = {
   R: { shape: 'mxgraph.electrical.resistors.resistor_2', pinOrder: ['in', 'out'], label: 'resistor' },
@@ -53,8 +53,29 @@ export const POWER_SHAPES = {
   'mxgraph.electrical.signal_sources.vss2': { pin: 'S', defaultNet: 'VSS' },
 };
 
-/** Port markers: single-pin symbols that label their net (net = value || id). */
+/**
+ * Port markers: single-pin symbols that label their net (net = value || id).
+ *
+ * DEFECT (2026-08-28, api-hardening): both signal ports and ground used a
+ * downward-pointing filled triangle (`equipotential` differs from
+ * `signal_ground` only by a thin circle outline inside it) — indistinguishable
+ * at normal reading size, so a differential amplifier output could be
+ * misread as tied to ground. Fix: `port` — a SYNTHETIC shape (lib/stencils.js
+ * SYNTHETIC_SHAPES, an open unfilled circle, plain mxGraph `ellipse`, no
+ * stencil XML at all) — an open circle, the conventional "net terminal"
+ * glyph, with nothing resembling ground's filled triangle. Round 2
+ * (2026-08-28): the first attempt added a new <shape> to
+ * signal_sources.xml, which violates this fork's sidecar invariant (nothing
+ * outside api-server/ may diverge from upstream drawio); `port` moved to a
+ * synthetic catalog entry instead — see shapeKeyOf() below for how it's
+ * still recognized on read-back with no stencil registration.
+ * `equipotential` is kept mapped here too (not removed) so any PRE-EXISTING
+ * .drawio file that already used it as a port still round-trips through
+ * netlist extraction; only the placers (place2.js/place3.js) were switched to
+ * emit the new `port` shape for anything drawn from now on.
+ */
 export const PORT_SHAPES = {
+  port: { pin: 'N' },
   'mxgraph.electrical.signal_sources.equipotential': { pin: 'N' },
 };
 
@@ -65,9 +86,18 @@ for (const [prefix, m] of Object.entries(SPICE_MAP)) {
   for (const v of Object.values(m.variants || {})) reverse.set(v, prefix);
 }
 
+/**
+ * The catalog key a cell's style resolves to — a real stencil (`shape=…`)
+ * OR a synthetic shape (no `shape=` key at all; recognized instead by the
+ * `apiShape=…` marker addVertex/stencils.js writes into the style, which
+ * mxGraph itself just ignores as an unknown key — same trick the JCT
+ * junction-dot style already uses with `drawioApiJunction=1`). Falling back
+ * to the marker key, rather than matching the whole style string, means a
+ * human editing an unrelated style property (fillColor, a drag/resize) in
+ * the GUI does not break recognition on the next extraction.
+ */
 export function shapeKeyOf(cellInfo) {
-  const s = cellInfo.style.map.get('shape');
-  return s || null;
+  return cellInfo.style.map.get('shape') || cellInfo.style.map.get(SYNTHETIC_SHAPE_STYLE_KEY) || null;
 }
 
 /**
@@ -116,6 +146,60 @@ function inferPrefix(id) {
  */
 export function identityOf(cellInfo) {
   return (cellInfo.refdes != null && cellInfo.refdes !== '') ? cellInfo.refdes : cellInfo.id;
+}
+
+// ------------------------------------------------------- value formatting
+
+/** Engineering-unit word per SPICE prefix — only device classes that carry a
+ *  physical value get reformatted; everything else (V/I/D/Q/M/G values, model
+ *  names, "DC 5"-style sources) is left exactly as authored. */
+const VALUE_UNIT = { R: 'ohm', C: 'F', L: 'H' };
+
+/** SI prefix per exponent-of-1000 bucket, from femto to tera. Keys are the
+ *  exact integer exponent (always a multiple of 3, so a plain object lookup
+ *  is exact — no floating-point comparison of magnitudes). */
+const SI_PREFIX_BY_EXP = { '-15': 'f', '-12': 'p', '-9': 'n', '-6': 'u', '-3': 'm',
+  '0': '', '3': 'k', '6': 'M', '9': 'G', '12': 'T' };
+
+/** A bare SPICE float, optionally exponential — NOT "1k"/"DC 5"/a model name. */
+const BARE_NUMBER_RE = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+
+/**
+ * Format a component's raw SPICE value into the VISIBLE label only, in
+ * engineering units (e.g. `4.7e-11` -> `47 pF`, `3.6e-08` -> `36 nH`).
+ *
+ * DEFECT (2026-08-28, api-hardening): labels drawn straight from the SPICE
+ * netlist read like `4.7e-11` / `3.6e-08`; the hand-drawn reference
+ * schematics this tool is meant to reproduce read `47 pF` / `36 nH` — every
+ * value on every sheet needed a mental x1e12 / x1e9 conversion. Fix: reformat
+ * the mantissa into [1,1000) with the matching SI prefix, trimming trailing
+ * zeros. This ONLY touches the drawn label — `spice_value` (read by
+ * netlist.js:235 and bom.js in preference to the label) is untouched, so LVS
+ * and the BOM keep comparing the original SPICE float.
+ *
+ * `0` is rendered bare, not `0 ohm` — by convention a 0-ohm resistor is a
+ * bridge/jumper, and "0 ohm" reads like a (odd) real component value where
+ * "0" reads like what it is.
+ */
+export function formatComponentValue(prefix, rawValue) {
+  const unit = VALUE_UNIT[prefix];
+  const s = String(rawValue == null ? '' : rawValue).trim();
+  if (unit == null || s === '' || !BARE_NUMBER_RE.test(s)) return s;
+  const num = parseFloat(s);
+  if (!Number.isFinite(num)) return s;
+  if (num === 0) return '0';
+  const sign = num < 0 ? '-' : '';
+  const abs = Math.abs(num);
+  let exp3 = Math.floor(Math.log10(abs) / 3) * 3;
+  exp3 = Math.max(-15, Math.min(12, exp3));
+  let mantissa = abs / Math.pow(10, exp3);
+  // log10-derived exponent can leave the mantissa just outside [1,1000) at
+  // the boundaries (float rounding, or the clamp above) — renormalize once.
+  if (mantissa >= 1000 && exp3 < 12) { mantissa /= 1000; exp3 += 3; }
+  else if (mantissa < 1 && exp3 > -15) { mantissa *= 1000; exp3 -= 3; }
+  let mStr = mantissa.toPrecision(4);
+  if (mStr.includes('.')) mStr = mStr.replace(/0+$/, '').replace(/\.$/, '');
+  return `${sign}${mStr} ${SI_PREFIX_BY_EXP[String(exp3)] || ''}${unit}`;
 }
 
 /** Pins that carry connectivity for a classified component (SPICE pin order if known, else all). */

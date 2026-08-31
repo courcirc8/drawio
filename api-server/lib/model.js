@@ -8,6 +8,7 @@
  */
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import zlib from 'node:zlib';
+import { getShape } from './stencils.js';
 
 const parser = new DOMParser();
 const serializer = new XMLSerializer();
@@ -280,9 +281,18 @@ export function addVertex(model, { id, shape, style, x = 0, y = 0, w = 80, h = 8
   const doc = model.ownerDocument;
   const cellId = id != null ? String(id) : freshId(model, 'v');
   const cell = doc.createElement('mxCell');
+  // DEFECT (2026-08-28, api-hardening, round 2): a `shape` that is neither a
+  // `mxgraph.*` stencil key nor already a literal style string can now ALSO
+  // be a SYNTHETIC catalog key (lib/stencils.js SYNTHETIC_SHAPES — e.g.
+  // 'port') — a plain built-in mxGraph shape with no stencil registration,
+  // added so the fork's sidecar invariant (nothing outside api-server/
+  // diverges from upstream drawio) doesn't get violated by a new stencil XML
+  // file just to draw a port marker. getShape() resolves stencil AND
+  // synthetic keys identically; only synthetic records carry `.style`.
+  const synthetic = (style == null && shape != null && !shape.startsWith('mxgraph.')) ? getShape(shape) : null;
   let st = style != null ? style : (shape != null && shape.startsWith('mxgraph.')
     ? `shape=${shape};html=1;verticalLabelPosition=bottom;verticalAlign=top;fillColor=none;strokeColor=default;`
-    : (shape || 'rounded=0;whiteSpace=wrap;html=1;'));
+    : (synthetic != null && synthetic.style != null ? synthetic.style : (shape || 'rounded=0;whiteSpace=wrap;html=1;')));
   if (rotation != null && rotation !== 0) st = mergeStyle(st, { rotation });
   cell.setAttribute('style', st);
   cell.setAttribute('vertex', '1');
@@ -334,7 +344,7 @@ export function addVertex(model, { id, shape, style, x = 0, y = 0, w = 80, h = 8
  * same property). netlist.js prefers the name when present and still
  * cross-checks it against the live coordinates (see anchor-name-stale).
  */
-export function addWire(model, { id, source, target, sourcePin, targetPin, style, points }) {
+export function addWire(model, { id, source, target, sourcePin, targetPin, style, points, value }) {
   if (id != null && getCell(model, id) != null) throw httpError(409, 'cell id already exists: ' + id);
   if (source != null) requireCell(model, source);
   if (target != null) requireCell(model, target);
@@ -362,8 +372,67 @@ export function addWire(model, { id, source, target, sourcePin, targetPin, style
   g.setAttribute('as', 'geometry');
   cell.appendChild(g);
   if (points && points.length) setEdgePoints(cell, points);
+  // A wire label NAMES its net: netlist.js's connectivity() reads it back
+  // (labelOf, netlist.js ~:182) in preference to the anonymous n1/n2/... it
+  // would otherwise mint. Without it a round-trip loses every internal node
+  // name (`Up`, `n_pi1_out`, `ANT` -> n1, n2, n3), which passes LVS
+  // structurally while making the drawing impossible to discuss.
+  if (value != null && String(value) !== '') cell.setAttribute('value', String(value));
   rootEl(model).appendChild(cell);
   return cell;
+}
+
+/**
+ * Translate every vertex and every edge waypoint on a page so the content's
+ * top-left sits at (margin, margin).
+ *
+ * BUG (2026-08-28): place3 legitimately produces NEGATIVE coordinates (a
+ * secondary chain row placed above the axis, a shunt hanging up-left) --
+ * measured min x = -166, min y = -52 on matching_2446. The headless export
+ * clips with `Math.max(0, floor(bounds.x))` (render.js), so everything left of
+ * or above the origin was SILENTLY CUT OFF the PNG: a capacitor plate sheared
+ * at y=0, and a wire that appeared to run off the page instead of reaching its
+ * node. Raising the export `border` does not help -- it pads the clip, it does
+ * not move the content. Normalising the model is the fix, and it also makes the
+ * document open sanely in the editor instead of scrolled off-canvas.
+ *
+ * Call AFTER routing: edge waypoints are absolute and must be translated too.
+ */
+export function normalizeOrigin(model, margin = 40) {
+  let minX = Infinity, minY = Infinity;
+  const cells = allCells(model);
+  for (const el of cells) {
+    const c = mxCellOf(el);
+    const g = geomOf(el);
+    if (g == null) continue;
+    if (c.getAttribute('vertex') === '1') {
+      minX = Math.min(minX, parseFloat(g.getAttribute('x') || '0'));
+      minY = Math.min(minY, parseFloat(g.getAttribute('y') || '0'));
+    }
+    for (const pt of Array.from(g.getElementsByTagName('mxPoint'))) {
+      if (pt.getAttribute('as') != null) continue; // sourcePoint/targetPoint: relative
+      minX = Math.min(minX, parseFloat(pt.getAttribute('x') || '0'));
+      minY = Math.min(minY, parseFloat(pt.getAttribute('y') || '0'));
+    }
+  }
+  if (!isFinite(minX) || !isFinite(minY)) return { dx: 0, dy: 0 };
+  const dx = margin - minX, dy = margin - minY;
+  if (dx === 0 && dy === 0) return { dx: 0, dy: 0 };
+  for (const el of cells) {
+    const c = mxCellOf(el);
+    const g = geomOf(el);
+    if (g == null) continue;
+    if (c.getAttribute('vertex') === '1') {
+      g.setAttribute('x', String(parseFloat(g.getAttribute('x') || '0') + dx));
+      g.setAttribute('y', String(parseFloat(g.getAttribute('y') || '0') + dy));
+    }
+    for (const pt of Array.from(g.getElementsByTagName('mxPoint'))) {
+      if (pt.getAttribute('as') != null) continue;
+      pt.setAttribute('x', String(parseFloat(pt.getAttribute('x') || '0') + dx));
+      pt.setAttribute('y', String(parseFloat(pt.getAttribute('y') || '0') + dy));
+    }
+  }
+  return { dx, dy };
 }
 
 export function setEdgePoints(node, points) {

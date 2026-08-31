@@ -46,8 +46,17 @@ function pinAbsOf(cell, relX, relY) {
   return { x: cx + dx * Math.cos(t) - dy * Math.sin(t), y: cy + dx * Math.sin(t) + dy * Math.cos(t) };
 }
 
-/** Axis-aligned bounding box of a rotated cell (the obstacle libavoid sees). */
-function rotatedAabb(cell) {
+/**
+ * Axis-aligned bounding box of a rotated cell (the obstacle libavoid sees).
+ * Exported so any overlap/clearance test elsewhere (placement, beauty
+ * metrics) can share this instead of re-deriving it — mxGraph rotates a
+ * shape's declared {x,y,w,h} about its CENTRE, so a vertical two-terminal
+ * passive (rotation=+-90) is visually {h wide, w tall} even though every
+ * placed-cell record still carries the unrotated {w,h}. pinAbs()/pinAbsOf()
+ * still need the raw unrotated box (that is what their rotation math expects
+ * as input) — only overlap/clearance callers should call this.
+ */
+export function rotatedAabb(cell) {
   const t = ((cell.rotation || 0) * Math.PI) / 180;
   const w = Math.abs(cell.w * Math.cos(t)) + Math.abs(cell.h * Math.sin(t));
   const h = Math.abs(cell.w * Math.sin(t)) + Math.abs(cell.h * Math.cos(t));
