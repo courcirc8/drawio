@@ -1,0 +1,7 @@
+* LNA cascode Shaeffer-Lee
+L1 in g Lg 8n
+M1 x g s 0 NMOS
+L2 s 0 Ls 1n
+M2 out vb x 0 NMOS
+L3 vdd out Ld 4n
+.end

@@ -1,0 +1,13 @@
+* OTA Miller a resistance d annulation (biblio: ampli/ota)
+M1 a inp s 0 NMOS
+M2 b inm s 0 NMOS
+M3 a a vdd vdd PMOS
+M4 b a vdd vdd PMOS
+M5 s vb 0 0 NMOS
+M6 out b vdd vdd PMOS
+M7 out vb 0 0 NMOS
+M8 vb vb 0 0 NMOS
+I1 vdd vb 20u
+R1 b z 2k
+CC z out 2p
+.end

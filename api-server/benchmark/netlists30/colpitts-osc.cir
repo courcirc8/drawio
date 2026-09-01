@@ -1,0 +1,9 @@
+* Oscillateur Colpitts BJT (biblio: vco/osc, razavi_RCICC2003)
+L1 vdd osc 5n
+Q1 osc b e NPN
+C1 osc e 2p
+C2 e 0 4p
+R1 vdd b 40k
+R2 b 0 20k
+R3 e 0 1k
+.end

@@ -1,0 +1,7 @@
+* Tampon CML (biblio: serdes/io, razavi_Abishek_JSSC17)
+M1 outm inp s 0 NMOS
+M2 outp inm s 0 NMOS
+R1 vdd outm 500
+R2 vdd outp 500
+M3 s vb 0 0 NMOS
+.end

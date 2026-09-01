@@ -145,7 +145,12 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         const id = 'VT' + (++seq);
         // position ancrée sur le PIN ABSOLU (les formes tournées ont leur pin
         // ailleurs que le haut de leur bbox) + écart franc de 30 px
-        const tapCell = addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: abs.y - 26 - 30, w: 40, h: 26, value: 'VDD' });
+        // idem masse : ne pas poser le tap sur un composant flottant voisin
+        let ty = abs.y - 26 - 30;
+        const tClash = () => [...placed.values()].some((v) =>
+          abs.x - 20 < v.x + v.w + 6 && abs.x + 20 > v.x - 6 && ty < v.y + v.h + 6 && ty + 26 > v.y - 6);
+        for (let k2 = 0; k2 < 5 && tClash(); k2++) ty -= 30;
+        const tapCell = addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: ty, w: 40, h: 26, value: 'VDD' });
         tapCell.setAttribute('style', tapCell.getAttribute('style')
           .replace('verticalLabelPosition=bottom;verticalAlign=top;', 'verticalLabelPosition=top;verticalAlign=bottom;'));
         wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: 0.5, y: 1 } });
@@ -156,8 +161,23 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         const abs = pinAbs(p, t.pin);
         const id = 'GND' + (++seq);
         // masse LOCALE : juste sous le pin (comme le petit trait des figures
-        // publiées), jamais un long rail vers une ligne de fond commune
-        addVertex(model, { id, shape: GROUND_SHAPE, x: abs.x - 15, y: abs.y + 45, w: 30, h: 20 });
+        // publiées), jamais un long rail vers une ligne de fond commune.
+        // Pin LATÉRAL ou HAUT (base de BJT, corps rond) : sortir du corps
+        // horizontalement puis descendre — jamais de masse DANS le corps
+        let gx = abs.x, gy = abs.y + 45;
+        const bodyBot = p.y + (p.h || 0);
+        const leftish2 = abs.x <= p.x + (p.w || 0) / 2;
+        if (abs.y < bodyBot - 6) {
+          gx = abs.x + (leftish2 ? -44 : 44);
+          gy = Math.max(abs.y + 45, bodyBot + 25);
+        }
+        // ne jamais poser la masse SUR un voisin (corps rond de BJT…) :
+        // écarter latéralement puis descendre jusqu'à une case libre
+        const gClash = () => [...placed.values()].some((v) =>
+          gx - 15 < v.x + v.w + 6 && gx + 15 > v.x - 6 && gy < v.y + v.h + 6 && gy + 20 > v.y - 6);
+        for (let k2 = 0; k2 < 5 && gClash(); k2++) gx += leftish2 ? -30 : 30;
+        for (let k2 = 0; k2 < 5 && gClash(); k2++) gy += 30;
+        addVertex(model, { id, shape: GROUND_SHAPE, x: gx - 15, y: gy, w: 30, h: 20 });
         const gp = getPin(GROUND_SHAPE, GROUND_PIN);
         wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: gp.x, y: gp.y } });
       }
@@ -165,6 +185,9 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   }
 
   // nets de signal
+  // lanes déjà prises par les liaisons gate-gate FIGÉES : deux nets (LOP et
+  // LOM du mélangeur en anneau) prenaient la même lane et se superposaient
+  const usedGateLanes = [];
   for (const [net, terms] of netTerms) {
     if (net === vddNet || net === '0') continue;
     if (terms.length === 1) {
@@ -229,13 +252,18 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         const bA = placed.get(a.ref), bB = placed.get(b.ref);
         const yTop = Math.min(bA.y, bB.y), yBot = Math.max(bA.y + bA.h, bB.y + bB.h);
         let lane = null;
+        const x1s = Math.min(pA.x, pB.x) - 6, x2s = Math.max(pA.x, pB.x) + 6;
+        const laneFree = (yl) => !usedGateLanes.some((u) =>
+          Math.abs(u.y - yl) < 10 && x1s < u.x2 && x2s > u.x1);
         outer: for (let k = 0; k < 6; k++) {
           for (const yl of [yBot + 24 + k * 12, yTop - 24 - k * 12]) {
-            if (clearSeg(pA, { x: pA.x, y: yl }) && clearSeg({ x: pA.x, y: yl }, { x: pB.x, y: yl }) &&
+            if (laneFree(yl) &&
+                clearSeg(pA, { x: pA.x, y: yl }) && clearSeg({ x: pA.x, y: yl }, { x: pB.x, y: yl }) &&
                 clearSeg({ x: pB.x, y: yl }, pB)) { lane = yl; break outer; }
           }
         }
         if (lane != null) {
+          usedGateLanes.push({ y: lane, x1: x1s, x2: x2s });
           // échappée horizontale : la plongée se fait à 14 px du flanc
           // (jamais le long du canal, règle utilisateur)
           const escA = (a.pin.x <= 0.5) !== !!placed.get(a.ref).flipH ? -14 : 14;
@@ -301,7 +329,12 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
             .sort((u, v) => (Math.abs(pts[u].x - pts[iG].x) + Math.abs(pts[u].y - pts[iG].y))
                           - (Math.abs(pts[v].x - pts[iG].x) + Math.abs(pts[v].y - pts[iG].y)));
           let iD = -1;
-          for (const i2 of cand) { if (clearDiagTo(i2)) { iD = i2; break; } }
+          // la diagonale X ne se justifie qu'entre voisins de MÊME RANGÉE
+          // (VCO/Gilbert) — entre étages (StrongARM) elle balafre le schéma
+          for (const i2 of cand) {
+            if (Math.abs(pts[i2].y - pts[iG].y) > 160) continue;
+            if (clearDiagTo(i2)) { iD = i2; break; }
+          }
           if (iD < 0) continue;
           function clearDiagTo(i2) {
             return !diagBlocked(placed, pts[iG], pts[i2], gRef, terms[i2].ref);
@@ -331,6 +364,10 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
             if (dx2 < 5 || dy2 < 5) d2 *= 0.5;
             if (d2 < bd) { bd = d2; bi = i2; bj = j2; }
           }
+        }
+        if (bi < 0) {
+          const missing = terms.filter((t) => !placed.has(t.ref)).map((t) => t.ref);
+          throw new Error(`wireNets: net sans candidat MST (non places: ${missing.join(',') || 'aucun'}; terms: ${terms.map((t, i9) => `${t.ref}.${t.pinName}@${Math.round(pts[i9].x)},${Math.round(pts[i9].y)}`).join(' ')}; inTree=${inTree.join(',')} rest=${rest2.join(',')})`);
         }
         const ta = terms[bi], tb = terms[bj];
         wire(null, { source: ta.ref, target: tb.ref,
@@ -615,16 +652,43 @@ export function importNetlist2(model, parsed, opts = {}) {
   if (P.order.length) roots = P.order.filter((r) => roots.includes(r)).concat(roots.filter((r) => !P.order.includes(r)));
   for (const r of roots) if (unplaced.has(r)) place(r, nextCol++, 0);
 
+  // pseudo-racines : transistors ORPHELINS de conduction — leur drain n'est
+  // relié à vdd qu'à travers un dipôle latéral (ex: R de contre-réaction du
+  // Cherry-Hooper). Sans ça, tout leur étage partait dans le coin gauche.
+  // Vraies colonnes à droite, la paire/le regroupement s'appliquent ensuite.
+  {
+    let progress = true;
+    while (progress) {
+      progress = false;
+      for (const c of comps) {
+        if (!unplaced.has(c.ref) || (c.prefix !== 'M' && c.prefix !== 'Q')) continue;
+        const ci2 = info.get(c.ref);
+        if (ci2 == null || ci2.top === '0') continue;
+        const hasProducer = comps.some((k) => k.ref !== c.ref &&
+          info.get(k.ref) != null && info.get(k.ref).bot === ci2.top);
+        if (hasProducer) continue;
+        place(c.ref, nextCol++, 0);
+        progress = true;
+      }
+    }
+  }
+
   // éléments partagés : centrés sous leurs colonnes, un niveau sous le plus profond
   const sharedParents = new Map(); // ref -> cols parents (pour re-calcul après permutation)
   let guard = comps.length;
   while (colOf.size && guard-- > 0) {
     for (const [ref, cols] of [...colOf]) {
       if (!unplaced.has(ref)) { colOf.delete(ref); continue; }
-      const deepest = Math.max(...cols.map((cl) =>
-        Math.max(...[...slots.values()].filter((s) => s.col === cl).map((s) => s.level))));
-      const mid = cols.reduce((a, b) => a + b, 0) / cols.length;
-      sharedParents.set(ref, [...cols]);
+      const depthOf = (cl) =>
+        Math.max(...[...slots.values()].filter((s) => s.col === cl).map((s) => s.level));
+      const deepest = Math.max(...cols.map(depthOf));
+      // parents de PROFONDEURS différentes (ex: M4 du folded cascode entre la
+      // chaîne cascode et le drain de la paire) : coller à la colonne du
+      // parent le plus profond, la moyenne l'envoyait au milieu de nulle part.
+      // Parents de même profondeur (queue de paire diff) : centré comme avant.
+      const deepCols = cols.filter((cl) => depthOf(cl) >= deepest - 0.5);
+      const mid = deepCols.reduce((a, b) => a + b, 0) / deepCols.length;
+      sharedParents.set(ref, [...deepCols]);
       place(ref, mid, deepest + 1);
       colOf.delete(ref);
     }
@@ -643,7 +707,15 @@ export function importNetlist2(model, parsed, opts = {}) {
     const [pa, pb] = t.pair.map((r) => slots.get(r));
     if (st == null || pa == null || pb == null) continue;
     st.col = (pa.col + pb.col) / 2;
-    st.level = Math.max(pa.level, pb.level) + 1;
+    const ti2 = info.get(t.ref);
+    const pi0 = info.get(t.pair[0]);
+    if (ti2 != null && pi0 != null && ti2.bot === pi0.top) {
+      // queue PMOS : elle ALIMENTE la paire par le haut — au-dessus
+      // (folded cascode : M0 se retrouvait sous M1/M2, tête en bas)
+      st.level = Math.min(pa.level, pb.level) - 1;
+    } else {
+      st.level = Math.max(pa.level, pb.level) + 1;
+    }
   }
   // règle 26 : les transistors d'un même MIROIR partagent la rangée (la plus
   // profonde du groupe) — gates sur un bus rectiligne, comme un dessin humain
@@ -654,10 +726,20 @@ export function importNetlist2(model, parsed, opts = {}) {
     for (const x of ss) x.level = L;
   }
 
-  // reste (sources V vers masse, branches isolées) : colonnes à gauche
+  // reste : un dipôle R/L/C entre deux nets de SIGNAL sans pile d'accueil
+  // (ex: R de contre-réaction inter-étages) rejoint les flottants — placé au
+  // barycentre de ses nets, jamais parqué dans un coin. Le vrai reste
+  // (sources V vers masse, branches isolées) : colonnes à gauche.
   for (const c of comps) {
     if (!unplaced.has(c.ref)) continue;
-    if (info.get(c.ref) == null) continue;
+    const ci3 = info.get(c.ref);
+    if (ci3 == null) continue;
+    if ('RCL'.includes(c.prefix) && ci3.top !== vddNet && ci3.top !== '0' &&
+        ci3.bot !== vddNet && ci3.bot !== '0') {
+      floating.add(c.ref);
+      unplaced.delete(c.ref);
+      continue;
+    }
     place(c.ref, -1 - [...slots.values()].filter((s) => s.col < 0).length, 0);
   }
   // éléments mappés sans conduction (G/OTA…) : colonnes de flux à droite
@@ -723,7 +805,11 @@ export function importNetlist2(model, parsed, opts = {}) {
     }
     for (const [ref, cols] of sharedParents) {
       const sl = slots.get(ref);
-      sl.col = cols.map((c) => newOf.get(c)).reduce((a, b) => a + b, 0) / cols.length;
+      // un parent peut être lui-même à colonne fractionnaire (élément partagé
+      // en cascade) : newOf ne connaît que les entières — interpoler
+      const nv = (c) => (newOf.has(c) ? newOf.get(c)
+        : ((newOf.get(Math.floor(c)) ?? Math.floor(c)) + (newOf.get(Math.ceil(c)) ?? Math.ceil(c))) / 2);
+      sl.col = cols.map(nv).reduce((a, b) => a + b, 0) / cols.length;
     }
   }
 
@@ -835,6 +921,38 @@ export function importNetlist2(model, parsed, opts = {}) {
       for (const [ref, sl] of slots) {
         if (sl.col === inner.col && sl.level <= inner.level) flipRefs.add(ref);
       }
+    }
+  }
+
+  // ---- aucun DEUX corps dans la même case (col, level) : deux paires
+  //      cross-couplées partageant les mêmes nets (StrongARM) se
+  //      superposaient exactement — l'alimenté descend sous son producteur
+  {
+    // NB : une variante « pair-aware » (bumper les deux membres d'une paire)
+    // a été mesurée PIRE (cascade de collisions, StrongARM 10→26 err) — le
+    // bump individuel gagne, quitte à casser la rangée d'une paire (règle 14)
+    const key2 = (s) => Math.round(s.col * 4) + '|' + Math.round(s.level * 4);
+    const bump = (ref2) => { slots.get(ref2).level += 1; };
+    for (let pass2 = 0; pass2 < 6; pass2++) {
+      let moved2 = false;
+      const occ = new Map();
+      for (const c of comps) {
+        const s2 = slots.get(c.ref);
+        if (s2 == null) continue;
+        let g3 = 24;
+        while (occ.has(key2(s2)) && occ.get(key2(s2)) !== c.ref && g3-- > 0) {
+          const other = occ.get(key2(s2));
+          const oi = info.get(other), ci4 = info.get(c.ref);
+          if (oi != null && ci4 != null && ci4.bot != null && oi.top === ci4.bot) {
+            // c alimente other : other descend, c prendra la case
+            occ.delete(key2(slots.get(other)));
+            bump(other);
+          } else bump(c.ref);
+          moved2 = true;
+        }
+        occ.set(key2(s2), c.ref);
+      }
+      if (!moved2) break;
     }
   }
 
@@ -1125,6 +1243,14 @@ export function importNetlist2(model, parsed, opts = {}) {
       // ORIENTATION : le pin 'in' (nodes[0]) regarde le centroïde de SON net
       flipF = anchors[0].x > anchors[1].x;
     }
+    // liaison principalement VERTICALE : dipôle tourné (règle 42 — un corps
+    // horizontal entre deux nets superposés force un fil qui enveloppe)
+    let rotF = 0;
+    if (anchors[0].n > 0 && anchors[1].n > 0 && 'RCLD'.includes(c.prefix) &&
+        Math.abs(anchors[0].y - anchors[1].y) > Math.abs(anchors[0].x - anchors[1].x) + 20) {
+      rotF = anchors[0].y <= anchors[1].y ? 90 : -90; // +90 : 'in' en HAUT
+      flipF = false;
+    }
     let x = cx - shape.w / 2, y = cy - shape.h / 2;
     // JAMAIS sur un autre corps : on remonte (puis descend) jusqu'à une
     // position libre — la capa du tank VCO se posait sur les transistors
@@ -1159,9 +1285,9 @@ export function importNetlist2(model, parsed, opts = {}) {
       }
       if (best != null) { x = best.x; y = best.y; } else { x = x00; y = y00; }
     }
-    const cellF = addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: 0, value: c.value || '' });
+    const cellF = addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: rotF, value: c.value || '' });
     if (flipF) cellF.setAttribute('style', cellF.getAttribute('style') + 'flipH=1;');
-    placed.set(c.ref, { id: c.ref, x, y, w: shape.w, h: shape.h, rotation: 0, flipH: flipF });
+    placed.set(c.ref, { id: c.ref, x, y, w: shape.w, h: shape.h, rotation: rotF, flipH: flipF });
     for (let i = 0; i < ci.po.length; i++) {
       term(c.nodes[i], c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
     }

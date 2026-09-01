@@ -1,0 +1,12 @@
+* LNA differentiel cascode (biblio: lna, arxiv_2509.02224v1)
+L1 rfp g1 6n
+M1 x1 g1 s1 0 NMOS
+L2 s1 0 800p
+M2 outp vb1 x1 0 NMOS
+L3 vdd outp 4n
+L4 rfm g2 6n
+M3 x2 g2 s2 0 NMOS
+L5 s2 0 800p
+M4 outm vb1 x2 0 NMOS
+L6 vdd outm 4n
+.end

@@ -512,3 +512,47 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     depuis le début. Corollaires : source de polarisation ALIGNÉE sur le
     drain de sa diode (plongée droite, pas de baïonnette) ; port de bout
     de rail avec évitement de collision.
+
+53. **Campagne 30 topologies de publication (benchmark/netlists30, cycle 1→4 :
+    19 err + 1 crash → 21 err, 30/30 LVS)** — règles apprises :
+    - **PNP émetteur en HAUT** : le stencil pnp_transistor_1 est dessiné
+      comme le PMOS (flèche au pin NE) → PIN_ORDER_OVERRIDES (C,B,E)=
+      (SE,W,NE). Sans ça, masses dans le cercle et fils à travers le corps
+      (bandgap 6 err → 2).
+    - **Masse/tap DIRECTIONNELS + évitement** : pin latéral ou haut (base
+      de BJT) → sortir du corps horizontalement puis descendre ; jamais de
+      masse posée sur un voisin (scan de dégagement, idem tap VDD).
+    - **Pseudo-racines** : un transistor dont le net de drain n'est relié
+      à vdd qu'à travers un dipôle latéral (R de contre-réaction du
+      Cherry-Hooper) est une VRAIE colonne (place() récursif), jamais le
+      coin gauche. Les dipôles R/L/C restants entre deux nets de signal
+      rejoignent les flottants (barycentre).
+    - **Dipôle flottant VERTICAL** si ses deux ancres sont superposées
+      (|Δy| > |Δx|+20) — un corps horizontal entre deux nets empilés
+      force un fil qui enveloppe (wrap-around du Colpitts).
+    - **Queue PMOS AU-DESSUS de sa paire** (elle l'alimente par le haut) :
+      folded cascode, M0 était dessiné tête en bas sous M1/M2.
+    - **Élément partagé : coller au parent le plus PROFOND** quand les
+      parents ont des profondeurs différentes (la moyenne envoyait M4 du
+      folded au milieu de nulle part) ; centrage seulement entre parents
+      de même profondeur (queues de paires).
+    - **Une case (col, level) = UN corps** : deux paires cross-couplées
+      partageant les mêmes nets (StrongARM) se superposaient exactement
+      (77 err) ; résolveur multi-passes, l'alimenté descend sous son
+      producteur. La variante « bumper les deux membres d'une paire »
+      mesurée PIRE (cascade) — bump individuel.
+    - **Lanes gate-gate RÉSERVÉES** : deux liaisons figées (LOP/LOM du
+      mélangeur en anneau) prenaient la même lane → registre de lanes
+      occupées, span par span.
+    - **Canal ≠ côté gate** (checker) : le canal est du côté drain/source
+      (x+w avant flip) ; un bus gate-gate vertical au ras des tips de
+      leads (inverseur, Pierce) est légitime → warning, pas erreur.
+    - **Diagonale X cross-couplée bornée** : |Δy| ≤ 160 px (gate↔drain du
+      partenaire même rangée, VCO) ; entre étages (StrongARM) elle
+      balafre le schéma.
+    - Colonnes fractionnaires EN CASCADE (partagé de partagé) : interpoler
+      dans la permutation (newOf), sinon NaN silencieux → MST sans
+      candidat (crash StrongARM sous l'optimiseur).
+    Restent ouverts : StrongARM 10 err (double cc = hors gabarit),
+    beauty 0-30 sur folded/cherry/strongarm (croisements structurels),
+    ring-vco3 42 (boucle fermée), bandgap/pierce 2 err chacun.

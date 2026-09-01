@@ -1,0 +1,12 @@
+* Amplificateur Cherry-Hooper (biblio: serdes/io, JSSC00MAY-ramin)
+M1 a inp s1 0 NMOS
+M2 b inm s1 0 NMOS
+I1 s1 0 1m
+M3 outm a s2 0 NMOS
+M4 outp b s2 0 NMOS
+I2 s2 0 1m
+R1 a outp 800
+R2 b outm 800
+R3 vdd outp 400
+R4 vdd outm 400
+.end
