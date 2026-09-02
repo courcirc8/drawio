@@ -580,6 +580,37 @@ export function importNetlist2(model, parsed, opts = {}) {
 
   markFloating(vddNet);
   const structures = detectStructures(parsed);
+
+  // ---- LATCH (StrongARM) : deux paires cross-couplées de POLARITÉS
+  //      OPPOSÉES sur les MÊMES deux nets. Gabarit dédié : un trunk
+  //      vertical par net (précharge -> cc PMOS -> cc NMOS -> étage du
+  //      dessous dans la même colonne), paire PMOS au centre, précharges
+  //      clk à l'extérieur — comme les figures publiées (Razavi JSSC'09)
+  const latchRefs = new Set();
+  let latchRoots = null;
+  {
+    const cc = structures.crossCoupled;
+    const kindOf = (r) => isPmos(comps.find((k) => k.ref === r));
+    for (let i = 0; i < cc.length && latchRoots == null; i++) {
+      for (let j = i + 1; j < cc.length; j++) {
+        const a = cc[i], b = cc[j];
+        if (new Set([...a.nets, ...b.nets]).size !== 2) continue;
+        if (kindOf(a.refs[0]) === kindOf(b.refs[0])) continue;
+        const pPair = kindOf(a.refs[0]) ? a : b;
+        for (const r of [...a.refs, ...b.refs]) latchRefs.add(r);
+        // précharges : autres MOS racine dont le drain est un des deux nets
+        const prechOf = (net) => comps.find((k) =>
+          (k.prefix === 'M' || k.prefix === 'Q') && !latchRefs.has(k.ref) &&
+          info.get(k.ref) != null && info.get(k.ref).top === vddNet &&
+          info.get(k.ref).bot === net);
+        const [netL, netR] = pPair.nets;
+        const pL = prechOf(netL), pR = prechOf(netR);
+        latchRoots = [pL && pL.ref, pPair.refs[0], pPair.refs[1], pR && pR.ref]
+          .filter(Boolean);
+        break;
+      }
+    }
+  }
   // ---- chaînes de signal : suites d'éléments série (passifs flottants)
   //      aboutissant à une gate ; posées horizontalement dans l'ordre du flux,
   //      dérivations shunt vers la masse en bas, branches de polarisation en
@@ -652,6 +683,12 @@ export function importNetlist2(model, parsed, opts = {}) {
   // heuristique : la pile de polarisation (source de courant en racine) à gauche
   roots.sort((a, b) => (comps.find((c) => c.ref === b).prefix === 'I' ? 1 : 0) -
                        (comps.find((c) => c.ref === a).prefix === 'I' ? 1 : 0));
+  // latch : ordre IMPOSÉ [précharge, ccP, ccP, précharge] — la descente de
+  // conduction construit alors un trunk vertical par net de sortie
+  if (latchRoots != null) {
+    roots = latchRoots.filter((r) => roots.includes(r))
+      .concat(roots.filter((r) => !latchRoots.includes(r)));
+  }
   if (P.order.length) roots = P.order.filter((r) => roots.includes(r)).concat(roots.filter((r) => !P.order.includes(r)));
   for (const r of roots) if (unplaced.has(r)) place(r, nextCol++, 0);
 
@@ -678,6 +715,7 @@ export function importNetlist2(model, parsed, opts = {}) {
 
   // éléments partagés : centrés sous leurs colonnes, un niveau sous le plus profond
   const sharedParents = new Map(); // ref -> cols parents (pour re-calcul après permutation)
+  const sideOff = new Map(); // ref -> décalage latéral (shunt accroché à côté)
   let guard = comps.length;
   while (colOf.size && guard-- > 0) {
     for (const [ref, cols] of [...colOf]) {
@@ -690,7 +728,14 @@ export function importNetlist2(model, parsed, opts = {}) {
       // parent le plus profond, la moyenne l'envoyait au milieu de nulle part.
       // Parents de même profondeur (queue de paire diff) : centré comme avant.
       const deepCols = cols.filter((cl) => depthOf(cl) >= deepest - 0.5);
-      const mid = deepCols.reduce((a, b) => a + b, 0) / deepCols.length;
+      let mid = deepCols.reduce((a, b) => a + b, 0) / deepCols.length;
+      // shunt R/C/L vers la masse sous UNE seule colonne : accroché À CÔTÉ
+      // (col+0.6) comme dans les figures — centré sous la colonne, son fil
+      // devait traverser la zone de masse du composant du dessus
+      const cc5 = comps.find((k) => k.ref === ref);
+      const isSideShunt = cc5 != null && 'RCL'.includes(cc5.prefix) &&
+        (info.get(ref) || {}).bot === '0' && deepCols.length === 1;
+      if (isSideShunt) { mid += 0.6; sideOff.set(ref, 0.6); }
       sharedParents.set(ref, [...deepCols]);
       place(ref, mid, deepest + 1);
       colOf.delete(ref);
@@ -777,6 +822,9 @@ export function importNetlist2(model, parsed, opts = {}) {
       if (dc != null) firstOf.set(find(dc), dc);
     }
     for (const p of [...structures.diffPairs, ...structures.crossCoupled]) {
+      // les paires du LATCH sont intégrées VERTICALEMENT dans les trunks :
+      // les coller côte à côte détruirait le gabarit
+      if (p.refs.some((r) => latchRefs.has(r))) continue;
       const lvls = p.refs.map((r) => slots.get(r)).filter(Boolean).map((sl) => sl.level);
       if (new Set(lvls).size !== 1) continue;
       const cols = p.refs.map(colOfRef).filter((c) => c != null);
@@ -812,7 +860,7 @@ export function importNetlist2(model, parsed, opts = {}) {
       // en cascade) : newOf ne connaît que les entières — interpoler
       const nv = (c) => (newOf.has(c) ? newOf.get(c)
         : ((newOf.get(Math.floor(c)) ?? Math.floor(c)) + (newOf.get(Math.ceil(c)) ?? Math.ceil(c))) / 2);
-      sl.col = cols.map(nv).reduce((a, b) => a + b, 0) / cols.length;
+      sl.col = cols.map(nv).reduce((a, b) => a + b, 0) / cols.length + (sideOff.get(ref) || 0);
     }
   }
 
@@ -882,6 +930,15 @@ export function importNetlist2(model, parsed, opts = {}) {
   const dedupPairs = [...structures.diffPairs.filter((p) => !ccKeys.has([...p.refs].sort().join('/'))),
     ...structures.crossCoupled];
   for (const pr of dedupPairs) {
+    if (pr.refs.some((r) => latchRefs.has(r))) {
+      // latch : flip du membre GAUCHE seul (sa gate regarde le trunk
+      // opposé), JAMAIS de propagation de colonne — les trunks portent
+      // les étages du dessous
+      const [a0, b0] = pr.refs;
+      const sa0 = slots.get(a0), sb0 = slots.get(b0);
+      if (sa0 != null && sb0 != null) flipRefs.add(sa0.col <= sb0.col ? a0 : b0);
+      continue;
+    }
     if (!wantFlip(pr)) continue;
     const [a, b] = pr.refs;
     const ca = slots.get(a), cb = slots.get(b);
@@ -946,7 +1003,12 @@ export function importNetlist2(model, parsed, opts = {}) {
         while (occ.has(key2(s2)) && occ.get(key2(s2)) !== c.ref && g3-- > 0) {
           const other = occ.get(key2(s2));
           const oi = info.get(other), ci4 = info.get(c.ref);
-          if (oi != null && ci4 != null && ci4.bot != null && oi.top === ci4.bot) {
+          if (oi != null && ci4 != null && oi.top === ci4.top && oi.bot === ci4.bot) {
+            // éléments PARALLÈLES (mêmes deux nets, ex: C2 // R3 du
+            // Colpitts) : séparation LATÉRALE — l'un sous l'autre force le
+            // fil du haut à envelopper le corps du premier (wrap-around)
+            s2.col += 0.6;
+          } else if (oi != null && ci4 != null && ci4.bot != null && oi.top === ci4.bot) {
             // c alimente other : other descend, c prendra la case
             occ.delete(key2(slots.get(other)));
             bump(other);
@@ -1464,5 +1526,8 @@ export function importNetlist2(model, parsed, opts = {}) {
       return out;
     })(),
     pairs: structures.diffPairs.map((p) => p.refs.join('/')),
+    // NB : retirer le move de flip a été mesuré PIRE (gilbert 0->4 err,
+    // vco-lc-pmos 0->4) — la recherche CORRIGE plus d'orientations qu'elle
+    // n'en casse (R4/L3 à l'envers = 2 err, contre 9 sans le move)
     flippable: comps.filter((c) => 'RCLD'.includes(c.prefix)).map((c) => c.ref) };
 }

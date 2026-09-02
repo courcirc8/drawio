@@ -580,3 +580,31 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     à refaire EN AMONT du placement, pas en post-flip), inverter/lc-match
     through (C de charge sous la masse du voisin), ota-2stage-pmos 28.8
     (biais NMOS-en-bas du gabarit).
+
+55. **Gabarit LATCH + séparation latérale (2026-09-02, 25→18 err, 32/43 à
+    zéro, beauty 68,3)** — issu d'un diagnostic géométrique cas par cas :
+    - **LATCH (StrongARM)** : deux paires cross-couplées de POLARITÉS
+      OPPOSÉES sur les MÊMES deux nets -> gabarit dédié. Ordre de racines
+      imposé [précharge, ccP, ccP, précharge] : la descente de conduction
+      construit un TRUNK vertical par net de sortie (précharge -> cc PMOS
+      -> cc NMOS -> paire d'entrée dans la même colonne). Paires du latch
+      exclues du regroupement côte à côte (elles sont intégrées
+      verticalement) ; flip du membre gauche SEUL, jamais propagé à la
+      colonne. StrongARM 8 err/beauty 0 -> 3 err/36, structure des
+      figures publiées (X des gates au centre, CLK à gauche).
+    - **Éléments PARALLÈLES (mêmes deux nets) : séparation LATÉRALE** dans
+      le résolveur de cases (col+0.6), jamais l'un sous l'autre — le fil
+      du haut devait envelopper le corps du premier (wrap du Colpitts).
+    - **Shunt R/C/L vers la masse sous UNE colonne : accroché À CÔTÉ**
+      (col+0.6, sideOff persistant à travers la permutation de colonnes) —
+      centré sous la colonne, son fil traversait la zone de masse du
+      composant du dessus (inverter-amp 39->61 de beauty).
+    - **3e fausse piste mesurée** : retirer le move de flip de
+      l'optimiseur (au motif « l'orientation découle des nets ») : gilbert
+      0->4 err, vco-lc-pmos 0->4 — la recherche CORRIGE plus
+      d'orientations qu'elle n'en casse. Les 2 wraps qu'elle provoque
+      (R4, L3) sont le prix ; l'orientation par défaut est le vrai
+      chantier (en amont, pas en post-flip).
+    Restent 18 : strongarm 3 (fils du X), bandgap 2 (BJT), cherry 2,
+    delay-cell 2, lna-shunt-fb 2, ota-2stage-pmos 2 (gabarit dual),
+    5 circuits à 1.
