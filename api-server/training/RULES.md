@@ -608,3 +608,20 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     Restent 18 : strongarm 3 (fils du X), bandgap 2 (BJT), cherry 2,
     delay-cell 2, lna-shunt-fb 2, ota-2stage-pmos 2 (gabarit dual),
     5 circuits à 1.
+
+56. **AXE DE SIGNAL passif (2026-09-02, remarque utilisateur : « le LC-match
+    est nul alors qu'il a 5 composants — cherche les règles manquantes,
+    pas les patchs »)** : tout le moteur reposait sur deux ancrages —
+    piles de conduction (pensées MOS) et chaînes ancrées sur des GATES.
+    Un réseau sans élément actif n'a ni l'un ni l'autre : placement
+    aléatoire (RF flottant au milieu, OUT à 800 px, I/Q sans étiquette).
+    Règle générale : un réseau passif se dessine sur un AXE HORIZONTAL
+    entrée -> sortie — chemins série en lignes (arbre : tronc + branches,
+    une rangée chacune), shunts vers la masse dessous (vdd dessus,
+    parallèles côte à côte), et un PORT à chaque extrémité de l'axe :
+    les bouts de l'axe sont des interfaces PAR CONSTRUCTION, qu'ils
+    matchent ou non le regex de nommage (I/Q du générateur de
+    quadrature). lc-match 62->82, rc-filter 93, pi-atténuateur 88,
+    rc-cr 88, 0 erreur sur les quatre. Le net d'entrée se reconnaît par
+    /^(in|vin|rf|sig|lo|clk)/i ; si un shunt ne s'accroche à aucun nœud
+    de l'axe, le plan avorte et l'ancien moteur reprend (sûreté).

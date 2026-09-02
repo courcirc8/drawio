@@ -388,6 +388,8 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   for (const [net, terms] of netTerms) {
     if (net === vddNet || net === '0' || terms.length < 2) continue;
     if (!/(^|_)(in|out|rf|lo|if|clk|bias|osc|vb)/i.test(net)) continue;
+    // l'axe de signal passif a déjà posé son port sur ce net
+    if (placed.has('P_' + net.replace(/[^A-Za-z0-9]/g, '_'))) continue;
     const withAbs = terms.map((t) => ({ t, abs: pinAbs(placed.get(t.ref), t.pin) }));
     const cxm = withAbs.reduce((s2, w2) => s2 + w2.abs.x, 0) / withAbs.length;
     // préférer un terminal dont le pin REGARDE vers l'extérieur (sinon le
@@ -523,12 +525,74 @@ export function importNetlist2(model, parsed, opts = {}) {
     if (ci != null) { dsNets.add(ci.top); dsNets.add(ci.bot); }
   }
 
+  // ---- RÈGLE GÉNÉRALE « axe de signal » : un réseau SANS élément actif
+  //      (ni M, ni Q, ni G) n'a ni pile de conduction ni gate d'ancrage —
+  //      il se dessine sur un AXE HORIZONTAL entrée -> sortie : éléments
+  //      série en ligne, shunts vers la masse dessous (vdd dessus), et un
+  //      PORT à chaque extrémité de l'axe (les bouts de l'axe sont des
+  //      interfaces PAR CONSTRUCTION — I/Q du générateur de quadrature
+  //      n'avaient même pas d'étiquette)
+  const axisRefs = new Set();
+  let axisPlan = null;
+  if (!comps.some((k) => 'MQG'.includes(k.prefix))) {
+    const isRailN = (n) => n === '0' || n === vddNet;
+    const serie = comps.filter((k) => info.get(k.ref) != null &&
+      !isRailN(info.get(k.ref).top) && !isRailN(info.get(k.ref).bot));
+    const netNames = [...new Set(comps.flatMap((k) => k.nodes))];
+    const inNet = netNames.find((n) => /^(in|vin|rf|sig|lo|clk)/i.test(n) && !isRailN(n));
+    if (inNet != null && serie.length) {
+      const used = new Set();
+      const rows = [];
+      const nexts = (net) => serie.filter((k) => !used.has(k.ref) &&
+        (info.get(k.ref).top === net || info.get(k.ref).bot === net));
+      const otherOf = (k, net) =>
+        (info.get(k.ref).top === net ? info.get(k.ref).bot : info.get(k.ref).top);
+      const queue = [inNet];
+      let guard6 = comps.length + 4;
+      while (queue.length && guard6-- > 0) {
+        const start = queue.shift();
+        for (const first of nexts(start)) {
+          if (used.has(first.ref)) continue;
+          const row = { startNet: start, elems: [] };
+          let net = start, cur = first;
+          while (cur != null) {
+            used.add(cur.ref);
+            const nxt = otherOf(cur, net);
+            row.elems.push({ c: cur, netL: net, netR: nxt });
+            net = nxt;
+            const cont = nexts(net);
+            cur = cont[0] || null;
+            if (cont.length > 1) queue.push(net);
+          }
+          row.endNet = net;
+          rows.push(row);
+        }
+      }
+      if (rows.length && serie.every((k) => used.has(k.ref))) {
+        // validation : chaque shunt/source doit s'accrocher à un nœud de l'axe
+        const nodes = new Set(rows.flatMap((r) => [r.startNet, ...r.elems.map((e) => e.netR)]));
+        const ok = comps.every((k) => {
+          if (used.has(k.ref)) return true;
+          const ci = info.get(k.ref);
+          if (ci == null) return false;
+          const sig = isRailN(ci.top) ? ci.bot : ci.top;
+          return !isRailN(sig) && nodes.has(sig);
+        });
+        if (ok) {
+          axisPlan = { rows, inNet };
+          for (const k of comps) { axisRefs.add(k.ref); unplaced.delete(k.ref); }
+        }
+      }
+    }
+  }
+
   function markFloating(vdd) {
     // un L ou R touchant un net de conduction fait partie d'une pile ;
     // seuls les C (bloquants DC) et les L/R purement « signal » sont flottants
     for (const c of comps) {
       const ci = info.get(c.ref);
       if (ci == null || !'RCL'.includes(c.prefix)) continue;
+      if (axisRefs.has(c.ref)) continue;
       if (ci.top === vdd || ci.top === '0' || ci.bot === vdd || ci.bot === '0') continue;
       if (c.prefix !== 'C' && (dsNets.has(ci.top) || dsNets.has(ci.bot))) continue;
       floating.add(c.ref);
@@ -1028,6 +1092,80 @@ export function importNetlist2(model, parsed, opts = {}) {
     if (!netTerms.has(net)) netTerms.set(net, []);
     netTerms.get(net).push({ ref, pinName, pin });
   };
+
+  // ---- rendu de l'AXE DE SIGNAL passif (voir plan plus haut)
+  if (axisPlan != null) {
+    const isRailN = (n) => n === '0' || n === vddNet;
+    const X0 = 140, STEP = 170, Y0 = 150, ROWHA = 240;
+    const nodeX = new Map(), rowOf = new Map();
+    axisPlan.rows.forEach((row, ri) => {
+      const yRow = Y0 + ri * ROWHA;
+      let x = nodeX.get(row.startNet) ?? X0;
+      if (!nodeX.has(row.startNet)) { nodeX.set(row.startNet, x); rowOf.set(row.startNet, yRow); }
+      for (const e of row.elems) {
+        const ci = info.get(e.c.ref);
+        const shape = getShape(ci.shapeKey);
+        const cx = x + STEP / 2;
+        const flip = e.c.nodes[0] !== e.netL;
+        const cell = addVertex(model, { id: e.c.ref, shape: ci.shapeKey,
+          x: cx - shape.w / 2, y: yRow - shape.h / 2, w: shape.w, h: shape.h,
+          rotation: 0, value: e.c.value || '' });
+        if (flip) cell.setAttribute('style', cell.getAttribute('style') + 'flipH=1;');
+        placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y: yRow - shape.h / 2,
+          w: shape.w, h: shape.h, rotation: 0, flipH: flip });
+        for (let i2 = 0; i2 < ci.po.length; i2++) {
+          term(e.c.nodes[i2], e.c.ref, ci.po[i2], getPin(ci.shapeKey, ci.po[i2]));
+        }
+        x += STEP;
+        if (!nodeX.has(e.netR)) { nodeX.set(e.netR, x); rowOf.set(e.netR, yRow); }
+      }
+    });
+    // shunts et sources vers les rails : sous (masse) / sur (vdd) leur nœud
+    const shuntK = new Map();
+    for (const k of comps) {
+      if (placed.has(k.ref)) continue;
+      const ci = info.get(k.ref);
+      if (ci == null) continue;
+      const sig = isRailN(ci.top) ? ci.bot : ci.top;
+      const xN = nodeX.get(sig), yN = rowOf.get(sig);
+      if (xN == null) continue;
+      const up = ci.top === vddNet || ci.bot === vddNet;
+      const kk = sig + (up ? '^' : 'v');
+      const j = shuntK.get(kk) || 0;
+      shuntK.set(kk, j + 1);
+      const shape = getShape(ci.shapeKey);
+      const vertNative = !!(SPICE_MAP[k.prefix] || {}).vertical;
+      const bx = xN + j * 46;
+      const by = up ? yN - 130 : yN + 130;
+      let rot = 0, px2 = bx - shape.w / 2;
+      if (!vertNative) {
+        // pin du net de signal tourné VERS l'axe (haut pour un shunt bas)
+        rot = (ci.top === sig) === !up ? 90 : -90;
+        const py = (getPin(ci.shapeKey, ci.po[0]) || { y: 0.5 }).y;
+        px2 = bx + (rot === 90 ? 1 : -1) * (py - 0.5) * shape.h - shape.w / 2;
+      }
+      addVertex(model, { id: k.ref, shape: ci.shapeKey, x: px2, y: by - shape.h / 2,
+        w: shape.w, h: shape.h, rotation: rot, value: k.value || '' });
+      placed.set(k.ref, { id: k.ref, x: px2, y: by - shape.h / 2, w: shape.w, h: shape.h, rotation: rot });
+      for (let i2 = 0; i2 < ci.po.length; i2++) {
+        term(k.nodes[i2], k.ref, ci.po[i2], getPin(ci.shapeKey, ci.po[i2]));
+      }
+    }
+    // un PORT à chaque extrémité de l'axe (entrée à gauche, sorties à droite)
+    for (const net of new Set([axisPlan.inNet, ...axisPlan.rows.map((r) => r.endNet)])) {
+      if (isRailN(net)) continue;
+      const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+      if (placed.has(id)) continue;
+      const xN = nodeX.get(net), yN = rowOf.get(net);
+      if (xN == null) continue;
+      const left = net === axisPlan.inNet;
+      const px = xN + (left ? -70 : 46), py3 = yN + 36;
+      addVertex(model, { id, shape: PORT, x: px, y: py3, w: 24, h: 24, value: net.toUpperCase() });
+      placed.set(id, { id, x: px, y: py3, w: 24, h: 24, rotation: 0 });
+      term(net, id, 'N', getPin(PORT, 'N'));
+    }
+  }
+
   for (const c of comps) {
     let ci = info.get(c.ref);
     if (ci == null && SPICE_MAP[c.prefix] != null && slots.has(c.ref)) {
@@ -1035,7 +1173,7 @@ export function importNetlist2(model, parsed, opts = {}) {
       ci = { shapeKey: map.shape, po: map.pinOrder };
       info.set(c.ref, ci);
     }
-    if (ci == null || floating.has(c.ref) || chainRefs.has(c.ref)) continue;
+    if (ci == null || floating.has(c.ref) || chainRefs.has(c.ref) || axisRefs.has(c.ref)) continue;
     const s = slots.get(c.ref);
     if (s == null) continue;
     const shape = getShape(ci.shapeKey);
