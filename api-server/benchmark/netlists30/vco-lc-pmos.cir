@@ -1,0 +1,8 @@
+* VCO LC cross-couple PMOS (biblio: vco/osc, razavi_BR-osc)
+M3 t vb vdd vdd PMOS
+M1 outp outm t vdd PMOS
+M2 outm outp t vdd PMOS
+L1 outp 0 2n
+L2 outm 0 2n
+C1 outp outm 1p
+.end

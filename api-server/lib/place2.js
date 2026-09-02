@@ -174,10 +174,13 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         // ne jamais poser la masse SUR un voisin (corps rond de BJT…) :
         // écarter latéralement puis descendre jusqu'à une case libre
         const gClash = () => [...placed.values()].some((v) =>
-          gx - 15 < v.x + v.w + 6 && gx + 15 > v.x - 6 && gy < v.y + v.h + 6 && gy + 20 > v.y - 6);
+          gx - 13 < v.x + v.w + 6 && gx + 13 > v.x - 6 && gy < v.y + v.h + 6 && gy + 18 > v.y - 6);
         for (let k2 = 0; k2 < 5 && gClash(); k2++) gx += leftish2 ? -30 : 30;
         for (let k2 = 0; k2 < 5 && gClash(); k2++) gy += 30;
-        addVertex(model, { id, shape: GROUND_SHAPE, x: gx - 15, y: gy, w: 30, h: 20 });
+        // ±13 px et pas ±15 : la lane d'échappée des fils est à ±14 px du
+        // flanc — une masse à ±15 la chevauchait STRUCTURELLEMENT de 1 px
+        // (through systématique, invisible dans le clear() érodé de 1.5)
+        addVertex(model, { id, shape: GROUND_SHAPE, x: gx - 13, y: gy, w: 26, h: 18 });
         const gp = getPin(GROUND_SHAPE, GROUND_PIN);
         wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: gp.x, y: gp.y } });
       }
@@ -1432,6 +1435,10 @@ export function importNetlist2(model, parsed, opts = {}) {
     addVertex(model, { id: lid, style: 'text;html=1;align=right;verticalAlign=middle;fontSize=12;', x: lx, y: ly, w: lw, h: lh, value: String(txt) });
     placed.set(lid, { id: lid, x: lx, y: ly, w: lw, h: lh, rotation: 0 });
   }
+
+  // NB : une passe de flip barycentrique des dipôles verticaux (règle 42) a
+  // été mesurée NÉGATIVE ici (le x des dipôles tournés est calculé pour +90 ;
+  // inverser la rotation décale la ligne de pins ; gilbert 64->40) — retirée.
 
   const wires = wireNets(model, { comps, info, placed, netTerms, vddNet, P });
 

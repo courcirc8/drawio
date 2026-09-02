@@ -266,3 +266,130 @@ for name, txt in N.items():
         f.write(txt + '\n')
 
 print(f"{len(os.listdir(OUT))} netlists dans {OUT}")
+
+# ---- extension 2026-09-02 : 13 topologies supplémentaires (43 au total)
+N2 = {}
+
+N2['ota-2stage-pmos'] = """* OTA Miller a entree PMOS (biblio: ampli/ota)
+M1 a inp s vdd PMOS
+M2 b inm s vdd PMOS
+M3 a a 0 0 NMOS
+M4 b a 0 0 NMOS
+M5 s vb vdd vdd PMOS
+M6 out b 0 0 NMOS
+M7 out vb vdd vdd PMOS
+M8 vb vb vdd vdd PMOS
+I1 vb 0 20u
+CC b out 2p
+.end"""
+
+N2['rgc-tia'] = """* TIA cascode regule RGC (biblio: serdes/io)
+I1 vdd x 100u
+M1 out a x 0 NMOS
+M2 a x 0 0 NMOS
+R1 vdd out 2k
+R2 vdd a 10k
+R3 x 0 1k
+.end"""
+
+N2['class-ab-out'] = """* Etage de sortie classe AB (biblio: pa)
+M1 vdd g1 out 0 NMOS
+M2 0 g2 out vdd PMOS
+I1 vdd g1 100u
+D1 g1 g2 DIODE
+I2 g2 0 100u
+C1 in g1 10p
+C2 in g2 10p
+R1 out 0 1k
+.end"""
+
+N2['fvf-follower'] = """* Suiveur de tension replie FVF (biblio: ampli/ota)
+I1 vdd y 50u
+M1 y in out 0 NMOS
+M2 out y 0 0 NMOS
+R1 vdd out 5k
+.end"""
+
+N2['inverter-amp'] = """* Ampli inverseur auto-polarise (biblio: adc/dac)
+M1 out in vdd vdd PMOS
+M2 out in 0 0 NMOS
+R1 in out 1meg
+C1 sig in 1p
+C2 out 0 100f
+.end"""
+
+N2['ota-symmetrical'] = """* OTA symetrique a miroirs (biblio: ampli/ota, mwscas00p-joel)
+M1 a inp s 0 NMOS
+M2 b inm s 0 NMOS
+M3 a a vdd vdd PMOS
+M4 b b vdd vdd PMOS
+M5 x a vdd vdd PMOS
+M6 out b vdd vdd PMOS
+M7 x x 0 0 NMOS
+M8 out x 0 0 NMOS
+M9 s vb 0 0 NMOS
+M10 vb vb 0 0 NMOS
+I1 vdd vb 20u
+C1 out 0 1p
+.end"""
+
+N2['vco-lc-pmos'] = """* VCO LC cross-couple PMOS (biblio: vco/osc, razavi_BR-osc)
+M3 t vb vdd vdd PMOS
+M1 outp outm t vdd PMOS
+M2 outm outp t vdd PMOS
+L1 outp 0 2n
+L2 outm 0 2n
+C1 outp outm 1p
+.end"""
+
+N2['lna-shunt-fb'] = """* LNA a contre-reaction resistive (biblio: lna)
+C1 rf g 2p
+M1 d g 0 0 NMOS
+R1 vdd d 600
+R2 g d 2k
+C2 d out 2p
+R3 out 0 50
+.end"""
+
+N2['rc-cr-quadrature'] = """* Generateur de quadrature RC-CR (biblio: pll/synth)
+R1 lo i 1k
+C1 i 0 1p
+C2 lo q 1p
+R2 q 0 1k
+.end"""
+
+N2['delay-cell-cc'] = """* Cellule de delai a charge cross-couplee (biblio: vco/osc)
+M1 outm inp s 0 NMOS
+M2 outp inm s 0 NMOS
+M3 outm outp vdd vdd PMOS
+M4 outp outm vdd vdd PMOS
+M5 outm vb vdd vdd PMOS
+M6 outp vb vdd vdd PMOS
+M7 s bias 0 0 NMOS
+.end"""
+
+N2['peak-detector'] = """* Detecteur de crete a suiveur (biblio: pa)
+D1 in x DIODE
+C1 x 0 10p
+R1 x 0 100k
+M1 vdd x out 0 NMOS
+M2 out vb 0 0 NMOS
+.end"""
+
+N2['pi-attenuator'] = """* Attenuateur en pi (biblio: pa)
+R1 in 0 100
+R2 in out 71
+R3 out 0 100
+.end"""
+
+N2['lc-match'] = """* Adaptation en L serie-shunt (biblio: pa)
+R1 rf in 50
+L1 in out 3n
+C1 out 0 1p
+R2 out 0 5
+.end"""
+
+for name, txt in N2.items():
+    with open(os.path.join(OUT, name + '.cir'), 'w') as f:
+        f.write(txt + '\n')
+print(f"total: {len([f for f in os.listdir(OUT) if f.endswith('.cir')])} netlists")

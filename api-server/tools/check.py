@@ -595,7 +595,9 @@ class Checker:
                 by_gate.setdefault(i['G'], []).append(cid)
         groups = []
         for net, refs in by_source.items():
-            if len(refs) == 2:
+            # même polarité exigée : NMOS+PMOS a source commune = étage de
+            # sortie push-pull (classe AB), pas une paire différentielle
+            if len(refs) == 2 and mos_kind(self.verts[refs[0]]['shape']) == mos_kind(self.verts[refs[1]]['shape']):
                 groups.append(('paire (source commune)', '14', refs))
         for net, refs in by_gate.items():
             if len(refs) >= 2 and any(info[r]['D'] == net for r in refs):

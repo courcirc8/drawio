@@ -1,0 +1,7 @@
+* Detecteur de crete a suiveur (biblio: pa)
+D1 in x DIODE
+C1 x 0 10p
+R1 x 0 100k
+M1 vdd x out 0 NMOS
+M2 out vb 0 0 NMOS
+.end

@@ -1,0 +1,6 @@
+* Generateur de quadrature RC-CR (biblio: pll/synth)
+R1 lo i 1k
+C1 i 0 1p
+C2 lo q 1p
+R2 q 0 1k
+.end

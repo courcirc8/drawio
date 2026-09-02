@@ -556,3 +556,27 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     Restent ouverts : StrongARM 10 err (double cc = hors gabarit),
     beauty 0-30 sur folded/cherry/strongarm (croisements structurels),
     ring-vco3 42 (boucle fermée), bandgap/pierce 2 err chacun.
+
+54. **Extension à 43 topologies (2026-09-02, 32→25 err, 30/43 à zéro)** :
+    - **La masse fait ±13 px, pas ±15** : la lane d'échappée des fils est à
+      ±14 px du flanc — une masse à ±15 la chevauchait STRUCTURELLEMENT de
+      1 px (through systématique sous chaque colonne à charge basse).
+      Chercher le conflit de CONSTANTES avant d'élargir des marges.
+    - **Cross-couplé = même polarité** (patterns) : la boucle NMOS/PMOS d'un
+      beta-multiplier (G↔D croisés) n'est pas un X de VCO — le faux flip
+      « gates au centre » coûtait 27 points de beauty.
+    - **Source massée ≠ paire différentielle** (patterns) : Wilson M2/M3
+      (sources à '0') étaient flippés « gates extérieures » contre la règle
+      du miroir. La masse est un rail même si railNames ne la liste pas.
+    - **Règle 14 du checker : même polarité aussi** — NMOS+PMOS à source
+      commune = étage push-pull (classe AB), pas une paire à aligner.
+    - **Deux fausses pistes MESURÉES puis retirées** : (a) marge d'obstacle
+      élargie pour petits corps dans les réparateurs (-2.5 puis -1 px) :
+      +4 à +9 erreurs — les rejets de candidats cascadent en détours pires
+      ailleurs ; (b) flip barycentrique des dipôles verticaux : le x des
+      dipôles tournés est calculé pour +90, inverser la rotation décale la
+      ligne de pins (gilbert 64→40). Mesurer chaque « évidence ».
+    Restent : strongarm 8 (double cc), wrap-around 5 (orientation dipôles,
+    à refaire EN AMONT du placement, pas en post-flip), inverter/lc-match
+    through (C de charge sous la masse du voisin), ota-2stage-pmos 28.8
+    (biais NMOS-en-bas du gabarit).

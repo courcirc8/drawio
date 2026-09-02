@@ -1,0 +1,7 @@
+* Ampli inverseur auto-polarise (biblio: adc/dac)
+M1 out in vdd vdd PMOS
+M2 out in 0 0 NMOS
+R1 in out 1meg
+C1 sig in 1p
+C2 out 0 100f
+.end
