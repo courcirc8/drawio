@@ -191,6 +191,34 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   // lanes déjà prises par les liaisons gate-gate FIGÉES : deux nets (LOP et
   // LOM du mélangeur en anneau) prenaient la même lane et se superposaient
   const usedGateLanes = [];
+  // règle 57 : les E/S se lisent HORIZONTALEMENT — entrée depuis la GAUCHE,
+  // sortie vers la DROITE, à hauteur de pin (jamais un port qui pend sous le
+  // schéma). Exception : nets DIFFÉRENTIELS (xP/xM), placement symétrique.
+  const allNetNames = [...netTerms.keys()].map((n) => n.toLowerCase());
+  const isDiffNet = (n) => {
+    const m2 = /^(.*?)(p|m)(\d*)$/i.exec(n);
+    if (m2 == null) return false;
+    const sw = (m2[1] + (m2[2].toLowerCase() === 'p' ? 'm' : 'p') + m2[3]).toLowerCase();
+    return allNetNames.includes(sw);
+  };
+  const IN_RE = /^(in$|in\d|vin|rf$|rf\d|sig|clk|lo$)/i;
+  const OUT_RE = /^(out$|out\d|vout|if$|sa$)/i;
+  const sidePort = (net, t, p, abs) => {
+    const left = IN_RE.test(net);
+    const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+    let px = left ? Math.min(abs.x, p.x) - 76 : Math.max(abs.x, p.x + (p.w || 0)) + 52;
+    const py = abs.y - 12;
+    const clash2 = () => [...placed.values()].some((v) =>
+      px < v.x + v.w + 6 && px + 24 > v.x - 6 && py < v.y + v.h + 6 && py + 24 > v.y - 6);
+    for (let k = 0; k < 8 && clash2(); k++) px += left ? -50 : 50;
+    const rot = left ? 90 : 270;
+    const cellS = addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, rotation: rot, value: net.toUpperCase() });
+    cellS.setAttribute('style', cellS.getAttribute('style') + 'horizontal=1;' +
+      (left ? 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=left;align=right;spacing=6;'
+            : 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=right;align=left;spacing=6;'));
+    placed.set(id, { id, x: px, y: py, w: 24, h: 24, rotation: rot });
+    wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
+  };
   for (const [net, terms] of netTerms) {
     if (net === vddNet || net === '0') continue;
     if (terms.length === 1) {
@@ -200,9 +228,17 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const abs = pinAbs(p, t.pin);
       const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
       // direction PHYSIQUE du pin (flips/rotations compris) : un pin qui
-      // regarde en haut reçoit son port AU-DESSUS, en bas AU-DESSOUS —
-      // jamais un port de côté relié par un détour
+      // regarde en haut reçoit son port AU-DESSUS ; pour une E/S nommée non
+      // différentielle, la règle 57 (gauche/droite) prime sur le bas/côté
       const midX = Math.abs(abs.x - (p.x + p.w / 2)) < Math.max(14, p.w / 3);
+      if (!isDiffNet(net) && (IN_RE.test(net) || OUT_RE.test(net)) &&
+          !(midX && abs.y <= p.y + 2)) {
+        const facesRight = (t.pin.x > 0.5) !== !!p.flipH;
+        if (midX || (IN_RE.test(net) ? !facesRight : facesRight)) {
+          sidePort(net, t, p, abs);
+          continue;
+        }
+      }
       if (midX && abs.y <= p.y + 2) {
         const cellUp = addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, value: net.toUpperCase() });
         cellUp.setAttribute('style', cellUp.getAttribute('style') + 'flipV=1;verticalLabelPosition=top;verticalAlign=bottom;');
@@ -422,6 +458,21 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         placed.set(id2, { id: id2, x: mx2 - 12, y: u1.abs.y + 40, w: 24, h: 24, rotation: 0 });
         wire(null, { source: id2, target: u1.t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: u1.t.pin.x, y: u1.t.pin.y } });
         continue;
+      }
+    }
+    // règle 57 : E/S single-ended -> port HORIZONTAL au bord (entrée sur le
+    // terminal le plus à gauche, sortie sur le plus à droite)
+    if (!isDiffNet(net) && (IN_RE.test(net) || OUT_RE.test(net))) {
+      const left2 = IN_RE.test(net);
+      const pick = [...withAbs].sort((u, v) => (left2 ? u.abs.x - v.abs.x : v.abs.x - u.abs.x))[0];
+      const p2k = placed.get(pick.t.ref);
+      if (p2k != null) {
+        const facesRight2 = (pick.t.pin.x > 0.5) !== !!p2k.flipH;
+        const midX2 = Math.abs(pick.abs.x - (p2k.x + (p2k.w || 0) / 2)) < Math.max(14, (p2k.w || 0) / 3);
+        if (midX2 || (left2 ? !facesRight2 : facesRight2)) {
+          sidePort(net, pick.t, p2k, pick.abs);
+          continue;
+        }
       }
     }
     const upFacing = (w2) => {
@@ -1158,10 +1209,16 @@ export function importNetlist2(model, parsed, opts = {}) {
       if (placed.has(id)) continue;
       const xN = nodeX.get(net), yN = rowOf.get(net);
       if (xN == null) continue;
+      // règle 57 : le port est DANS l'axe — entrée à gauche, sortie à
+      // droite, à hauteur du fil (jamais pendu sous le schéma)
       const left = net === axisPlan.inNet;
-      const px = xN + (left ? -70 : 46), py3 = yN + 36;
-      addVertex(model, { id, shape: PORT, x: px, y: py3, w: 24, h: 24, value: net.toUpperCase() });
-      placed.set(id, { id, x: px, y: py3, w: 24, h: 24, rotation: 0 });
+      const px = xN + (left ? -76 : 52), py3 = yN - 12;
+      const rotP = left ? 90 : 270;
+      const cellP = addVertex(model, { id, shape: PORT, x: px, y: py3, w: 24, h: 24, rotation: rotP, value: net.toUpperCase() });
+      cellP.setAttribute('style', cellP.getAttribute('style') + 'horizontal=1;' +
+        (left ? 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=left;align=right;spacing=6;'
+              : 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=right;align=left;spacing=6;'));
+      placed.set(id, { id, x: px, y: py3, w: 24, h: 24, rotation: rotP });
       term(net, id, 'N', getPin(PORT, 'N'));
     }
   }
@@ -1229,11 +1286,28 @@ export function importNetlist2(model, parsed, opts = {}) {
     const ai = info.get(ch.anchorRef);
     const gpin = getPin(ai.shapeKey, ai.gatePin || ai.po[1]);
     const ga = pinAbs(anchor, gpin);
+    // ÉVITEMENT : la chaîne part vers la gauche depuis l'ancre — si un corps
+    // déjà placé (source de polarisation sur le même nœud, classe AB) est sur
+    // son chemin, TOUTE la chaîne recule d'un cran de plus (jamais un corps
+    // sur un autre, règle absolue)
+    let chOff = 0;
+    {
+      const spanH = 130;
+      const clearChain = (off) => ch.elems.every((e2, k2) => {
+        const sh2 = getShape(info.get(e2.c.ref).shapeKey);
+        const cxT = ga.x - 110 - off - k2 * 125;
+        return ![...placed.values()].some((v) =>
+          v.id !== ch.anchorRef &&
+          cxT - sh2.w / 2 - 20 < v.x + v.w && cxT + sh2.w / 2 + 20 > v.x &&
+          ga.y - spanH / 2 < v.y + v.h && ga.y + spanH / 2 > v.y);
+      });
+      for (let t2 = 0; t2 < 6 && !clearChain(chOff); t2++) chOff += 70;
+    }
     let k = 0;
     for (const e of ch.elems) {
       const ci = info.get(e.c.ref);
       const shape = getShape(ci.shapeKey);
-      const cx = ga.x - 110 - k * 125; // pas compacté (le LNA étirait 800 px de vide)
+      const cx = ga.x - 110 - chOff - k * 125; // pas compacté (le LNA étirait 800 px de vide)
       // aligner les PINS de l'élément sur la ligne de chaîne (les selfs
       // horizontales ont leurs pins au bord bas, pas au centre)
       const cy = ga.y;
@@ -1475,7 +1549,7 @@ export function importNetlist2(model, parsed, opts = {}) {
       const x00 = x, y00 = y;
       let best = null;
       for (const [dx2, dy2] of [[0, -20], [0, 20], [-20, 0], [20, 0], [-20, -20], [20, -20], [-20, 20], [20, 20]]) {
-        for (let k = 1; k <= 12; k++) {
+        for (let k = 1; k <= 30; k++) {
           x = x00 + dx2 * k; y = y00 + dy2 * k;
           if (!overlaps()) {
             // le vertical est préféré : le latéral coûte double (il ignore
@@ -1486,7 +1560,13 @@ export function importNetlist2(model, parsed, opts = {}) {
           }
         }
       }
-      if (best != null) { x = best.x; y = best.y; } else { x = x00; y = y00; }
+      if (best != null) { x = best.x; y = best.y; } else {
+        // JAMAIS un corps sur un autre (règle absolue) : en dernier recours,
+        // sous tout le schéma — la cap 10p du classe AB se posait SUR la
+        // source 100u quand les 12 pas ne suffisaient pas
+        x = x00;
+        y = Math.max(...[...placed.values()].map((v) => v.y + v.h)) + 60;
+      }
     }
     const cellF = addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: rotF, value: c.value || '' });
     if (flipF) cellF.setAttribute('style', cellF.getAttribute('style') + 'flipH=1;');

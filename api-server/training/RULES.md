@@ -625,3 +625,23 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     rc-cr 88, 0 erreur sur les quatre. Le net d'entrée se reconnaît par
     /^(in|vin|rf|sig|lo|clk)/i ; si un shunt ne s'accroche à aucun nœud
     de l'axe, le plan avorte et l'ancien moteur reprend (sûreté).
+
+57. **E/S HORIZONTALES : entrée depuis la GAUCHE, sortie vers la DROITE**
+    (règle utilisateur : « les humains, hormis pour les schémas symétriques
+    ou à paire diff, aiment avoir les entrées depuis la gauche et les
+    sorties vers la droite, pas vers le bas »). Le port d'une E/S nommée
+    single-ended (in/vin/rf/sig/clk/lo -> gauche ; out/vout/if/sa ->
+    droite) se pose À HAUTEUR DE PIN, tourné (90/270, pin face au
+    circuit, label horizontal), sur le terminal le plus à gauche/droite
+    du net — jamais pendu sous le schéma. Exceptions : nets
+    DIFFÉRENTIELS (xP dont le xM existe : placement symétrique conservé),
+    pin regardant le mauvais côté (on ne traverse pas un corps), pin
+    plein haut (port au-dessus reste légitime). Appliqué aussi aux ports
+    d'axe passif. Corollaires du même lot :
+    - le push d'un flottant qui ne trouve PAS de case libre posait le
+      corps EN COLLISION (10p du classe AB sur la source 100u) — dernier
+      recours : sous tout le schéma, jamais l'un sur l'autre ;
+    - une CHAÎNE de signal n'avait aucun évitement : elle recule
+      maintenant d'un cran tant qu'un corps déjà placé est sur son chemin.
+    class-ab 1 err -> 0 (69->71), biquad 67->79, sallen 68->79,
+    inverter-amp 1 err -> 0 (61->71). Total 18 -> 17 err, beauty 69,2.
