@@ -71,6 +71,9 @@ export function checkDocument(model) {
     for (let i = 0; i + 1 < pl.length; i++) {
       for (const v of comps) {
         if (v.id === w.source || v.id === w.target) continue;
+        // cellules TEXTE (étiquettes refdes/valeurs) : pas des corps — le
+        // juge Python les exclut aussi
+        if ((v.style.leading || '') === 'text') continue;
         const r = aabbOf(v);
         if (segRect(pl[i], pl[i + 1], { x: r.x + 3, y: r.y + 3, w: r.w - 6, h: r.h - 6 })) {
           V.push({ rule: 'through', severity: 'error',

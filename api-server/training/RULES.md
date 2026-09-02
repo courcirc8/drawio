@@ -645,3 +645,33 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
       maintenant d'un cran tant qu'un corps déjà placé est sur son chemin.
     class-ab 1 err -> 0 (69->71), biquad 67->79, sallen 68->79,
     inverter-amp 1 err -> 0 (61->71). Total 18 -> 17 err, beauty 69,2.
+
+58. **Campagne « améliore tout » (2026-09-03, 17→11 err, 36/43 à zéro,
+    beauty 71,7)** — quatre chantiers mesurés + revue sceptique :
+    - **Checker JS dans le FAISCEAU de l'optimiseur** : le fastScore
+      pré-filtre est pénalisé de 30 pts par erreur checkDocument (règle 30
+      exclue, sa version JS sur-flagge). Piège trouvé par les nouveaux
+      tests : checkDocument renvoie {violations, errors} pas un tableau —
+      le try/catch avalait l'erreur et la pénalité était morte (cycle
+      « parfaitement neutre » = symptôme).
+    - **DUAL DE POLARITÉ** (mirrorPolarity) : un circuit à entrée PMOS =
+      miroir vertical de son dual NMOS (N↔P, vdd↔0, sources V/I
+      réorientées, stencils/rails/ancres rétablis, étiquettes ré-ancrées
+      SOUS les corps). ota-2stage-pmos 3 err/15 → 0 err/54. Périmètre
+      VOLONTAIREMENT étroit après revue sceptique (MOS seuls + bias I +
+      miroir NMOS à diode + pas de cc) : sur un cousin à bias résistif ou
+      en BJT le miroir produisait des fils à travers les corps.
+    - **Gabarit ANNEAU** : cycle d'inverseurs détecté → le net de RETOUR
+      reçoit une lane figée SOUS la rangée. ring-vco3 42,5 → 80,8, le
+      dessin des figures publiées.
+    - **BJT diode à collecteur massé DANS la colonne** (pas accolé façon
+      diode MOS) : bandgap 2 err/50 → 0 err/72, colpitts 89.
+    - **Fixtures GÉNÉRATEUR dans npm test** (10 circuits → LVS + 0 erreur
+      checker JS) : ont trouvé le bug de la pénalité morte dès leur
+      première exécution. Le checker JS exclut désormais les cellules
+      texte du through (aligné sur le juge Python).
+    Revue sceptique (sous-agent) : chiffres exacts vérifiés à la source,
+    mais dual cassé hors benchmark (corrigé par le périmètre étroit),
+    étiquettes miroitées sur les fils (corrigé), tests qui évitaient les
+    changements risqués (corrigé). Restent 11 : strongarm 3 (fils du X),
+    cherry 2, lna-shunt-fb 2, delay-cell 1, beta/pierce/wilson 1.

@@ -11,6 +11,7 @@ import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 import { scoreDocument } from './beauty.js';
 import { compactPage, fastScore } from './compact.js';
+import { checkDocument } from './check.js';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -52,9 +53,19 @@ async function evaluate(parsed, params, reference, fast = false) {
   const lvs = compare(extractNetlist(m), parsed);
   if (!lvs.match) return { ok: false, reason: 'lvs', lvs };
   if (fast) {
-    // score géométrique seul (~10x plus rapide) : pré-filtre du faisceau
+    // score géométrique seul (~10x plus rapide) : pré-filtre du faisceau,
+    // PÉNALISÉ par le checker JS — les wraps/superpositions/through étaient
+    // invisibles au score et le faisceau convergeait vers des fautifs que
+    // seul le gate final (3 finalistes) pouvait encore écarter
     const s = await fastScore(m);
-    return { ok: true, doc, m, placed, score: s, params, fast: true };
+    let jsErrs = 0;
+    try {
+      // règle 30 exclue : sa version JS (comptage de branches) sur-flagge
+      // là où la version Python (directions) ne voit rien
+      jsErrs = checkDocument(m).violations
+        .filter((v) => v.severity === 'error' && v.rule !== '30').length;
+    } catch { /* le score seul reste utilisable */ }
+    return { ok: true, doc, m, placed, score: s - 30 * jsErrs, jsErrs, params, fast: true };
   }
   const b = await scoreDocument(doc, m, { reference });
   return { ok: true, doc, m, placed, score: b.score, metrics: b.metrics, params };
@@ -105,7 +116,7 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   const beamW = 4;
   const generations = Math.max(2, Math.round(iterations / 4));
   const seed0 = await evaluate(parsed, {}, reference, true);
-  if (!seed0.ok) throw new Error('placement initial rejeté par le LVS: ' + JSON.stringify(seed0.lvs).slice(0, 300));
+  if (!seed0.ok) throw new Error('placement initial rejeté (' + seed0.reason + '): ' + JSON.stringify(seed0.lvs || {}).slice(0, 300));
   let beam = [seed0];
   history.push({ iter: 'g0', score: seed0.score, accepted: true });
   for (let g = 1; g <= generations; g++) {

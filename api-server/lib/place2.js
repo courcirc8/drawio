@@ -14,7 +14,7 @@
  *     aux nets >2 terminaux, condensateurs flottants placés entre colonnes.
  * Paramètres exposés dans `opts` pour la boucle d'optimisation.
  */
-import { addVertex, addWire, updateCell, getCell, httpError } from './model.js';
+import { addVertex, addWire, updateCell, getCell, httpError, allCells, cellInfo, setEdgePoints } from './model.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES, GROUND_SHAPE, GROUND_PIN } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs } from './route.js';
@@ -134,6 +134,53 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     const lower = upper === nA2 ? nB2 : nA2;
     quadRail.set(upper, { lane: qTop - 48 });
     quadRail.set(lower, { lane: qTop - 28 });
+  }
+
+  // ---- BOUCLE FERMÉE (oscillateur en anneau) : cellules inverseur
+  //      chaînées dont la dernière sortie REVIENT à la première gate — le
+  //      net de retour reçoit une LANE dédiée SOUS la rangée (tracé figé)
+  //      au lieu de serpenter à travers les cellules
+  let ringLink = null;
+  {
+    const cellsByGD = new Map(); // 'gate|drain' -> {p, n}
+    for (const k of comps) {
+      if (k.prefix !== 'M' || !placed.has(k.ref)) continue;
+      const ki = info.get(k.ref);
+      if (ki == null || ki.gate == null) continue;
+      const key = ki.gate + '|' + k.nodes[0];
+      if (!cellsByGD.has(key)) cellsByGD.set(key, {});
+      cellsByGD.get(key)[isPmos(k) ? 'p' : 'n'] = k.ref;
+    }
+    const inv = [...cellsByGD.entries()]
+      .filter(([, m2]) => m2.p != null && m2.n != null)
+      .map(([key, m2]) => ({ gate: key.split('|')[0], drain: key.split('|')[1], ...m2 }));
+    if (inv.length >= 3) {
+      const byGate = new Map(inv.map((c2) => [c2.gate, c2]));
+      let cur = inv[0], hops = 0;
+      const seen3 = new Set();
+      while (cur != null && !seen3.has(cur.gate) && hops <= inv.length) {
+        seen3.add(cur.gate); cur = byGate.get(cur.drain); hops++;
+      }
+      if (cur != null && cur.gate === inv[0].gate && hops === inv.length) {
+        // anneau fermé : le lien de RETOUR = celui dont le drain est le plus
+        // à droite et la gate consommatrice le plus à gauche
+        let best6 = null;
+        for (const c2 of inv) {
+          const nxt = byGate.get(c2.drain);
+          const dAbs2 = pinAbs(placed.get(c2.p), getPin(info.get(c2.p).shapeKey, info.get(c2.p).po[0]));
+          const gAbs2 = pinAbs(placed.get(nxt.p), getPin(info.get(nxt.p).shapeKey, info.get(nxt.p).gatePin));
+          const span2 = dAbs2.x - gAbs2.x;
+          if (best6 == null || span2 > best6.span) {
+            best6 = { span: span2, net: c2.drain, aRef: c2.p, aAbs: dAbs2, bRef: nxt.p, bAbs: gAbs2 };
+          }
+        }
+        if (best6 != null && best6.span > 100) {
+          const bot = Math.max(...[...placed.values()].map((v2) => v2.y + v2.h));
+          const lane6 = bot + 80;
+          ringLink = { ...best6, lane: lane6 };
+        }
+      }
+    }
   }
 
   // rails : tap VDD au-dessus de chaque terminal du net vdd ; masse sous chaque terminal de 0
@@ -353,6 +400,21 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
           if (iA >= 0 && iB >= 0) preLinkedQuad.push([iA, iB]);
         }
       }
+      // net de RETOUR d'un anneau : tracé figé par la lane dédiée du bas
+      if (ringLink != null && net === ringLink.net) {
+        const ti2 = info.get(ringLink.aRef), tj2 = info.get(ringLink.bRef);
+        const aPin = getPin(ti2.shapeKey, ti2.po[0]);
+        const bPin = getPin(tj2.shapeKey, tj2.gatePin);
+        const xdE = ringLink.aAbs.x + 14, xgE = ringLink.bAbs.x - 14;
+        wire(null, { source: ringLink.aRef, target: ringLink.bRef,
+          sourcePin: { x: aPin.x, y: aPin.y }, targetPin: { x: bPin.x, y: bPin.y },
+          style: 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;jettySize=0;endArrow=none;endFill=0;drawioApiFixedRoute=1;',
+          points: [{ x: xdE, y: ringLink.aAbs.y }, { x: xdE, y: ringLink.lane },
+                   { x: xgE, y: ringLink.lane }, { x: xgE, y: ringLink.bAbs.y }] });
+        const iA2 = terms.findIndex((t) => t.ref === ringLink.aRef && t.pinName === ti2.po[0]);
+        const iB2 = terms.findIndex((t) => t.ref === ringLink.bRef && t.pinName === tj2.gatePin);
+        if (iA2 >= 0 && iB2 >= 0) preLinkedQuad.push([iA2, iB2]);
+      }
       // paire cross-couplée : la gate rejoint le drain du PARTENAIRE par une
       // diagonale volontaire (le X des figures publiées) — deux tracés
       // orthogonaux qui se disputent les mêmes lanes sont irréparables (VCO)
@@ -542,10 +604,153 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   return wires;
 }
 
+/** Miroir vertical de POLARITÉ : le modèle contient le layout du DUAL
+ * (N<->P, rails échangés) — on le retourne verticalement en rétablissant
+ * les identités originales : stencils N<->P, masses <-> taps VDD, sources
+ * V/I basculées (flipV), dipôles verticaux à rotation inversée, ancres des
+ * fils inversées là où le STENCIL a changé (les flips sont interprétés par
+ * drawio sur les ancres, pas les swaps de stencil). */
+function mirrorPolarity(model, vddName, reversedRefs = new Set()) {
+  const cells = allCells(model).map(cellInfo);
+  const verts = cells.filter((c) => c.kind === 'vertex' && c.x != null);
+  if (verts.length === 0) return;
+  const S = Math.min(...verts.map((v) => v.y)) + Math.max(...verts.map((v) => v.y + v.h));
+  const anchorFlip = new Set();
+  for (const v of verts) {
+    const el = getCell(model, v.id);
+    if (el == null) continue;
+    const st = el.getAttribute('style') || '';
+    const shape = v.style.map.get('shape') || '';
+    const newY = S - v.y - v.h;
+    if (/transistors\.(nmos|pmos)\b/.test(shape)) {
+      const toP = /transistors\.nmos\b/.test(shape);
+      el.setAttribute('style', toP
+        ? st.replace('transistors.nmos', 'transistors.pmos')
+        : st.replace('transistors.pmos', 'transistors.nmos'));
+      const val = el.getAttribute('value') || '';
+      el.setAttribute('value', toP ? val.replace(/NMOS/i, 'PMOS') : val.replace(/PMOS/i, 'NMOS'));
+      anchorFlip.add(v.id);
+      updateCell(model, v.id, { y: newY });
+    } else if (/transistors\.(npn|pnp)_transistor/.test(shape)) {
+      const toPnp = /npn_transistor/.test(shape);
+      el.setAttribute('style', toPnp
+        ? st.replace('npn_transistor', 'pnp_transistor')
+        : st.replace('pnp_transistor', 'npn_transistor'));
+      const val = el.getAttribute('value') || '';
+      el.setAttribute('value', toPnp ? val.replace(/NPN/i, 'PNP') : val.replace(/PNP/i, 'NPN'));
+      anchorFlip.add(v.id);
+      updateCell(model, v.id, { y: newY });
+    } else if (shape === GROUND_SHAPE) {
+      // masse -> tap VDD : le point de connexion (N, haut) devient le BAS du tap
+      const px = v.x + v.w / 2, pyM = S - v.y;
+      el.setAttribute('style', st.replace(GROUND_SHAPE, VDD_TAP)
+        .replace('verticalLabelPosition=bottom;verticalAlign=top;', 'verticalLabelPosition=top;verticalAlign=bottom;'));
+      el.setAttribute('value', vddName.toUpperCase());
+      updateCell(model, v.id, { x: px - 20, y: pyM - 26, w: 40, h: 26 });
+      anchorFlip.add(v.id);
+    } else if (shape === VDD_TAP) {
+      // tap VDD -> masse : le point de connexion (S, bas) devient le HAUT de la masse
+      const px = v.x + v.w / 2, pyM = S - (v.y + v.h);
+      el.setAttribute('style', st.replace(VDD_TAP, GROUND_SHAPE)
+        .replace('verticalLabelPosition=top;verticalAlign=bottom;', 'verticalLabelPosition=bottom;verticalAlign=top;'));
+      el.setAttribute('value', '');
+      updateCell(model, v.id, { x: px - 13, y: pyM, w: 26, h: 18 });
+      anchorFlip.add(v.id);
+    } else if (/dc_source|current_source|signal_sources\.signal_source/.test(shape)) {
+      // source dont l'ordre des noeuds a été INVERSÉ dans le dual : le
+      // miroir restaure déjà son orientation — la basculer en plus la casse
+      if (!reversedRefs.has(v.id)) {
+        el.setAttribute('style', v.style.map.get('flipV') === '1'
+          ? st.replace(/flipV=1;?/, '') : st + 'flipV=1;');
+      } else {
+        anchorFlip.add(v.id);
+      }
+      updateCell(model, v.id, { y: newY });
+    } else if (shape === PORT) {
+      const rotP = parseFloat(v.style.map.get('rotation') || '0');
+      if (rotP === 0) {
+        el.setAttribute('style', v.style.map.get('flipV') === '1'
+          ? st.replace(/flipV=1;?/, '') : st + 'flipV=1;');
+      }
+      updateCell(model, v.id, { y: newY });
+    } else {
+      const rotD = parseFloat(v.style.map.get('rotation') || '0');
+      if (rotD === 90 || rotD === -90) {
+        el.setAttribute('style', st.replace(/rotation=-?90/, 'rotation=' + (-rotD)));
+      }
+      updateCell(model, v.id, { y: newY });
+    }
+  }
+  // étiquettes refdes : la convention maison les met SOUS le corps — le
+  // miroir les envoyait au-dessus, en plein sur les fils (revue sceptique)
+  for (const v of verts) {
+    if (!v.id.startsWith('LBL_')) continue;
+    const body = verts.find((v2) => v2.id === v.id.slice(4));
+    if (body == null) continue;
+    updateCell(model, v.id, { y: S - body.y + 4 });
+  }
+  for (const c of cells) {
+    if (c.kind !== 'edge') continue;
+    const el = getCell(model, c.id);
+    if (el == null) continue;
+    const pts = (c.points || []).map((p) => ({ x: p.x, y: S - p.y }));
+    if (pts.length) setEdgePoints(el, pts);
+    let st2 = el.getAttribute('style') || '';
+    for (const [who, cid] of [['exit', c.source], ['entry', c.target]]) {
+      if (!anchorFlip.has(cid)) continue;
+      const key = who + 'Y';
+      const m3 = new RegExp(key + '=([\\d.]+)').exec(st2);
+      if (m3 != null) st2 = st2.replace(m3[0], key + '=' + (1 - parseFloat(m3[1])));
+    }
+    el.setAttribute('style', st2);
+  }
+}
+
 export function importNetlist2(model, parsed, opts = {}) {
   const P = { ...DEF, ...opts };
   const comps = parsed.components;
   if (comps.length === 0) throw httpError(400, 'netlist vide');
+
+  // ---- DUAL DE POLARITÉ (règle 58) : le gabarit ne connaît qu'un monde
+  //      (entrée NMOS, miroirs PMOS en haut). Un circuit à ENTRÉE PMOS est
+  //      le MIROIR VERTICAL de son dual : on génère le dual (N<->P,
+  //      vdd<->0), puis on miroite le résultat en rétablissant stencils,
+  //      rails et ancres. Le LVS aval compare à la netlist ORIGINALE.
+  if (!opts._dual) {
+    const vdd0 = [...new Set(comps.flatMap((c) => c.nodes))].find((n) => /^a?v(dd|cc)d?$/i.test(n));
+    let st0 = null;
+    try { st0 = detectStructures(parsed); } catch { /* pas de MOS */ }
+    // signature du « monde à l'envers » : paires d'entrée PMOS + miroirs
+    // NMOS (à diode) en bas, SANS cross-couplage (un VCO PMOS se dessine
+    // très bien en direct) ni architecture repliée (pas de miroir du tout)
+    const nmosMirror = st0 != null && st0.mirrors.some((mg) =>
+      mg.refs.every((r) => { const k = comps.find((k2) => k2.ref === r); return k != null && !isPmos(k); }));
+    // périmètre VOLONTAIREMENT étroit (revue sceptique : sur un cousin à
+    // bias résistif ou en BJT, le miroir produisait des fils à travers les
+    // corps — pire que le mode direct) : MOS uniquement, bias par source I
+    if (vdd0 != null && st0 != null && st0.diffPairs.length > 0 &&
+        st0.crossCoupled.length === 0 && nmosMirror &&
+        !comps.some((k) => k.prefix === 'Q') &&
+        comps.some((k) => k.prefix === 'I') &&
+        st0.diffPairs.every((pr) => isPmos(comps.find((k) => k.ref === pr.refs[0])))) {
+      const mapNet = (n) => (n === vdd0 ? '0' : (n === '0' ? vdd0 : n));
+      const reversedRefs = new Set();
+      const dualComps = comps.map((c) => {
+        let nodes = c.nodes.map(mapNet);
+        let model2 = c.model;
+        if (c.prefix === 'M') model2 = isPmos(c) ? 'NMOS' : 'PMOS';
+        if (c.prefix === 'Q') model2 = isPmos(c) ? 'NPN' : 'PNP';
+        let revd = false;
+        if ((c.prefix === 'V' || c.prefix === 'I') &&
+            (nodes[0] === '0' || nodes[1] === vdd0)) { nodes = [nodes[1], nodes[0]]; revd = true; }
+        if (revd) reversedRefs.add(c.ref);
+        return { ...c, nodes, model: model2 };
+      });
+      const res = importNetlist2(model, { ...parsed, components: dualComps }, { ...opts, _dual: true });
+      mirrorPolarity(model, vdd0, reversedRefs);
+      return res;
+    }
+  }
   const info = new Map(comps.map((c) => [c.ref, condInfo(c)]));
   const unplaced = new Set(comps.map((c) => c.ref));
   const byTopNet = new Map();
@@ -664,7 +869,10 @@ export function importNetlist2(model, parsed, opts = {}) {
     }).length;
     // diode de polarisation accrochée au net (D=G=net, S=0) : accolée à
     // CÔTÉ du nœud, pas dans une colonne de conduction (règle E1/Fig.13)
-    const sideDiodes = below.filter((c) => (c.prefix === 'M' || c.prefix === 'Q') &&
+    // BJT exclus : un PNP diode à collecteur massé (bandgap) se place DANS
+    // la colonne sous son émetteur, pas accolé de côté comme une diode de
+    // polarisation MOS — accolés, leurs fils de base se croisaient
+    const sideDiodes = below.filter((c) => c.prefix === 'M' &&
       c.nodes[0] === c.nodes[1] && info.get(c.ref).bot === '0');
     for (const d of sideDiodes) {
       slots.set(d.ref, { col: col - 0.55, level: level + 0.55 });
