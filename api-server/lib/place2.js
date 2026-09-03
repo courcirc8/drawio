@@ -914,9 +914,17 @@ export function importNetlist2(model, parsed, opts = {}) {
   {
     const cc = structures.crossCoupled;
     const kindOf = (r) => isPmos(comps.find((k) => k.ref === r));
-    for (let i = 0; i < cc.length && latchRoots == null; i++) {
-      for (let j = i + 1; j < cc.length; j++) {
-        const a = cc[i], b = cc[j];
+    // demi-latch (cellule de délai) : une paire cc + une paire DIFF de
+    // polarité opposée sur les mêmes drains — même gabarit que le latch
+    const partners = [...cc];
+    for (const dp of structures.diffPairs) {
+      const drains = dp.refs.map((r) => (comps.find((k) => k.ref === r) || { nodes: [] }).nodes[0]);
+      if (new Set(drains).size === 2) partners.push({ refs: dp.refs, nets: drains, _diff: true });
+    }
+    for (let i = 0; i < partners.length && latchRoots == null; i++) {
+      for (let j = i + 1; j < partners.length; j++) {
+        const a = partners[i], b = partners[j];
+        if (a._diff && b._diff) continue; // il faut au moins une vraie cc
         if (new Set([...a.nets, ...b.nets]).size !== 2) continue;
         if (kindOf(a.refs[0]) === kindOf(b.refs[0])) continue;
         const pPair = kindOf(a.refs[0]) ? a : b;
