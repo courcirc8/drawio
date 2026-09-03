@@ -1315,6 +1315,19 @@ export function importNetlist2(model, parsed, opts = {}) {
     }
   }
 
+  // ---- latch : ÉLARGIR L'ENTREFER central — les gates de la paire cc se
+  //      font face à ~15 px, où DEUX verticales de nets différents doivent
+  //      passer (le X) : impossible à ≥10 px d'écart. +0.3 colonne pour
+  //      tout ce qui est à droite du centre.
+  if (latchRoots != null && latchRoots.length >= 3) {
+    const ccL = latchRoots[1], ccR = latchRoots[2];
+    const sL = slots.get(ccL), sR = slots.get(ccR);
+    if (sL != null && sR != null && sR.col > sL.col) {
+      const cut = (sL.col + sR.col) / 2;
+      for (const [, sl2] of slots) if (sl2.col > cut) sl2.col += 0.3;
+    }
+  }
+
   // ---- aucun DEUX corps dans la même case (col, level) : deux paires
   //      cross-couplées partageant les mêmes nets (StrongARM) se
   //      superposaient exactement — l'alimenté descend sous son producteur
