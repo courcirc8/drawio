@@ -385,6 +385,10 @@ export async function routePage(model, edgeIds, opts) {
   // té-swaps) APRÈS la 2e fusion — une dernière passe rattrape les
   // parallèles même-net qu'il vient de créer
   if (process.env.DISABLE_MERGE !== '1') mergeSameNet(model, vertices);
+  // ---- garde ultime : AUCUN fil à travers son PROPRE corps au-delà de
+  // 8 px du pin — certaines réparations (fusion, redressements) exemptent
+  // le corps propre et recréaient la faute après la validation finale
+  fixOwnBodyThrough(model, vertices);
   // ---- nettoyage : points dupliqués et pointes A->B->A laissés par les réparations
   cleanupDegeneratePoints(model);
   // ---- points de contact sur les branches >=3 terminaux (après géométrie finale)
@@ -657,7 +661,14 @@ export function distributeTees(model, obstacles) {
       const hit = Math.max(p.x, q.x) > v.x + 1.5 && Math.min(p.x, q.x) < v.x + v.w - 1.5 &&
         Math.max(p.y, q.y) > v.y + 1.5 && Math.min(p.y, q.y) < v.y + v.h - 1.5;
       if (!hit) return false;
-      return v.id !== it.c.source && v.id !== it.c.target;
+      if (v.id !== it.c.source && v.id !== it.c.target) return true;
+      // corps PROPRE : pénétration tolérée seulement à 8 px du pin (le té
+      // du beta-multiplier se redressait À TRAVERS son transistor)
+      const own = v.id === it.c.source ? it.pl[0] : it.pl[it.pl.length - 1];
+      const cx3 = (x3) => Math.max(v.x + 1.5, Math.min(v.x + v.w - 1.5, x3));
+      const cy3 = (y3) => Math.max(v.y + 1.5, Math.min(v.y + v.h - 1.5, y3));
+      return Math.max(Math.hypot(cx3(p.x) - own.x, cy3(p.y) - own.y),
+        Math.hypot(cx3(q.x) - own.x, cy3(q.y) - own.y)) > 8;
     })) return false;
     if (pinPts.some((pp) => pp.net !== it.net && dps(pp.p, p, q) < 5)) return false;
     for (const o of infos) {
@@ -752,6 +763,79 @@ export function distributeTees(model, obstacles) {
 /** Répartit
 
 /** Retire des waypoints les doublons consécutifs et les pointes A->B->A. */
+/** Garde ultime contre le fil qui traverse son PROPRE corps (au-delà de
+ * 8 px de son pin) : reroute en U par une échappée ±14 px du pin puis une
+ * lane claire au-dessus/en dessous. Les tracés figés sont laissés. */
+function fixOwnBodyThrough(model, vertices) {
+  const cells = allCells(model).map(cellInfo);
+  const byId = new Map(cells.map((c) => [c.id, c]));
+  const ownFar = (seg0, seg1, v, own) => {
+    const bx = { x: v.x + 1.5, y: v.y + 1.5, w: v.w - 3, h: v.h - 3 };
+    const hit = Math.max(seg0.x, seg1.x) > bx.x && Math.min(seg0.x, seg1.x) < bx.x + bx.w &&
+      Math.max(seg0.y, seg1.y) > bx.y && Math.min(seg0.y, seg1.y) < bx.y + bx.h;
+    if (!hit) return 0;
+    const cx2 = (x3) => Math.max(bx.x, Math.min(bx.x + bx.w, x3));
+    const cy2 = (y3) => Math.max(bx.y, Math.min(bx.y + bx.h, y3));
+    return Math.max(Math.hypot(cx2(seg0.x) - own.x, cy2(seg0.y) - own.y),
+      Math.hypot(cx2(seg1.x) - own.x, cy2(seg1.y) - own.y));
+  };
+  for (const c of cells) {
+    if (c.kind !== 'edge' || c.source == null || c.target == null || c.source === c.target) continue;
+    if (c.style.map.has('drawioApiFixedRoute') || c.style.map.get('edgeStyle') === 'none') continue;
+    const src = byId.get(c.source), tgt = byId.get(c.target);
+    if (src == null || tgt == null || src.x == null || tgt.x == null) continue;
+    const a = pinAbs(src, { x: parseFloat(c.style.map.get('exitX')), y: parseFloat(c.style.map.get('exitY')) });
+    const b = pinAbs(tgt, { x: parseFloat(c.style.map.get('entryX')), y: parseFloat(c.style.map.get('entryY')) });
+    if ([a.x, a.y, b.x, b.y].some(Number.isNaN)) continue;
+    const pl = [a, ...(c.points || []), b];
+    let bad = false;
+    for (let i = 0; i + 1 < pl.length && !bad; i++) {
+      for (const [vid, own] of [[c.source, a], [c.target, b]]) {
+        const v = byId.get(vid);
+        if (v.w < 30 || v.h < 30) continue;
+        if (ownFar(pl[i], pl[i + 1], v, own) > 8) { bad = true; break; }
+      }
+    }
+    if (!bad) continue;
+    // candidats U : échappée horizontale ±14 du pin source, lane au-dessus
+    // ou en dessous des deux corps, descente sur le pin cible
+    const clearSeg2 = (p, q) => !vertices.some((v) => {
+      const hit = Math.max(p.x, q.x) > v.x + 1.5 && Math.min(p.x, q.x) < v.x + v.w - 1.5 &&
+        Math.max(p.y, q.y) > v.y + 1.5 && Math.min(p.y, q.y) < v.y + v.h - 1.5;
+      if (!hit) return false;
+      if (v.id !== c.source && v.id !== c.target) return true;
+      return ownFar(p, q, v, v.id === c.source ? a : b) > 8;
+    });
+    const yTop = Math.min(src.y, tgt.y), yBot = Math.max(src.y + src.h, tgt.y + tgt.h);
+    let done = false;
+    for (let k = 0; k < 5 && !done; k++) {
+      for (const lane of [yTop - 24 - k * 14, yBot + 24 + k * 14]) {
+        for (const esc of [-14, 14]) {
+          for (const escB of [0, -14, 14]) {
+          const wp = escB === 0
+            ? [{ x: a.x + esc, y: a.y }, { x: a.x + esc, y: lane }, { x: b.x, y: lane }]
+            : [{ x: a.x + esc, y: a.y }, { x: a.x + esc, y: lane },
+               { x: b.x + escB, y: lane }, { x: b.x + escB, y: b.y }];
+          const full = [a, ...wp, b];
+          let ok2 = true;
+          for (let i = 0; i + 1 < full.length && ok2; i++) {
+            if (!clearSeg2(full[i], full[i + 1]) || hugsMosFlank(full[i], full[i + 1], vertices)) ok2 = false;
+          }
+          if (ok2) {
+            const cellEl2 = allCells(model).find((el) => el.getAttribute('id') === c.id);
+            if (cellEl2 != null) setEdgePoints(cellEl2, wp);
+            done = true;
+            break;
+          }
+          }
+          if (done) break;
+        }
+        if (done) break;
+      }
+    }
+  }
+}
+
 function cleanupDegeneratePoints(model) {
   for (const el of allCells(model)) {
     const c = cellInfo(el);
