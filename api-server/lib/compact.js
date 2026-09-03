@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { allCells, cellInfo, updateCell, serialize } from './model.js';
 import { routePage, pinAbs } from './route.js';
+import { connectivityFingerprint, assertGeometryOnly } from './invariant.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.resolve(HERE, '../tools/beauty.py');
@@ -63,7 +64,24 @@ function candidates(model, tol) {
   return moves;
 }
 
-export async function compactPage(model, { tol = 30, maxMoves = 24 } = {}) {
+/**
+ * compactPage — public entry point, wrapped with the connectivity invariant
+ * (see invariant.js). The docstring at the top of this file already claimed
+ * "LVS invariant car seules les positions changent" (only positions change),
+ * but that claim was never actually checked anywhere — it relied on every
+ * candidate move being routed through routePage() (itself now geometry-only
+ * under the LVS-scoped fingerprint, see route.js) and on updateCell() here
+ * only ever patching `dx`/`dy`. Making the check structural, instead of a
+ * comment nobody re-verifies, is the whole point of this module.
+ */
+export async function compactPage(model, opts) {
+  const before = connectivityFingerprint(model);
+  const result = await compactPageImpl(model, opts);
+  assertGeometryOnly(before, connectivityFingerprint(model), 'compactPage');
+  return result;
+}
+
+async function compactPageImpl(model, { tol = 30, maxMoves = 24 } = {}) {
   let score = await fastScore(model);
   let applied = 0;
   const tried = new Set();

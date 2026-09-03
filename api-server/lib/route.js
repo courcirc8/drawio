@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { allCells, cellInfo, setEdgePoints, updateCell, mergeStyle } from './model.js';
 import { getShape } from './stencils.js';
 import { isJunctionCell } from './components.js';
+import { connectivityFingerprint, assertGeometryOnly } from './invariant.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const LIB_DIR = path.resolve(HERE, '../../src/main/webapp/js/libavoid-js');
@@ -132,7 +133,31 @@ function anchorConstraint(styleMap, prefix, cell, aabb) {
  * Route all (or the given) wires of a page. Mutates edge waypoints.
  * @returns {ids: routedEdgeIds}
  */
+/**
+ * routePage — public entry point, wrapped below with the connectivity
+ * invariant (see invariant.js). EMPIRICAL FINDING (this hardening pass):
+ * routePageImpl never writes an edge's source/target/exitName/entryName —
+ * grepped every write in this file; the only mutations are waypoints
+ * (setEdgePoints), jettySize style patches, dot-glyph visibility
+ * (apiJunctionHidden), and addContactDots()'s own purge-and-recreate of
+ * `contactDot=1` decorative vertices. That last one DOES add/remove vertex
+ * cells on every call, which is why invariant.js's vertexKey() excludes
+ * `junction`-role cells by classify() — a contact dot is never a wire's
+ * source/target here, and is never emitted as a SPICE component (see
+ * netlist.js connectivity()), so its churn is invisible to LVS by
+ * construction, not by coincidence. Routing is therefore genuinely
+ * geometry-only under the LVS-scoped fingerprint, and is wrapped as a WHOLE
+ * function (not split into geometry-only sub-passes like rewire.js's) since
+ * every one of its internal passes qualifies.
+ */
 export async function routePage(model, edgeIds, opts) {
+  const before = connectivityFingerprint(model);
+  const result = await routePageImpl(model, edgeIds, opts);
+  assertGeometryOnly(before, connectivityFingerprint(model), 'routePage');
+  return result;
+}
+
+async function routePageImpl(model, edgeIds, opts) {
   loadHelpers();
   const cells = allCells(model).map(cellInfo);
   const vertices = cells.filter((c) => c.kind === 'vertex' && c.x != null)

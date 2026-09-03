@@ -62,6 +62,7 @@ import { allCells, cellInfo, addWire, deleteCell, updateCell } from './model.js'
 import { classify, activePins, pinOrderFor, identityOf, isJunctionCell } from './components.js';
 import { pinAbs, rotatedAabb, offsetEdgeLabels } from './route.js';
 import { parseSpice } from './netlist.js';
+import { connectivityFingerprint, assertGeometryOnly } from './invariant.js';
 
 const DEFAULT_TOL = 8;      // px: "share an X or a Y" tolerance
 const SNAP_EPS = 0.6;       // below this, treat as exactly aligned (check.py's own epsilon)
@@ -850,8 +851,18 @@ function rewireOnce(model, netlistText, opts = {}) {
   // as="offset"> geometry, so it cannot change wire count, source/target,
   // exit/entry anchors or waypoints -- none of tools/check.py's structural
   // rules (lvs, diagonal, dot-*) read it.
+  // ---- geometry-only sub-passes: wrapped individually (not the whole of
+  // rewireOnce, whose whole PURPOSE is to change connectivity by design) so
+  // a violation names the actual offending pass. See invariant.js's
+  // module docstring for why a fingerprint catches this and a re-run of
+  // compare() would not (it cannot be fooled by two compensating errors).
+  let f0 = connectivityFingerprint(model);
   offsetEdgeLabels(model);
+  assertGeometryOnly(f0, connectivityFingerprint(model), 'offsetEdgeLabels');
+
+  f0 = connectivityFingerprint(model);
   const straightened = straightenAlignedEdges(model);
+  assertGeometryOnly(f0, connectivityFingerprint(model), 'straightenAlignedEdges');
 
   return { wires, warnings, unreachable: unreachableReport, straightened };
 }

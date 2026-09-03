@@ -370,8 +370,23 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
 // junction dots as the only intermediate routing nodes. Never re-places —
 // component/ground/port/dot geometry is byte-identical before and after
 // (only edge cells are touched: deleted, then re-added). See lib/rewire.js.
+// LAYER 2 (see migration/06-cursor-infra-migration or the task that added
+// this): /rewire is the ONE endpoint diagnosed to actually have bitten LVS —
+// chaining it after an /optimize run produced 13 "terminal unreachable"
+// warnings and LVS `false` with nothing objecting. It already receives the
+// reference .cir as its own request body, so it can gate itself with no API
+// change: made transactional here, snapshotting the whole document (not
+// just the page) before rewiring and rolling back to that exact snapshot if
+// the call flips a passing LVS to a failing one. Deliberately NOT a
+// connectivityFingerprint() check (invariant.js, layer 1) — rewire() is
+// SUPPOSED to change connectivity, that's its entire job; the correct check
+// here is the real thing, compare() against the caller's own reference.
+// Fails CLOSED (409, rolled back), never just a warning. If LVS was ALREADY
+// false before the call, no rollback: the caller may be deliberately
+// repairing a broken document, and silently reverting their starting point
+// would be worse than doing nothing.
 app.post('/documents/:id/rewire', wrap((req, res) => {
-  const { model: m } = pageOf(req);
+  const { entry, model: m } = pageOf(req);
   const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
   if (spice == null || spice === '') throw model.httpError(400, 'SPICE netlist required (text body or {"spice": …})');
   // allowFlip: opt-in, default OFF (see lib/rewire.js module contract) — via
@@ -383,11 +398,23 @@ app.post('/documents/:id/rewire', wrap((req, res) => {
   const opts = {};
   if (req.body && req.body.tolerance != null) opts.tolerance = req.body.tolerance;
   if (allowFlip) opts.allowFlip = true;
+
+  const golden = netlist.parseSpice(spice);
+  const lvsBefore = lvs.compare(netlist.extractNetlist(m), golden);
+  const snapshotXml = model.serialize(entry.doc); // whole document, not just this page
+
   const { wires, warnings, unreachable, flipped, straightened } = rewire(m, spice, opts);
   const extracted = netlist.extractNetlist(m);
-  const golden = netlist.parseSpice(spice);
   const lvsReport = lvs.compare(extracted, golden);
-  res.json({ wires, warnings, lvs: lvsReport, unreachable, flipped, straightened });
+
+  if (lvsBefore.match && !lvsReport.match) {
+    entry.doc = model.parseDrawio(snapshotXml); // roll back: byte-identical to pre-call
+    return res.status(409).json({
+      error: 'rewire would break LVS (was passing, would now fail) — rolled back, document unchanged',
+      lvs_before: lvsBefore, lvs_after: lvsReport, warnings, unreachable,
+    });
+  }
+  res.json({ wires, warnings, lvs: lvsReport, lvs_before: lvsBefore, unreachable, flipped, straightened });
 }));
 
 app.get('/documents/:id/netlist', wrap((req, res) => {
