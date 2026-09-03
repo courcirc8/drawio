@@ -861,10 +861,21 @@ class Checker:
                              (max(x1, x2), max(y1, y2)))
 
     def check_wrap(self):
-        # DIPÔLE monté à l'envers : le fil part d'un pin qui regarde d'un
+        # CONTOURNEMENT du corps : le fil part d'un pin qui regarde d'un
         # côté et finit de l'autre côté du corps (Lb1 en Π). Restreint aux
         # 2-terminaux : pour un MOS/OTA le contournement peut être forcé par
         # la topologie (bus de gates, contre-réaction).
+        #
+        # C'est une règle PUREMENT GÉOMÉTRIQUE : elle mesure un détour de
+        # routage, jamais une polarité. Le message disait « dipôle monté à
+        # l'envers » jusqu'au 2026-09-03, ce qui se lit comme une affirmation
+        # électrique — or une capacité ou une résistance n'a pas de sens de
+        # montage, et tourner la pièce de 180° ne change rien au circuit. La
+        # confusion a été signalée par l'utilisateur après qu'un rapport a
+        # annoncé « C9 monté à l'envers » sur une capacité. Même pour une
+        # diode, présente dans DIPOLES, cette règle ne regarde PAS l'anode et
+        # la cathode. Le défaut est le détour du fil, et le correctif est de
+        # retourner le symbole ou de déplacer la destination.
         DIPOLES = ('resistors.', 'capacitors.', 'inductors.', 'diodes.')
         for e in self.edges:
             if e['id'] not in self.polys or e['src'] == e['tgt']:
@@ -906,7 +917,8 @@ class Checker:
                 if bad:
                     self.add('wrap-around', 'error',
                              f"fil {e['id']} : le pin ({side}) de {cid} regarde à "
-                             f"l'opposé de sa destination — dipôle monté à l'envers",
+                             f"l'opposé de sa destination — le fil contourne le "
+                             f"corps (défaut géométrique, pas de polarité)",
                              pt)
 
     def check_annotation_clear(self):
