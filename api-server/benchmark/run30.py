@@ -6,7 +6,7 @@ Usage: python3 benchmark/run30.py <outdir> [--optimize N] [--only a,b,c]
 """
 import json, os, subprocess, sys, time, urllib.request
 
-BASE = 'http://127.0.0.1:8770'
+BASE = os.environ.get('DRAWIO_BASE', 'http://127.0.0.1:8770')
 HERE = os.path.dirname(os.path.abspath(__file__))
 NETS = os.path.join(HERE, 'netlists30')
 CHECK = os.path.join(HERE, '..', 'tools', 'check.py')
