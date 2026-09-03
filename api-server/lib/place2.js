@@ -14,7 +14,7 @@
  *     aux nets >2 terminaux, condensateurs flottants placés entre colonnes.
  * Paramètres exposés dans `opts` pour la boucle d'optimisation.
  */
-import { addVertex, addWire, updateCell, getCell, httpError } from './model.js';
+import { addVertex, addWire, updateCell, getCell, httpError, allCells, cellInfo, setEdgePoints } from './model.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES, GROUND_SHAPE, GROUND_PIN } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs } from './route.js';
@@ -136,6 +136,53 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     quadRail.set(lower, { lane: qTop - 28 });
   }
 
+  // ---- BOUCLE FERMÉE (oscillateur en anneau) : cellules inverseur
+  //      chaînées dont la dernière sortie REVIENT à la première gate — le
+  //      net de retour reçoit une LANE dédiée SOUS la rangée (tracé figé)
+  //      au lieu de serpenter à travers les cellules
+  let ringLink = null;
+  {
+    const cellsByGD = new Map(); // 'gate|drain' -> {p, n}
+    for (const k of comps) {
+      if (k.prefix !== 'M' || !placed.has(k.ref)) continue;
+      const ki = info.get(k.ref);
+      if (ki == null || ki.gate == null) continue;
+      const key = ki.gate + '|' + k.nodes[0];
+      if (!cellsByGD.has(key)) cellsByGD.set(key, {});
+      cellsByGD.get(key)[isPmos(k) ? 'p' : 'n'] = k.ref;
+    }
+    const inv = [...cellsByGD.entries()]
+      .filter(([, m2]) => m2.p != null && m2.n != null)
+      .map(([key, m2]) => ({ gate: key.split('|')[0], drain: key.split('|')[1], ...m2 }));
+    if (inv.length >= 3) {
+      const byGate = new Map(inv.map((c2) => [c2.gate, c2]));
+      let cur = inv[0], hops = 0;
+      const seen3 = new Set();
+      while (cur != null && !seen3.has(cur.gate) && hops <= inv.length) {
+        seen3.add(cur.gate); cur = byGate.get(cur.drain); hops++;
+      }
+      if (cur != null && cur.gate === inv[0].gate && hops === inv.length) {
+        // anneau fermé : le lien de RETOUR = celui dont le drain est le plus
+        // à droite et la gate consommatrice le plus à gauche
+        let best6 = null;
+        for (const c2 of inv) {
+          const nxt = byGate.get(c2.drain);
+          const dAbs2 = pinAbs(placed.get(c2.p), getPin(info.get(c2.p).shapeKey, info.get(c2.p).po[0]));
+          const gAbs2 = pinAbs(placed.get(nxt.p), getPin(info.get(nxt.p).shapeKey, info.get(nxt.p).gatePin));
+          const span2 = dAbs2.x - gAbs2.x;
+          if (best6 == null || span2 > best6.span) {
+            best6 = { span: span2, net: c2.drain, aRef: c2.p, aAbs: dAbs2, bRef: nxt.p, bAbs: gAbs2 };
+          }
+        }
+        if (best6 != null && best6.span > 100) {
+          const bot = Math.max(...[...placed.values()].map((v2) => v2.y + v2.h));
+          const lane6 = bot + 80;
+          ringLink = { ...best6, lane: lane6 };
+        }
+      }
+    }
+  }
+
   // rails : tap VDD au-dessus de chaque terminal du net vdd ; masse sous chaque terminal de 0
   for (const [net, terms] of netTerms) {
     if (net === vddNet && vddNet !== '0') {
@@ -145,7 +192,12 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         const id = 'VT' + (++seq);
         // position ancrée sur le PIN ABSOLU (les formes tournées ont leur pin
         // ailleurs que le haut de leur bbox) + écart franc de 30 px
-        const tapCell = addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: abs.y - 26 - 30, w: 40, h: 26, value: 'VDD' });
+        // idem masse : ne pas poser le tap sur un composant flottant voisin
+        let ty = abs.y - 26 - 30;
+        const tClash = () => [...placed.values()].some((v) =>
+          abs.x - 20 < v.x + v.w + 6 && abs.x + 20 > v.x - 6 && ty < v.y + v.h + 6 && ty + 26 > v.y - 6);
+        for (let k2 = 0; k2 < 5 && tClash(); k2++) ty -= 30;
+        const tapCell = addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: ty, w: 40, h: 26, value: 'VDD' });
         tapCell.setAttribute('style', tapCell.getAttribute('style')
           .replace('verticalLabelPosition=bottom;verticalAlign=top;', 'verticalLabelPosition=top;verticalAlign=bottom;'));
         wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: 0.5, y: 1 } });
@@ -156,8 +208,26 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         const abs = pinAbs(p, t.pin);
         const id = 'GND' + (++seq);
         // masse LOCALE : juste sous le pin (comme le petit trait des figures
-        // publiées), jamais un long rail vers une ligne de fond commune
-        addVertex(model, { id, shape: GROUND_SHAPE, x: abs.x - 15, y: abs.y + 45, w: 30, h: 20 });
+        // publiées), jamais un long rail vers une ligne de fond commune.
+        // Pin LATÉRAL ou HAUT (base de BJT, corps rond) : sortir du corps
+        // horizontalement puis descendre — jamais de masse DANS le corps
+        let gx = abs.x, gy = abs.y + 45;
+        const bodyBot = p.y + (p.h || 0);
+        const leftish2 = abs.x <= p.x + (p.w || 0) / 2;
+        if (abs.y < bodyBot - 6) {
+          gx = abs.x + (leftish2 ? -44 : 44);
+          gy = Math.max(abs.y + 45, bodyBot + 25);
+        }
+        // ne jamais poser la masse SUR un voisin (corps rond de BJT…) :
+        // écarter latéralement puis descendre jusqu'à une case libre
+        const gClash = () => [...placed.values()].some((v) =>
+          gx - 13 < v.x + v.w + 6 && gx + 13 > v.x - 6 && gy < v.y + v.h + 6 && gy + 18 > v.y - 6);
+        for (let k2 = 0; k2 < 5 && gClash(); k2++) gx += leftish2 ? -30 : 30;
+        for (let k2 = 0; k2 < 5 && gClash(); k2++) gy += 30;
+        // ±13 px et pas ±15 : la lane d'échappée des fils est à ±14 px du
+        // flanc — une masse à ±15 la chevauchait STRUCTURELLEMENT de 1 px
+        // (through systématique, invisible dans le clear() érodé de 1.5)
+        addVertex(model, { id, shape: GROUND_SHAPE, x: gx - 13, y: gy, w: 26, h: 18 });
         const gp = getPin(GROUND_SHAPE, GROUND_PIN);
         wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: gp.x, y: gp.y } });
       }
@@ -165,6 +235,37 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   }
 
   // nets de signal
+  // lanes déjà prises par les liaisons gate-gate FIGÉES : deux nets (LOP et
+  // LOM du mélangeur en anneau) prenaient la même lane et se superposaient
+  const usedGateLanes = [];
+  // règle 57 : les E/S se lisent HORIZONTALEMENT — entrée depuis la GAUCHE,
+  // sortie vers la DROITE, à hauteur de pin (jamais un port qui pend sous le
+  // schéma). Exception : nets DIFFÉRENTIELS (xP/xM), placement symétrique.
+  const allNetNames = [...netTerms.keys()].map((n) => n.toLowerCase());
+  const isDiffNet = (n) => {
+    const m2 = /^(.*?)(p|m)(\d*)$/i.exec(n);
+    if (m2 == null) return false;
+    const sw = (m2[1] + (m2[2].toLowerCase() === 'p' ? 'm' : 'p') + m2[3]).toLowerCase();
+    return allNetNames.includes(sw);
+  };
+  const IN_RE = /^(in$|in\d|vin|rf$|rf\d|sig|clk|lo$)/i;
+  const OUT_RE = /^(out$|out\d|vout|if$|sa$)/i;
+  const sidePort = (net, t, p, abs) => {
+    const left = IN_RE.test(net);
+    const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+    let px = left ? Math.min(abs.x, p.x) - 76 : Math.max(abs.x, p.x + (p.w || 0)) + 52;
+    const py = abs.y - 12;
+    const clash2 = () => [...placed.values()].some((v) =>
+      px < v.x + v.w + 6 && px + 24 > v.x - 6 && py < v.y + v.h + 6 && py + 24 > v.y - 6);
+    for (let k = 0; k < 8 && clash2(); k++) px += left ? -50 : 50;
+    const rot = left ? 90 : 270;
+    const cellS = addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, rotation: rot, value: net.toUpperCase() });
+    cellS.setAttribute('style', cellS.getAttribute('style') + 'horizontal=1;' +
+      (left ? 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=left;align=right;spacing=6;'
+            : 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=right;align=left;spacing=6;'));
+    placed.set(id, { id, x: px, y: py, w: 24, h: 24, rotation: rot });
+    wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
+  };
   for (const [net, terms] of netTerms) {
     if (net === vddNet || net === '0') continue;
     if (terms.length === 1) {
@@ -174,9 +275,17 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const abs = pinAbs(p, t.pin);
       const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
       // direction PHYSIQUE du pin (flips/rotations compris) : un pin qui
-      // regarde en haut reçoit son port AU-DESSUS, en bas AU-DESSOUS —
-      // jamais un port de côté relié par un détour
+      // regarde en haut reçoit son port AU-DESSUS ; pour une E/S nommée non
+      // différentielle, la règle 57 (gauche/droite) prime sur le bas/côté
       const midX = Math.abs(abs.x - (p.x + p.w / 2)) < Math.max(14, p.w / 3);
+      if (!isDiffNet(net) && (IN_RE.test(net) || OUT_RE.test(net)) &&
+          !(midX && abs.y <= p.y + 2)) {
+        const facesRight = (t.pin.x > 0.5) !== !!p.flipH;
+        if (midX || (IN_RE.test(net) ? !facesRight : facesRight)) {
+          sidePort(net, t, p, abs);
+          continue;
+        }
+      }
       if (midX && abs.y <= p.y + 2) {
         const cellUp = addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, value: net.toUpperCase() });
         cellUp.setAttribute('style', cellUp.getAttribute('style') + 'flipV=1;verticalLabelPosition=top;verticalAlign=bottom;');
@@ -229,13 +338,18 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         const bA = placed.get(a.ref), bB = placed.get(b.ref);
         const yTop = Math.min(bA.y, bB.y), yBot = Math.max(bA.y + bA.h, bB.y + bB.h);
         let lane = null;
+        const x1s = Math.min(pA.x, pB.x) - 6, x2s = Math.max(pA.x, pB.x) + 6;
+        const laneFree = (yl) => !usedGateLanes.some((u) =>
+          Math.abs(u.y - yl) < 10 && x1s < u.x2 && x2s > u.x1);
         outer: for (let k = 0; k < 6; k++) {
           for (const yl of [yBot + 24 + k * 12, yTop - 24 - k * 12]) {
-            if (clearSeg(pA, { x: pA.x, y: yl }) && clearSeg({ x: pA.x, y: yl }, { x: pB.x, y: yl }) &&
+            if (laneFree(yl) &&
+                clearSeg(pA, { x: pA.x, y: yl }) && clearSeg({ x: pA.x, y: yl }, { x: pB.x, y: yl }) &&
                 clearSeg({ x: pB.x, y: yl }, pB)) { lane = yl; break outer; }
           }
         }
         if (lane != null) {
+          usedGateLanes.push({ y: lane, x1: x1s, x2: x2s });
           // échappée horizontale : la plongée se fait à 14 px du flanc
           // (jamais le long du canal, règle utilisateur)
           const escA = (a.pin.x <= 0.5) !== !!placed.get(a.ref).flipH ? -14 : 14;
@@ -286,6 +400,21 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
           if (iA >= 0 && iB >= 0) preLinkedQuad.push([iA, iB]);
         }
       }
+      // net de RETOUR d'un anneau : tracé figé par la lane dédiée du bas
+      if (ringLink != null && net === ringLink.net) {
+        const ti2 = info.get(ringLink.aRef), tj2 = info.get(ringLink.bRef);
+        const aPin = getPin(ti2.shapeKey, ti2.po[0]);
+        const bPin = getPin(tj2.shapeKey, tj2.gatePin);
+        const xdE = ringLink.aAbs.x + 14, xgE = ringLink.bAbs.x - 14;
+        wire(null, { source: ringLink.aRef, target: ringLink.bRef,
+          sourcePin: { x: aPin.x, y: aPin.y }, targetPin: { x: bPin.x, y: bPin.y },
+          style: 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;jettySize=0;endArrow=none;endFill=0;drawioApiFixedRoute=1;',
+          points: [{ x: xdE, y: ringLink.aAbs.y }, { x: xdE, y: ringLink.lane },
+                   { x: xgE, y: ringLink.lane }, { x: xgE, y: ringLink.bAbs.y }] });
+        const iA2 = terms.findIndex((t) => t.ref === ringLink.aRef && t.pinName === ti2.po[0]);
+        const iB2 = terms.findIndex((t) => t.ref === ringLink.bRef && t.pinName === tj2.gatePin);
+        if (iA2 >= 0 && iB2 >= 0) preLinkedQuad.push([iA2, iB2]);
+      }
       // paire cross-couplée : la gate rejoint le drain du PARTENAIRE par une
       // diagonale volontaire (le X des figures publiées) — deux tracés
       // orthogonaux qui se disputent les mêmes lanes sont irréparables (VCO)
@@ -301,7 +430,12 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
             .sort((u, v) => (Math.abs(pts[u].x - pts[iG].x) + Math.abs(pts[u].y - pts[iG].y))
                           - (Math.abs(pts[v].x - pts[iG].x) + Math.abs(pts[v].y - pts[iG].y)));
           let iD = -1;
-          for (const i2 of cand) { if (clearDiagTo(i2)) { iD = i2; break; } }
+          // la diagonale X ne se justifie qu'entre voisins de MÊME RANGÉE
+          // (VCO/Gilbert) — entre étages (StrongARM) elle balafre le schéma
+          for (const i2 of cand) {
+            if (Math.abs(pts[i2].y - pts[iG].y) > 160) continue;
+            if (clearDiagTo(i2)) { iD = i2; break; }
+          }
           if (iD < 0) continue;
           function clearDiagTo(i2) {
             return !diagBlocked(placed, pts[iG], pts[i2], gRef, terms[i2].ref);
@@ -332,6 +466,10 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
             if (d2 < bd) { bd = d2; bi = i2; bj = j2; }
           }
         }
+        if (bi < 0) {
+          const missing = terms.filter((t) => !placed.has(t.ref)).map((t) => t.ref);
+          throw new Error(`wireNets: net sans candidat MST (non places: ${missing.join(',') || 'aucun'}; terms: ${terms.map((t, i9) => `${t.ref}.${t.pinName}@${Math.round(pts[i9].x)},${Math.round(pts[i9].y)}`).join(' ')}; inTree=${inTree.join(',')} rest=${rest2.join(',')})`);
+        }
         const ta = terms[bi], tb = terms[bj];
         wire(null, { source: ta.ref, target: tb.ref,
           sourcePin: { x: ta.pin.x, y: ta.pin.y }, targetPin: { x: tb.pin.x, y: tb.pin.y } });
@@ -348,6 +486,8 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   for (const [net, terms] of netTerms) {
     if (net === vddNet || net === '0' || terms.length < 2) continue;
     if (!/(^|_)(in|out|rf|lo|if|clk|bias|osc|vb)/i.test(net)) continue;
+    // l'axe de signal passif a déjà posé son port sur ce net
+    if (placed.has('P_' + net.replace(/[^A-Za-z0-9]/g, '_'))) continue;
     const withAbs = terms.map((t) => ({ t, abs: pinAbs(placed.get(t.ref), t.pin) }));
     const cxm = withAbs.reduce((s2, w2) => s2 + w2.abs.x, 0) / withAbs.length;
     // préférer un terminal dont le pin REGARDE vers l'extérieur (sinon le
@@ -380,6 +520,21 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         placed.set(id2, { id: id2, x: mx2 - 12, y: u1.abs.y + 40, w: 24, h: 24, rotation: 0 });
         wire(null, { source: id2, target: u1.t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: u1.t.pin.x, y: u1.t.pin.y } });
         continue;
+      }
+    }
+    // règle 57 : E/S single-ended -> port HORIZONTAL au bord (entrée sur le
+    // terminal le plus à gauche, sortie sur le plus à droite)
+    if (!isDiffNet(net) && (IN_RE.test(net) || OUT_RE.test(net))) {
+      const left2 = IN_RE.test(net);
+      const pick = [...withAbs].sort((u, v) => (left2 ? u.abs.x - v.abs.x : v.abs.x - u.abs.x))[0];
+      const p2k = placed.get(pick.t.ref);
+      if (p2k != null) {
+        const facesRight2 = (pick.t.pin.x > 0.5) !== !!p2k.flipH;
+        const midX2 = Math.abs(pick.abs.x - (p2k.x + (p2k.w || 0) / 2)) < Math.max(14, (p2k.w || 0) / 3);
+        if (midX2 || (left2 ? !facesRight2 : facesRight2)) {
+          sidePort(net, pick.t, p2k, pick.abs);
+          continue;
+        }
       }
     }
     const upFacing = (w2) => {
@@ -449,10 +604,153 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   return wires;
 }
 
+/** Miroir vertical de POLARITÉ : le modèle contient le layout du DUAL
+ * (N<->P, rails échangés) — on le retourne verticalement en rétablissant
+ * les identités originales : stencils N<->P, masses <-> taps VDD, sources
+ * V/I basculées (flipV), dipôles verticaux à rotation inversée, ancres des
+ * fils inversées là où le STENCIL a changé (les flips sont interprétés par
+ * drawio sur les ancres, pas les swaps de stencil). */
+function mirrorPolarity(model, vddName, reversedRefs = new Set()) {
+  const cells = allCells(model).map(cellInfo);
+  const verts = cells.filter((c) => c.kind === 'vertex' && c.x != null);
+  if (verts.length === 0) return;
+  const S = Math.min(...verts.map((v) => v.y)) + Math.max(...verts.map((v) => v.y + v.h));
+  const anchorFlip = new Set();
+  for (const v of verts) {
+    const el = getCell(model, v.id);
+    if (el == null) continue;
+    const st = el.getAttribute('style') || '';
+    const shape = v.style.map.get('shape') || '';
+    const newY = S - v.y - v.h;
+    if (/transistors\.(nmos|pmos)\b/.test(shape)) {
+      const toP = /transistors\.nmos\b/.test(shape);
+      el.setAttribute('style', toP
+        ? st.replace('transistors.nmos', 'transistors.pmos')
+        : st.replace('transistors.pmos', 'transistors.nmos'));
+      const val = el.getAttribute('value') || '';
+      el.setAttribute('value', toP ? val.replace(/NMOS/i, 'PMOS') : val.replace(/PMOS/i, 'NMOS'));
+      anchorFlip.add(v.id);
+      updateCell(model, v.id, { y: newY });
+    } else if (/transistors\.(npn|pnp)_transistor/.test(shape)) {
+      const toPnp = /npn_transistor/.test(shape);
+      el.setAttribute('style', toPnp
+        ? st.replace('npn_transistor', 'pnp_transistor')
+        : st.replace('pnp_transistor', 'npn_transistor'));
+      const val = el.getAttribute('value') || '';
+      el.setAttribute('value', toPnp ? val.replace(/NPN/i, 'PNP') : val.replace(/PNP/i, 'NPN'));
+      anchorFlip.add(v.id);
+      updateCell(model, v.id, { y: newY });
+    } else if (shape === GROUND_SHAPE) {
+      // masse -> tap VDD : le point de connexion (N, haut) devient le BAS du tap
+      const px = v.x + v.w / 2, pyM = S - v.y;
+      el.setAttribute('style', st.replace(GROUND_SHAPE, VDD_TAP)
+        .replace('verticalLabelPosition=bottom;verticalAlign=top;', 'verticalLabelPosition=top;verticalAlign=bottom;'));
+      el.setAttribute('value', vddName.toUpperCase());
+      updateCell(model, v.id, { x: px - 20, y: pyM - 26, w: 40, h: 26 });
+      anchorFlip.add(v.id);
+    } else if (shape === VDD_TAP) {
+      // tap VDD -> masse : le point de connexion (S, bas) devient le HAUT de la masse
+      const px = v.x + v.w / 2, pyM = S - (v.y + v.h);
+      el.setAttribute('style', st.replace(VDD_TAP, GROUND_SHAPE)
+        .replace('verticalLabelPosition=top;verticalAlign=bottom;', 'verticalLabelPosition=bottom;verticalAlign=top;'));
+      el.setAttribute('value', '');
+      updateCell(model, v.id, { x: px - 13, y: pyM, w: 26, h: 18 });
+      anchorFlip.add(v.id);
+    } else if (/dc_source|current_source|signal_sources\.signal_source/.test(shape)) {
+      // source dont l'ordre des noeuds a été INVERSÉ dans le dual : le
+      // miroir restaure déjà son orientation — la basculer en plus la casse
+      if (!reversedRefs.has(v.id)) {
+        el.setAttribute('style', v.style.map.get('flipV') === '1'
+          ? st.replace(/flipV=1;?/, '') : st + 'flipV=1;');
+      } else {
+        anchorFlip.add(v.id);
+      }
+      updateCell(model, v.id, { y: newY });
+    } else if (shape === PORT) {
+      const rotP = parseFloat(v.style.map.get('rotation') || '0');
+      if (rotP === 0) {
+        el.setAttribute('style', v.style.map.get('flipV') === '1'
+          ? st.replace(/flipV=1;?/, '') : st + 'flipV=1;');
+      }
+      updateCell(model, v.id, { y: newY });
+    } else {
+      const rotD = parseFloat(v.style.map.get('rotation') || '0');
+      if (rotD === 90 || rotD === -90) {
+        el.setAttribute('style', st.replace(/rotation=-?90/, 'rotation=' + (-rotD)));
+      }
+      updateCell(model, v.id, { y: newY });
+    }
+  }
+  // étiquettes refdes : la convention maison les met SOUS le corps — le
+  // miroir les envoyait au-dessus, en plein sur les fils (revue sceptique)
+  for (const v of verts) {
+    if (!v.id.startsWith('LBL_')) continue;
+    const body = verts.find((v2) => v2.id === v.id.slice(4));
+    if (body == null) continue;
+    updateCell(model, v.id, { y: S - body.y + 4 });
+  }
+  for (const c of cells) {
+    if (c.kind !== 'edge') continue;
+    const el = getCell(model, c.id);
+    if (el == null) continue;
+    const pts = (c.points || []).map((p) => ({ x: p.x, y: S - p.y }));
+    if (pts.length) setEdgePoints(el, pts);
+    let st2 = el.getAttribute('style') || '';
+    for (const [who, cid] of [['exit', c.source], ['entry', c.target]]) {
+      if (!anchorFlip.has(cid)) continue;
+      const key = who + 'Y';
+      const m3 = new RegExp(key + '=([\\d.]+)').exec(st2);
+      if (m3 != null) st2 = st2.replace(m3[0], key + '=' + (1 - parseFloat(m3[1])));
+    }
+    el.setAttribute('style', st2);
+  }
+}
+
 export function importNetlist2(model, parsed, opts = {}) {
   const P = { ...DEF, ...opts };
   const comps = parsed.components;
   if (comps.length === 0) throw httpError(400, 'netlist vide');
+
+  // ---- DUAL DE POLARITÉ (règle 58) : le gabarit ne connaît qu'un monde
+  //      (entrée NMOS, miroirs PMOS en haut). Un circuit à ENTRÉE PMOS est
+  //      le MIROIR VERTICAL de son dual : on génère le dual (N<->P,
+  //      vdd<->0), puis on miroite le résultat en rétablissant stencils,
+  //      rails et ancres. Le LVS aval compare à la netlist ORIGINALE.
+  if (!opts._dual) {
+    const vdd0 = [...new Set(comps.flatMap((c) => c.nodes))].find((n) => /^a?v(dd|cc)d?$/i.test(n));
+    let st0 = null;
+    try { st0 = detectStructures(parsed); } catch { /* pas de MOS */ }
+    // signature du « monde à l'envers » : paires d'entrée PMOS + miroirs
+    // NMOS (à diode) en bas, SANS cross-couplage (un VCO PMOS se dessine
+    // très bien en direct) ni architecture repliée (pas de miroir du tout)
+    const nmosMirror = st0 != null && st0.mirrors.some((mg) =>
+      mg.refs.every((r) => { const k = comps.find((k2) => k2.ref === r); return k != null && !isPmos(k); }));
+    // périmètre VOLONTAIREMENT étroit (revue sceptique : sur un cousin à
+    // bias résistif ou en BJT, le miroir produisait des fils à travers les
+    // corps — pire que le mode direct) : MOS uniquement, bias par source I
+    if (vdd0 != null && st0 != null && st0.diffPairs.length > 0 &&
+        st0.crossCoupled.length === 0 && nmosMirror &&
+        !comps.some((k) => k.prefix === 'Q') &&
+        comps.some((k) => k.prefix === 'I') &&
+        st0.diffPairs.every((pr) => isPmos(comps.find((k) => k.ref === pr.refs[0])))) {
+      const mapNet = (n) => (n === vdd0 ? '0' : (n === '0' ? vdd0 : n));
+      const reversedRefs = new Set();
+      const dualComps = comps.map((c) => {
+        let nodes = c.nodes.map(mapNet);
+        let model2 = c.model;
+        if (c.prefix === 'M') model2 = isPmos(c) ? 'NMOS' : 'PMOS';
+        if (c.prefix === 'Q') model2 = isPmos(c) ? 'NPN' : 'PNP';
+        let revd = false;
+        if ((c.prefix === 'V' || c.prefix === 'I') &&
+            (nodes[0] === '0' || nodes[1] === vdd0)) { nodes = [nodes[1], nodes[0]]; revd = true; }
+        if (revd) reversedRefs.add(c.ref);
+        return { ...c, nodes, model: model2 };
+      });
+      const res = importNetlist2(model, { ...parsed, components: dualComps }, { ...opts, _dual: true });
+      mirrorPolarity(model, vdd0, reversedRefs);
+      return res;
+    }
+  }
   const info = new Map(comps.map((c) => [c.ref, condInfo(c)]));
   const unplaced = new Set(comps.map((c) => c.ref));
   const byTopNet = new Map();
@@ -483,14 +781,88 @@ export function importNetlist2(model, parsed, opts = {}) {
     if (ci != null) { dsNets.add(ci.top); dsNets.add(ci.bot); }
   }
 
+  // ---- RÈGLE GÉNÉRALE « axe de signal » : un réseau SANS élément actif
+  //      (ni M, ni Q, ni G) n'a ni pile de conduction ni gate d'ancrage —
+  //      il se dessine sur un AXE HORIZONTAL entrée -> sortie : éléments
+  //      série en ligne, shunts vers la masse dessous (vdd dessus), et un
+  //      PORT à chaque extrémité de l'axe (les bouts de l'axe sont des
+  //      interfaces PAR CONSTRUCTION — I/Q du générateur de quadrature
+  //      n'avaient même pas d'étiquette)
+  const axisRefs = new Set();
+  let axisPlan = null;
+  if (!comps.some((k) => 'MQG'.includes(k.prefix))) {
+    const isRailN = (n) => n === '0' || n === vddNet;
+    const serie = comps.filter((k) => info.get(k.ref) != null &&
+      !isRailN(info.get(k.ref).top) && !isRailN(info.get(k.ref).bot));
+    const netNames = [...new Set(comps.flatMap((k) => k.nodes))];
+    const inNet = netNames.find((n) => /^(in|vin|rf|sig|lo|clk)/i.test(n) && !isRailN(n));
+    if (inNet != null && serie.length) {
+      const used = new Set();
+      const rows = [];
+      const nexts = (net) => serie.filter((k) => !used.has(k.ref) &&
+        (info.get(k.ref).top === net || info.get(k.ref).bot === net));
+      const otherOf = (k, net) =>
+        (info.get(k.ref).top === net ? info.get(k.ref).bot : info.get(k.ref).top);
+      const queue = [inNet];
+      let guard6 = comps.length + 4;
+      while (queue.length && guard6-- > 0) {
+        const start = queue.shift();
+        for (const first of nexts(start)) {
+          if (used.has(first.ref)) continue;
+          const row = { startNet: start, elems: [] };
+          let net = start, cur = first;
+          while (cur != null) {
+            used.add(cur.ref);
+            const nxt = otherOf(cur, net);
+            row.elems.push({ c: cur, netL: net, netR: nxt });
+            net = nxt;
+            const cont = nexts(net);
+            cur = cont[0] || null;
+            if (cont.length > 1) queue.push(net);
+          }
+          row.endNet = net;
+          rows.push(row);
+        }
+      }
+      if (rows.length && serie.every((k) => used.has(k.ref))) {
+        // validation : chaque shunt/source doit s'accrocher à un nœud de l'axe
+        const nodes = new Set(rows.flatMap((r) => [r.startNet, ...r.elems.map((e) => e.netR)]));
+        const ok = comps.every((k) => {
+          if (used.has(k.ref)) return true;
+          const ci = info.get(k.ref);
+          if (ci == null) return false;
+          const sig = isRailN(ci.top) ? ci.bot : ci.top;
+          return !isRailN(sig) && nodes.has(sig);
+        });
+        if (ok) {
+          axisPlan = { rows, inNet };
+          for (const k of comps) { axisRefs.add(k.ref); unplaced.delete(k.ref); }
+        }
+      }
+    }
+  }
+
   function markFloating(vdd) {
     // un L ou R touchant un net de conduction fait partie d'une pile ;
     // seuls les C (bloquants DC) et les L/R purement « signal » sont flottants
     for (const c of comps) {
       const ci = info.get(c.ref);
       if (ci == null || !'RCL'.includes(c.prefix)) continue;
+      if (axisRefs.has(c.ref)) continue;
       if (ci.top === vdd || ci.top === '0' || ci.bot === vdd || ci.bot === '0') continue;
-      if (c.prefix !== 'C' && (dsNets.has(ci.top) || dsNets.has(ci.bot))) continue;
+      // R/L de CONTRE-RÉACTION (gate<->drain du même transistor, LNA à
+      // shunt-feedback) : flottante comme une cap Miller, pas une pile
+      const ccRefs0 = new Set();
+      try { for (const pr of detectStructures({ components: comps }).crossCoupled) pr.refs.forEach((r) => ccRefs0.add(r)); } catch { /* sans MOS */ }
+      const millerMatches = comps.filter((m2) => (m2.prefix === 'M' || m2.prefix === 'Q') &&
+        !ccRefs0.has(m2.ref) &&
+        (() => { const mi2 = info.get(m2.ref);
+          return mi2 != null && [ci.top, ci.bot].includes(mi2.gate) &&
+            [ci.top, ci.bot].includes(m2.nodes[0]) && mi2.gate !== m2.nodes[0]; })());
+      // UN seul transistor = shunt-feedback (Miller en R) ; DEUX = le
+      // feedback d'un INVERSEUR (Pierce), qui vit très bien dans sa pile
+      const millerish = millerMatches.length === 1;
+      if (c.prefix !== 'C' && !millerish && (dsNets.has(ci.top) || dsNets.has(ci.bot))) continue;
       floating.add(c.ref);
       unplaced.delete(c.ref);
     }
@@ -509,7 +881,10 @@ export function importNetlist2(model, parsed, opts = {}) {
     }).length;
     // diode de polarisation accrochée au net (D=G=net, S=0) : accolée à
     // CÔTÉ du nœud, pas dans une colonne de conduction (règle E1/Fig.13)
-    const sideDiodes = below.filter((c) => (c.prefix === 'M' || c.prefix === 'Q') &&
+    // BJT exclus : un PNP diode à collecteur massé (bandgap) se place DANS
+    // la colonne sous son émetteur, pas accolé de côté comme une diode de
+    // polarisation MOS — accolés, leurs fils de base se croisaient
+    const sideDiodes = below.filter((c) => c.prefix === 'M' &&
       c.nodes[0] === c.nodes[1] && info.get(c.ref).bot === '0');
     for (const d of sideDiodes) {
       slots.set(d.ref, { col: col - 0.55, level: level + 0.55 });
@@ -540,6 +915,48 @@ export function importNetlist2(model, parsed, opts = {}) {
 
   markFloating(vddNet);
   const structures = detectStructures(parsed);
+
+  // ---- LATCH (StrongARM) : deux paires cross-couplées de POLARITÉS
+  //      OPPOSÉES sur les MÊMES deux nets. Gabarit dédié : un trunk
+  //      vertical par net (précharge -> cc PMOS -> cc NMOS -> étage du
+  //      dessous dans la même colonne), paire PMOS au centre, précharges
+  //      clk à l'extérieur — comme les figures publiées (Razavi JSSC'09)
+  const latchRefs = new Set();
+  let latchRoots = null;
+  let latchCc = null; // les 2 refs de la paire cc CENTRALE (revue : indexer
+                      // latchRoots[1]/[2] mentait dès qu'une précharge manquait)
+  {
+    const cc = structures.crossCoupled;
+    const kindOf = (r) => isPmos(comps.find((k) => k.ref === r));
+    // demi-latch (cellule de délai) : une paire cc + une paire DIFF de
+    // polarité opposée sur les mêmes drains — même gabarit que le latch
+    const partners = [...cc];
+    for (const dp of structures.diffPairs) {
+      const drains = dp.refs.map((r) => (comps.find((k) => k.ref === r) || { nodes: [] }).nodes[0]);
+      if (new Set(drains).size === 2) partners.push({ refs: dp.refs, nets: drains, _diff: true });
+    }
+    for (let i = 0; i < partners.length && latchRoots == null; i++) {
+      for (let j = i + 1; j < partners.length; j++) {
+        const a = partners[i], b = partners[j];
+        if (a._diff && b._diff) continue; // il faut au moins une vraie cc
+        if (new Set([...a.nets, ...b.nets]).size !== 2) continue;
+        if (kindOf(a.refs[0]) === kindOf(b.refs[0])) continue;
+        const pPair = kindOf(a.refs[0]) ? a : b;
+        for (const r of [...a.refs, ...b.refs]) latchRefs.add(r);
+        // précharges : autres MOS racine dont le drain est un des deux nets
+        const prechOf = (net) => comps.find((k) =>
+          (k.prefix === 'M' || k.prefix === 'Q') && !latchRefs.has(k.ref) &&
+          info.get(k.ref) != null && info.get(k.ref).top === vddNet &&
+          info.get(k.ref).bot === net);
+        const [netL, netR] = pPair.nets;
+        const pL = prechOf(netL), pR = prechOf(netR);
+        latchCc = [pPair.refs[0], pPair.refs[1]];
+        latchRoots = [pL && pL.ref, pPair.refs[0], pPair.refs[1], pR && pR.ref]
+          .filter(Boolean);
+        break;
+      }
+    }
+  }
   // ---- chaînes de signal : suites d'éléments série (passifs flottants)
   //      aboutissant à une gate ; posées horizontalement dans l'ordre du flux,
   //      dérivations shunt vers la masse en bas, branches de polarisation en
@@ -612,19 +1029,60 @@ export function importNetlist2(model, parsed, opts = {}) {
   // heuristique : la pile de polarisation (source de courant en racine) à gauche
   roots.sort((a, b) => (comps.find((c) => c.ref === b).prefix === 'I' ? 1 : 0) -
                        (comps.find((c) => c.ref === a).prefix === 'I' ? 1 : 0));
+  // latch : ordre IMPOSÉ [précharge, ccP, ccP, précharge] — la descente de
+  // conduction construit alors un trunk vertical par net de sortie
+  if (latchRoots != null) {
+    roots = latchRoots.filter((r) => roots.includes(r))
+      .concat(roots.filter((r) => !latchRoots.includes(r)));
+  }
   if (P.order.length) roots = P.order.filter((r) => roots.includes(r)).concat(roots.filter((r) => !P.order.includes(r)));
   for (const r of roots) if (unplaced.has(r)) place(r, nextCol++, 0);
 
+  // pseudo-racines : transistors ORPHELINS de conduction — leur drain n'est
+  // relié à vdd qu'à travers un dipôle latéral (ex: R de contre-réaction du
+  // Cherry-Hooper). Sans ça, tout leur étage partait dans le coin gauche.
+  // Vraies colonnes à droite, la paire/le regroupement s'appliquent ensuite.
+  {
+    let progress = true;
+    while (progress) {
+      progress = false;
+      for (const c of comps) {
+        if (!unplaced.has(c.ref) || (c.prefix !== 'M' && c.prefix !== 'Q')) continue;
+        const ci2 = info.get(c.ref);
+        if (ci2 == null || ci2.top === '0') continue;
+        const hasProducer = comps.some((k) => k.ref !== c.ref &&
+          info.get(k.ref) != null && info.get(k.ref).bot === ci2.top);
+        if (hasProducer) continue;
+        place(c.ref, nextCol++, 0);
+        progress = true;
+      }
+    }
+  }
+
   // éléments partagés : centrés sous leurs colonnes, un niveau sous le plus profond
   const sharedParents = new Map(); // ref -> cols parents (pour re-calcul après permutation)
+  const sideOff = new Map(); // ref -> décalage latéral (shunt accroché à côté)
   let guard = comps.length;
   while (colOf.size && guard-- > 0) {
     for (const [ref, cols] of [...colOf]) {
       if (!unplaced.has(ref)) { colOf.delete(ref); continue; }
-      const deepest = Math.max(...cols.map((cl) =>
-        Math.max(...[...slots.values()].filter((s) => s.col === cl).map((s) => s.level))));
-      const mid = cols.reduce((a, b) => a + b, 0) / cols.length;
-      sharedParents.set(ref, [...cols]);
+      const depthOf = (cl) =>
+        Math.max(...[...slots.values()].filter((s) => s.col === cl).map((s) => s.level));
+      const deepest = Math.max(...cols.map(depthOf));
+      // parents de PROFONDEURS différentes (ex: M4 du folded cascode entre la
+      // chaîne cascode et le drain de la paire) : coller à la colonne du
+      // parent le plus profond, la moyenne l'envoyait au milieu de nulle part.
+      // Parents de même profondeur (queue de paire diff) : centré comme avant.
+      const deepCols = cols.filter((cl) => depthOf(cl) >= deepest - 0.5);
+      let mid = deepCols.reduce((a, b) => a + b, 0) / deepCols.length;
+      // shunt R/C/L vers la masse sous UNE seule colonne : accroché À CÔTÉ
+      // (col+0.6) comme dans les figures — centré sous la colonne, son fil
+      // devait traverser la zone de masse du composant du dessus
+      const cc5 = comps.find((k) => k.ref === ref);
+      const isSideShunt = cc5 != null && 'RCL'.includes(cc5.prefix) &&
+        (info.get(ref) || {}).bot === '0' && deepCols.length === 1;
+      if (isSideShunt) { mid += 0.6; sideOff.set(ref, 0.6); }
+      sharedParents.set(ref, [...deepCols]);
       place(ref, mid, deepest + 1);
       colOf.delete(ref);
     }
@@ -643,7 +1101,15 @@ export function importNetlist2(model, parsed, opts = {}) {
     const [pa, pb] = t.pair.map((r) => slots.get(r));
     if (st == null || pa == null || pb == null) continue;
     st.col = (pa.col + pb.col) / 2;
-    st.level = Math.max(pa.level, pb.level) + 1;
+    const ti2 = info.get(t.ref);
+    const pi0 = info.get(t.pair[0]);
+    if (ti2 != null && pi0 != null && ti2.bot === pi0.top) {
+      // queue PMOS : elle ALIMENTE la paire par le haut — au-dessus
+      // (folded cascode : M0 se retrouvait sous M1/M2, tête en bas)
+      st.level = Math.min(pa.level, pb.level) - 1;
+    } else {
+      st.level = Math.max(pa.level, pb.level) + 1;
+    }
   }
   // règle 26 : les transistors d'un même MIROIR partagent la rangée (la plus
   // profonde du groupe) — gates sur un bus rectiligne, comme un dessin humain
@@ -654,10 +1120,20 @@ export function importNetlist2(model, parsed, opts = {}) {
     for (const x of ss) x.level = L;
   }
 
-  // reste (sources V vers masse, branches isolées) : colonnes à gauche
+  // reste : un dipôle R/L/C entre deux nets de SIGNAL sans pile d'accueil
+  // (ex: R de contre-réaction inter-étages) rejoint les flottants — placé au
+  // barycentre de ses nets, jamais parqué dans un coin. Le vrai reste
+  // (sources V vers masse, branches isolées) : colonnes à gauche.
   for (const c of comps) {
     if (!unplaced.has(c.ref)) continue;
-    if (info.get(c.ref) == null) continue;
+    const ci3 = info.get(c.ref);
+    if (ci3 == null) continue;
+    if ('RCL'.includes(c.prefix) && ci3.top !== vddNet && ci3.top !== '0' &&
+        ci3.bot !== vddNet && ci3.bot !== '0') {
+      floating.add(c.ref);
+      unplaced.delete(c.ref);
+      continue;
+    }
     place(c.ref, -1 - [...slots.values()].filter((s) => s.col < 0).length, 0);
   }
   // éléments mappés sans conduction (G/OTA…) : colonnes de flux à droite
@@ -692,6 +1168,9 @@ export function importNetlist2(model, parsed, opts = {}) {
       if (dc != null) firstOf.set(find(dc), dc);
     }
     for (const p of [...structures.diffPairs, ...structures.crossCoupled]) {
+      // les paires du LATCH sont intégrées VERTICALEMENT dans les trunks :
+      // les coller côte à côte détruirait le gabarit
+      if (p.refs.some((r) => latchRefs.has(r))) continue;
       const lvls = p.refs.map((r) => slots.get(r)).filter(Boolean).map((sl) => sl.level);
       if (new Set(lvls).size !== 1) continue;
       const cols = p.refs.map(colOfRef).filter((c) => c != null);
@@ -723,7 +1202,11 @@ export function importNetlist2(model, parsed, opts = {}) {
     }
     for (const [ref, cols] of sharedParents) {
       const sl = slots.get(ref);
-      sl.col = cols.map((c) => newOf.get(c)).reduce((a, b) => a + b, 0) / cols.length;
+      // un parent peut être lui-même à colonne fractionnaire (élément partagé
+      // en cascade) : newOf ne connaît que les entières — interpoler
+      const nv = (c) => (newOf.has(c) ? newOf.get(c)
+        : ((newOf.get(Math.floor(c)) ?? Math.floor(c)) + (newOf.get(Math.ceil(c)) ?? Math.ceil(c))) / 2);
+      sl.col = cols.map(nv).reduce((a, b) => a + b, 0) / cols.length + (sideOff.get(ref) || 0);
     }
   }
 
@@ -793,6 +1276,15 @@ export function importNetlist2(model, parsed, opts = {}) {
   const dedupPairs = [...structures.diffPairs.filter((p) => !ccKeys.has([...p.refs].sort().join('/'))),
     ...structures.crossCoupled];
   for (const pr of dedupPairs) {
+    if (pr.refs.some((r) => latchRefs.has(r))) {
+      // latch : flip du membre GAUCHE seul (sa gate regarde le trunk
+      // opposé), JAMAIS de propagation de colonne — les trunks portent
+      // les étages du dessous
+      const [a0, b0] = pr.refs;
+      const sa0 = slots.get(a0), sb0 = slots.get(b0);
+      if (sa0 != null && sb0 != null) flipRefs.add(sa0.col <= sb0.col ? a0 : b0);
+      continue;
+    }
     if (!wantFlip(pr)) continue;
     const [a, b] = pr.refs;
     const ca = slots.get(a), cb = slots.get(b);
@@ -838,6 +1330,58 @@ export function importNetlist2(model, parsed, opts = {}) {
     }
   }
 
+  // ---- latch : ÉLARGIR L'ENTREFER central — les gates de la paire cc se
+  //      font face à ~15 px, où DEUX verticales de nets différents doivent
+  //      passer (le X) : impossible à ≥10 px d'écart. +0.3 colonne pour
+  //      tout ce qui est à droite du centre.
+  if (latchCc != null) {
+    const sL = slots.get(latchCc[0]), sR = slots.get(latchCc[1]);
+    if (sL != null && sR != null && sR.col !== sL.col) {
+      const cut = (sL.col + sR.col) / 2;
+      for (const [, sl2] of slots) {
+        if (sl2.col > cut + 0.01) sl2.col += 0.3;
+        else if (Math.abs(sl2.col - cut) <= 0.01) sl2.col += 0.15; // queue centrée
+      }
+    }
+  }
+
+  // ---- aucun DEUX corps dans la même case (col, level) : deux paires
+  //      cross-couplées partageant les mêmes nets (StrongARM) se
+  //      superposaient exactement — l'alimenté descend sous son producteur
+  {
+    // NB : une variante « pair-aware » (bumper les deux membres d'une paire)
+    // a été mesurée PIRE (cascade de collisions, StrongARM 10→26 err) — le
+    // bump individuel gagne, quitte à casser la rangée d'une paire (règle 14)
+    const key2 = (s) => Math.round(s.col * 4) + '|' + Math.round(s.level * 4);
+    const bump = (ref2) => { slots.get(ref2).level += 1; };
+    for (let pass2 = 0; pass2 < 6; pass2++) {
+      let moved2 = false;
+      const occ = new Map();
+      for (const c of comps) {
+        const s2 = slots.get(c.ref);
+        if (s2 == null) continue;
+        let g3 = 24;
+        while (occ.has(key2(s2)) && occ.get(key2(s2)) !== c.ref && g3-- > 0) {
+          const other = occ.get(key2(s2));
+          const oi = info.get(other), ci4 = info.get(c.ref);
+          if (oi != null && ci4 != null && oi.top === ci4.top && oi.bot === ci4.bot) {
+            // éléments PARALLÈLES (mêmes deux nets, ex: C2 // R3 du
+            // Colpitts) : séparation LATÉRALE — l'un sous l'autre force le
+            // fil du haut à envelopper le corps du premier (wrap-around)
+            s2.col += 0.6;
+          } else if (oi != null && ci4 != null && ci4.bot != null && oi.top === ci4.bot) {
+            // c alimente other : other descend, c prendra la case
+            occ.delete(key2(slots.get(other)));
+            bump(other);
+          } else bump(c.ref);
+          moved2 = true;
+        }
+        occ.set(key2(s2), c.ref);
+      }
+      if (!moved2) break;
+    }
+  }
+
   // ---- géométrie
   const placed = new Map();
   const netTerms = new Map();
@@ -845,6 +1389,86 @@ export function importNetlist2(model, parsed, opts = {}) {
     if (!netTerms.has(net)) netTerms.set(net, []);
     netTerms.get(net).push({ ref, pinName, pin });
   };
+
+  // ---- rendu de l'AXE DE SIGNAL passif (voir plan plus haut)
+  if (axisPlan != null) {
+    const isRailN = (n) => n === '0' || n === vddNet;
+    const X0 = 140, STEP = 170, Y0 = 150, ROWHA = 240;
+    const nodeX = new Map(), rowOf = new Map();
+    axisPlan.rows.forEach((row, ri) => {
+      const yRow = Y0 + ri * ROWHA;
+      let x = nodeX.get(row.startNet) ?? X0;
+      if (!nodeX.has(row.startNet)) { nodeX.set(row.startNet, x); rowOf.set(row.startNet, yRow); }
+      for (const e of row.elems) {
+        const ci = info.get(e.c.ref);
+        const shape = getShape(ci.shapeKey);
+        const cx = x + STEP / 2;
+        const flip = e.c.nodes[0] !== e.netL;
+        const cell = addVertex(model, { id: e.c.ref, shape: ci.shapeKey,
+          x: cx - shape.w / 2, y: yRow - shape.h / 2, w: shape.w, h: shape.h,
+          rotation: 0, value: e.c.value || '' });
+        if (flip) cell.setAttribute('style', cell.getAttribute('style') + 'flipH=1;');
+        placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y: yRow - shape.h / 2,
+          w: shape.w, h: shape.h, rotation: 0, flipH: flip });
+        for (let i2 = 0; i2 < ci.po.length; i2++) {
+          term(e.c.nodes[i2], e.c.ref, ci.po[i2], getPin(ci.shapeKey, ci.po[i2]));
+        }
+        x += STEP;
+        if (!nodeX.has(e.netR)) { nodeX.set(e.netR, x); rowOf.set(e.netR, yRow); }
+      }
+    });
+    // shunts et sources vers les rails : sous (masse) / sur (vdd) leur nœud
+    const shuntK = new Map();
+    for (const k of comps) {
+      if (placed.has(k.ref)) continue;
+      const ci = info.get(k.ref);
+      if (ci == null) continue;
+      const sig = isRailN(ci.top) ? ci.bot : ci.top;
+      const xN = nodeX.get(sig), yN = rowOf.get(sig);
+      if (xN == null) continue;
+      const up = ci.top === vddNet || ci.bot === vddNet;
+      const kk = sig + (up ? '^' : 'v');
+      const j = shuntK.get(kk) || 0;
+      shuntK.set(kk, j + 1);
+      const shape = getShape(ci.shapeKey);
+      const vertNative = !!(SPICE_MAP[k.prefix] || {}).vertical;
+      const bx = xN + j * 46;
+      const by = up ? yN - 130 : yN + 130;
+      let rot = 0, px2 = bx - shape.w / 2;
+      if (!vertNative) {
+        // pin du net de signal tourné VERS l'axe (haut pour un shunt bas)
+        rot = (ci.top === sig) === !up ? 90 : -90;
+        const py = (getPin(ci.shapeKey, ci.po[0]) || { y: 0.5 }).y;
+        px2 = bx + (rot === 90 ? 1 : -1) * (py - 0.5) * shape.h - shape.w / 2;
+      }
+      addVertex(model, { id: k.ref, shape: ci.shapeKey, x: px2, y: by - shape.h / 2,
+        w: shape.w, h: shape.h, rotation: rot, value: k.value || '' });
+      placed.set(k.ref, { id: k.ref, x: px2, y: by - shape.h / 2, w: shape.w, h: shape.h, rotation: rot });
+      for (let i2 = 0; i2 < ci.po.length; i2++) {
+        term(k.nodes[i2], k.ref, ci.po[i2], getPin(ci.shapeKey, ci.po[i2]));
+      }
+    }
+    // un PORT à chaque extrémité de l'axe (entrée à gauche, sorties à droite)
+    for (const net of new Set([axisPlan.inNet, ...axisPlan.rows.map((r) => r.endNet)])) {
+      if (isRailN(net)) continue;
+      const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+      if (placed.has(id)) continue;
+      const xN = nodeX.get(net), yN = rowOf.get(net);
+      if (xN == null) continue;
+      // règle 57 : le port est DANS l'axe — entrée à gauche, sortie à
+      // droite, à hauteur du fil (jamais pendu sous le schéma)
+      const left = net === axisPlan.inNet;
+      const px = xN + (left ? -76 : 52), py3 = yN - 12;
+      const rotP = left ? 90 : 270;
+      const cellP = addVertex(model, { id, shape: PORT, x: px, y: py3, w: 24, h: 24, rotation: rotP, value: net.toUpperCase() });
+      cellP.setAttribute('style', cellP.getAttribute('style') + 'horizontal=1;' +
+        (left ? 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=left;align=right;spacing=6;'
+              : 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=right;align=left;spacing=6;'));
+      placed.set(id, { id, x: px, y: py3, w: 24, h: 24, rotation: rotP });
+      term(net, id, 'N', getPin(PORT, 'N'));
+    }
+  }
+
   for (const c of comps) {
     let ci = info.get(c.ref);
     if (ci == null && SPICE_MAP[c.prefix] != null && slots.has(c.ref)) {
@@ -852,7 +1476,7 @@ export function importNetlist2(model, parsed, opts = {}) {
       ci = { shapeKey: map.shape, po: map.pinOrder };
       info.set(c.ref, ci);
     }
-    if (ci == null || floating.has(c.ref) || chainRefs.has(c.ref)) continue;
+    if (ci == null || floating.has(c.ref) || chainRefs.has(c.ref) || axisRefs.has(c.ref)) continue;
     const s = slots.get(c.ref);
     if (s == null) continue;
     const shape = getShape(ci.shapeKey);
@@ -908,11 +1532,28 @@ export function importNetlist2(model, parsed, opts = {}) {
     const ai = info.get(ch.anchorRef);
     const gpin = getPin(ai.shapeKey, ai.gatePin || ai.po[1]);
     const ga = pinAbs(anchor, gpin);
+    // ÉVITEMENT : la chaîne part vers la gauche depuis l'ancre — si un corps
+    // déjà placé (source de polarisation sur le même nœud, classe AB) est sur
+    // son chemin, TOUTE la chaîne recule d'un cran de plus (jamais un corps
+    // sur un autre, règle absolue)
+    let chOff = 0;
+    {
+      const spanH = 130;
+      const clearChain = (off) => ch.elems.every((e2, k2) => {
+        const sh2 = getShape(info.get(e2.c.ref).shapeKey);
+        const cxT = ga.x - 110 - off - k2 * 125;
+        return ![...placed.values()].some((v) =>
+          v.id !== ch.anchorRef &&
+          cxT - sh2.w / 2 - 20 < v.x + v.w && cxT + sh2.w / 2 + 20 > v.x &&
+          ga.y - spanH / 2 < v.y + v.h && ga.y + spanH / 2 > v.y);
+      });
+      for (let t2 = 0; t2 < 6 && !clearChain(chOff); t2++) chOff += 70;
+    }
     let k = 0;
     for (const e of ch.elems) {
       const ci = info.get(e.c.ref);
       const shape = getShape(ci.shapeKey);
-      const cx = ga.x - 110 - k * 125; // pas compacté (le LNA étirait 800 px de vide)
+      const cx = ga.x - 110 - chOff - k * 125; // pas compacté (le LNA étirait 800 px de vide)
       // aligner les PINS de l'élément sur la ligne de chaîne (les selfs
       // horizontales ont leurs pins au bord bas, pas au centre)
       const cy = ga.y;
@@ -1073,9 +1714,9 @@ export function importNetlist2(model, parsed, opts = {}) {
     // le drain du MÊME transistor -> discrète, VERTICALE, collée à côté du
     // transistor entre les deux niveaux (règle utilisateur : pas de voûtes,
     // pas de fils au même potentiel qui se longent, pas de coudes)
-    if (c.prefix === 'C') {
+    if (c.prefix === 'C' || c.prefix === 'R') {
       const ccRefs = new Set(structures.crossCoupled.flatMap((pr) => pr.refs));
-      const fb = comps.find((m2) => {
+      const fbAll = comps.filter((m2) => {
         if ((m2.prefix !== 'M' && m2.prefix !== 'Q') || !placed.has(m2.ref)) return false;
         // cross-couplé : gate/drain sont les nets l'un de l'autre — la cap
         // de RÉSERVOIR n'est pas une Miller
@@ -1085,6 +1726,9 @@ export function importNetlist2(model, parsed, opts = {}) {
         const nets = [ci.top, ci.bot];
         return nets.includes(mi.gate) && nets.includes(m2.nodes[0]) && mi.gate !== m2.nodes[0];
       });
+      // DEUX transistors qui matchent = feedback d'INVERSEUR (Pierce) :
+      // pas une Miller, le corridor inter-rangées est occupé par la pile
+      const fb = fbAll.length === 1 ? fbAll[0] : null;
       if (fb != null) {
         const mi = info.get(fb.ref);
         const pM = placed.get(fb.ref);
@@ -1125,6 +1769,14 @@ export function importNetlist2(model, parsed, opts = {}) {
       // ORIENTATION : le pin 'in' (nodes[0]) regarde le centroïde de SON net
       flipF = anchors[0].x > anchors[1].x;
     }
+    // liaison principalement VERTICALE : dipôle tourné (règle 42 — un corps
+    // horizontal entre deux nets superposés force un fil qui enveloppe)
+    let rotF = 0;
+    if (anchors[0].n > 0 && anchors[1].n > 0 && 'RCLD'.includes(c.prefix) &&
+        Math.abs(anchors[0].y - anchors[1].y) > Math.abs(anchors[0].x - anchors[1].x) + 20) {
+      rotF = anchors[0].y <= anchors[1].y ? 90 : -90; // +90 : 'in' en HAUT
+      flipF = false;
+    }
     let x = cx - shape.w / 2, y = cy - shape.h / 2;
     // JAMAIS sur un autre corps : on remonte (puis descend) jusqu'à une
     // position libre — la capa du tank VCO se posait sur les transistors
@@ -1146,7 +1798,7 @@ export function importNetlist2(model, parsed, opts = {}) {
       const x00 = x, y00 = y;
       let best = null;
       for (const [dx2, dy2] of [[0, -20], [0, 20], [-20, 0], [20, 0], [-20, -20], [20, -20], [-20, 20], [20, 20]]) {
-        for (let k = 1; k <= 12; k++) {
+        for (let k = 1; k <= 30; k++) {
           x = x00 + dx2 * k; y = y00 + dy2 * k;
           if (!overlaps()) {
             // le vertical est préféré : le latéral coûte double (il ignore
@@ -1157,11 +1809,17 @@ export function importNetlist2(model, parsed, opts = {}) {
           }
         }
       }
-      if (best != null) { x = best.x; y = best.y; } else { x = x00; y = y00; }
+      if (best != null) { x = best.x; y = best.y; } else {
+        // JAMAIS un corps sur un autre (règle absolue) : en dernier recours,
+        // sous tout le schéma — la cap 10p du classe AB se posait SUR la
+        // source 100u quand les 12 pas ne suffisaient pas
+        x = x00;
+        y = Math.max(...[...placed.values()].map((v) => v.y + v.h)) + 60;
+      }
     }
-    const cellF = addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: 0, value: c.value || '' });
+    const cellF = addVertex(model, { id: c.ref, shape: ci.shapeKey, x, y, w: shape.w, h: shape.h, rotation: rotF, value: c.value || '' });
     if (flipF) cellF.setAttribute('style', cellF.getAttribute('style') + 'flipH=1;');
-    placed.set(c.ref, { id: c.ref, x, y, w: shape.w, h: shape.h, rotation: 0, flipH: flipF });
+    placed.set(c.ref, { id: c.ref, x, y, w: shape.w, h: shape.h, rotation: rotF, flipH: flipF });
     for (let i = 0; i < ci.po.length; i++) {
       term(c.nodes[i], c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
     }
@@ -1307,6 +1965,10 @@ export function importNetlist2(model, parsed, opts = {}) {
     placed.set(lid, { id: lid, x: lx, y: ly, w: lw, h: lh, rotation: 0 });
   }
 
+  // NB : une passe de flip barycentrique des dipôles verticaux (règle 42) a
+  // été mesurée NÉGATIVE ici (le x des dipôles tournés est calculé pour +90 ;
+  // inverser la rotation décale la ligne de pins ; gilbert 64->40) — retirée.
+
   const wires = wireNets(model, { comps, info, placed, netTerms, vddNet, P });
 
   return { components: comps.map((c) => c.ref), wires, warnings: parsed.warnings || [],
@@ -1331,5 +1993,8 @@ export function importNetlist2(model, parsed, opts = {}) {
       return out;
     })(),
     pairs: structures.diffPairs.map((p) => p.refs.join('/')),
+    // NB : retirer le move de flip a été mesuré PIRE (gilbert 0->4 err,
+    // vco-lc-pmos 0->4) — la recherche CORRIGE plus d'orientations qu'elle
+    // n'en casse (R4/L3 à l'envers = 2 err, contre 9 sans le move)
     flippable: comps.filter((c) => 'RCLD'.includes(c.prefix)).map((c) => c.ref) };
 }

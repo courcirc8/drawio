@@ -1,0 +1,6 @@
+* Suiveur de tension replie FVF (biblio: ampli/ota)
+I1 vdd y 50u
+M1 y in out 0 NMOS
+M2 out y 0 0 NMOS
+R1 vdd out 5k
+.end

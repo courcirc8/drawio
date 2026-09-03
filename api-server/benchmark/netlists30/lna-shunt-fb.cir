@@ -1,0 +1,8 @@
+* LNA a contre-reaction resistive (biblio: lna)
+C1 rf g 2p
+M1 d g 0 0 NMOS
+R1 vdd d 600
+R2 g d 2k
+C2 d out 2p
+R3 out 0 50
+.end

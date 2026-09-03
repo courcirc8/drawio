@@ -34,7 +34,10 @@ export function detectStructures(parsed) {
   for (let i = 0; i < mos.length; i++) {
     for (let j = i + 1; j < mos.length; j++) {
       const a = mos[i], b = mos[j];
-      if (S(a) !== S(b) || railNames.has(S(a))) continue;
+      // la masse est un rail : deux MOS à source massée (Wilson M2/M3) ne
+      // forment pas une paire — le flip « gates extérieures » écrasait la
+      // règle 28 du miroir
+      if (S(a) !== S(b) || railNames.has(S(a)) || S(a) === '0') continue;
       if (isPmosLike(a) !== isPmosLike(b)) continue;
       if (G(a) === G(b)) continue;
       out.diffPairs.push({ refs: [a.ref, b.ref], tailNet: S(a), gates: [G(a), G(b)] });
@@ -45,6 +48,9 @@ export function detectStructures(parsed) {
   for (let i = 0; i < mos.length; i++) {
     for (let j = i + 1; j < mos.length; j++) {
       const a = mos[i], b = mos[j];
+      // même polarité exigée : la boucle NMOS/PMOS d'un beta-multiplier
+      // (G(M2)=D(M3), G(M3)=D(M2)) n'est PAS un cross-couplage de VCO
+      if (isPmosLike(a) !== isPmosLike(b)) continue;
       if (G(a) === D(b) && G(b) === D(a) && D(a) !== D(b)) {
         out.crossCoupled.push({ refs: [a.ref, b.ref], nets: [D(a), D(b)] });
       }

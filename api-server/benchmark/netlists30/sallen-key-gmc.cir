@@ -1,0 +1,8 @@
+* Filtre Sallen-Key a OTA (biblio: adc/dac, razavi_W_RMar00)
+R1 in n1 10k
+R2 n1 n2 10k
+C1 n1 out 100p
+C2 n2 0 100p
+G1 out 0 n2 out 1m
+R3 out 0 100k
+.end

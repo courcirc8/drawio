@@ -578,7 +578,12 @@ class Checker:
                     x, y, w, h = aabb(v)
                     if ax == 'v' and (abs(a[0] - x) < 2.5 or abs(a[0] - (x + w)) < 2.5):
                         lo, hi = max(min(a[1], b[1]), y), min(max(a[1], b[1]), y + h)
-                        if mos_kind(v['shape']) and hi - lo > 12 and e['src'] != e['tgt']:
+                        # le CANAL est du côté drain/source (x+w avant flip) ;
+                        # le côté gate (tip des leads) n'est qu'un edge-hug :
+                        # un bus gate-gate d'inverseur y est légitime (figures)
+                        chan_x = x if v['flipH'] else (x + w)
+                        if (mos_kind(v['shape']) and hi - lo > 12 and e['src'] != e['tgt']
+                                and abs(a[0] - chan_x) < 2.5):
                             self.add('channel-hug', 'error',
                                      f"fil {e['id']} longe le CANAL de {cid} sur {hi - lo:.0f}px "
                                      '— sortir du nœud horizontalement', (a[0], lo))
@@ -653,7 +658,9 @@ class Checker:
                 by_gate.setdefault(i['G'], []).append(cid)
         groups = []
         for net, refs in by_source.items():
-            if len(refs) == 2:
+            # même polarité exigée : NMOS+PMOS a source commune = étage de
+            # sortie push-pull (classe AB), pas une paire différentielle
+            if len(refs) == 2 and mos_kind(self.verts[refs[0]]['shape']) == mos_kind(self.verts[refs[1]]['shape']):
                 groups.append(('paire (source commune)', '14', refs))
         for net, refs in by_gate.items():
             if len(refs) >= 2 and any(info[r]['D'] == net for r in refs):

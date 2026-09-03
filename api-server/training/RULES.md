@@ -533,3 +533,194 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     depuis le début. Corollaires : source de polarisation ALIGNÉE sur le
     drain de sa diode (plongée droite, pas de baïonnette) ; port de bout
     de rail avec évitement de collision.
+
+53. **Campagne 30 topologies de publication (benchmark/netlists30, cycle 1→4 :
+    19 err + 1 crash → 21 err, 30/30 LVS)** — règles apprises :
+    - **PNP émetteur en HAUT** : le stencil pnp_transistor_1 est dessiné
+      comme le PMOS (flèche au pin NE) → PIN_ORDER_OVERRIDES (C,B,E)=
+      (SE,W,NE). Sans ça, masses dans le cercle et fils à travers le corps
+      (bandgap 6 err → 2).
+    - **Masse/tap DIRECTIONNELS + évitement** : pin latéral ou haut (base
+      de BJT) → sortir du corps horizontalement puis descendre ; jamais de
+      masse posée sur un voisin (scan de dégagement, idem tap VDD).
+    - **Pseudo-racines** : un transistor dont le net de drain n'est relié
+      à vdd qu'à travers un dipôle latéral (R de contre-réaction du
+      Cherry-Hooper) est une VRAIE colonne (place() récursif), jamais le
+      coin gauche. Les dipôles R/L/C restants entre deux nets de signal
+      rejoignent les flottants (barycentre).
+    - **Dipôle flottant VERTICAL** si ses deux ancres sont superposées
+      (|Δy| > |Δx|+20) — un corps horizontal entre deux nets empilés
+      force un fil qui enveloppe (wrap-around du Colpitts).
+    - **Queue PMOS AU-DESSUS de sa paire** (elle l'alimente par le haut) :
+      folded cascode, M0 était dessiné tête en bas sous M1/M2.
+    - **Élément partagé : coller au parent le plus PROFOND** quand les
+      parents ont des profondeurs différentes (la moyenne envoyait M4 du
+      folded au milieu de nulle part) ; centrage seulement entre parents
+      de même profondeur (queues de paires).
+    - **Une case (col, level) = UN corps** : deux paires cross-couplées
+      partageant les mêmes nets (StrongARM) se superposaient exactement
+      (77 err) ; résolveur multi-passes, l'alimenté descend sous son
+      producteur. La variante « bumper les deux membres d'une paire »
+      mesurée PIRE (cascade) — bump individuel.
+    - **Lanes gate-gate RÉSERVÉES** : deux liaisons figées (LOP/LOM du
+      mélangeur en anneau) prenaient la même lane → registre de lanes
+      occupées, span par span.
+    - **Canal ≠ côté gate** (checker) : le canal est du côté drain/source
+      (x+w avant flip) ; un bus gate-gate vertical au ras des tips de
+      leads (inverseur, Pierce) est légitime → warning, pas erreur.
+    - **Diagonale X cross-couplée bornée** : |Δy| ≤ 160 px (gate↔drain du
+      partenaire même rangée, VCO) ; entre étages (StrongARM) elle
+      balafre le schéma.
+    - Colonnes fractionnaires EN CASCADE (partagé de partagé) : interpoler
+      dans la permutation (newOf), sinon NaN silencieux → MST sans
+      candidat (crash StrongARM sous l'optimiseur).
+    Restent ouverts : StrongARM 10 err (double cc = hors gabarit),
+    beauty 0-30 sur folded/cherry/strongarm (croisements structurels),
+    ring-vco3 42 (boucle fermée), bandgap/pierce 2 err chacun.
+
+54. **Extension à 43 topologies (2026-09-02, 32→25 err, 30/43 à zéro)** :
+    - **La masse fait ±13 px, pas ±15** : la lane d'échappée des fils est à
+      ±14 px du flanc — une masse à ±15 la chevauchait STRUCTURELLEMENT de
+      1 px (through systématique sous chaque colonne à charge basse).
+      Chercher le conflit de CONSTANTES avant d'élargir des marges.
+    - **Cross-couplé = même polarité** (patterns) : la boucle NMOS/PMOS d'un
+      beta-multiplier (G↔D croisés) n'est pas un X de VCO — le faux flip
+      « gates au centre » coûtait 27 points de beauty.
+    - **Source massée ≠ paire différentielle** (patterns) : Wilson M2/M3
+      (sources à '0') étaient flippés « gates extérieures » contre la règle
+      du miroir. La masse est un rail même si railNames ne la liste pas.
+    - **Règle 14 du checker : même polarité aussi** — NMOS+PMOS à source
+      commune = étage push-pull (classe AB), pas une paire à aligner.
+    - **Deux fausses pistes MESURÉES puis retirées** : (a) marge d'obstacle
+      élargie pour petits corps dans les réparateurs (-2.5 puis -1 px) :
+      +4 à +9 erreurs — les rejets de candidats cascadent en détours pires
+      ailleurs ; (b) flip barycentrique des dipôles verticaux : le x des
+      dipôles tournés est calculé pour +90, inverser la rotation décale la
+      ligne de pins (gilbert 64→40). Mesurer chaque « évidence ».
+    Restent : strongarm 8 (double cc), wrap-around 5 (orientation dipôles,
+    à refaire EN AMONT du placement, pas en post-flip), inverter/lc-match
+    through (C de charge sous la masse du voisin), ota-2stage-pmos 28.8
+    (biais NMOS-en-bas du gabarit).
+
+55. **Gabarit LATCH + séparation latérale (2026-09-02, 25→18 err, 32/43 à
+    zéro, beauty 68,3)** — issu d'un diagnostic géométrique cas par cas :
+    - **LATCH (StrongARM)** : deux paires cross-couplées de POLARITÉS
+      OPPOSÉES sur les MÊMES deux nets -> gabarit dédié. Ordre de racines
+      imposé [précharge, ccP, ccP, précharge] : la descente de conduction
+      construit un TRUNK vertical par net de sortie (précharge -> cc PMOS
+      -> cc NMOS -> paire d'entrée dans la même colonne). Paires du latch
+      exclues du regroupement côte à côte (elles sont intégrées
+      verticalement) ; flip du membre gauche SEUL, jamais propagé à la
+      colonne. StrongARM 8 err/beauty 0 -> 3 err/36, structure des
+      figures publiées (X des gates au centre, CLK à gauche).
+    - **Éléments PARALLÈLES (mêmes deux nets) : séparation LATÉRALE** dans
+      le résolveur de cases (col+0.6), jamais l'un sous l'autre — le fil
+      du haut devait envelopper le corps du premier (wrap du Colpitts).
+    - **Shunt R/C/L vers la masse sous UNE colonne : accroché À CÔTÉ**
+      (col+0.6, sideOff persistant à travers la permutation de colonnes) —
+      centré sous la colonne, son fil traversait la zone de masse du
+      composant du dessus (inverter-amp 39->61 de beauty).
+    - **3e fausse piste mesurée** : retirer le move de flip de
+      l'optimiseur (au motif « l'orientation découle des nets ») : gilbert
+      0->4 err, vco-lc-pmos 0->4 — la recherche CORRIGE plus
+      d'orientations qu'elle n'en casse. Les 2 wraps qu'elle provoque
+      (R4, L3) sont le prix ; l'orientation par défaut est le vrai
+      chantier (en amont, pas en post-flip).
+    Restent 18 : strongarm 3 (fils du X), bandgap 2 (BJT), cherry 2,
+    delay-cell 2, lna-shunt-fb 2, ota-2stage-pmos 2 (gabarit dual),
+    5 circuits à 1.
+
+56. **AXE DE SIGNAL passif (2026-09-02, remarque utilisateur : « le LC-match
+    est nul alors qu'il a 5 composants — cherche les règles manquantes,
+    pas les patchs »)** : tout le moteur reposait sur deux ancrages —
+    piles de conduction (pensées MOS) et chaînes ancrées sur des GATES.
+    Un réseau sans élément actif n'a ni l'un ni l'autre : placement
+    aléatoire (RF flottant au milieu, OUT à 800 px, I/Q sans étiquette).
+    Règle générale : un réseau passif se dessine sur un AXE HORIZONTAL
+    entrée -> sortie — chemins série en lignes (arbre : tronc + branches,
+    une rangée chacune), shunts vers la masse dessous (vdd dessus,
+    parallèles côte à côte), et un PORT à chaque extrémité de l'axe :
+    les bouts de l'axe sont des interfaces PAR CONSTRUCTION, qu'ils
+    matchent ou non le regex de nommage (I/Q du générateur de
+    quadrature). lc-match 62->82, rc-filter 93, pi-atténuateur 88,
+    rc-cr 88, 0 erreur sur les quatre. Le net d'entrée se reconnaît par
+    /^(in|vin|rf|sig|lo|clk)/i ; si un shunt ne s'accroche à aucun nœud
+    de l'axe, le plan avorte et l'ancien moteur reprend (sûreté).
+
+57. **E/S HORIZONTALES : entrée depuis la GAUCHE, sortie vers la DROITE**
+    (règle utilisateur : « les humains, hormis pour les schémas symétriques
+    ou à paire diff, aiment avoir les entrées depuis la gauche et les
+    sorties vers la droite, pas vers le bas »). Le port d'une E/S nommée
+    single-ended (in/vin/rf/sig/clk/lo -> gauche ; out/vout/if/sa ->
+    droite) se pose À HAUTEUR DE PIN, tourné (90/270, pin face au
+    circuit, label horizontal), sur le terminal le plus à gauche/droite
+    du net — jamais pendu sous le schéma. Exceptions : nets
+    DIFFÉRENTIELS (xP dont le xM existe : placement symétrique conservé),
+    pin regardant le mauvais côté (on ne traverse pas un corps), pin
+    plein haut (port au-dessus reste légitime). Appliqué aussi aux ports
+    d'axe passif. Corollaires du même lot :
+    - le push d'un flottant qui ne trouve PAS de case libre posait le
+      corps EN COLLISION (10p du classe AB sur la source 100u) — dernier
+      recours : sous tout le schéma, jamais l'un sur l'autre ;
+    - une CHAÎNE de signal n'avait aucun évitement : elle recule
+      maintenant d'un cran tant qu'un corps déjà placé est sur son chemin.
+    class-ab 1 err -> 0 (69->71), biquad 67->79, sallen 68->79,
+    inverter-amp 1 err -> 0 (61->71). Total 18 -> 17 err, beauty 69,2.
+
+58. **Campagne « améliore tout » (2026-09-03, 17→11 err, 36/43 à zéro,
+    beauty 71,7)** — quatre chantiers mesurés + revue sceptique :
+    - **Checker JS dans le FAISCEAU de l'optimiseur** : le fastScore
+      pré-filtre est pénalisé de 30 pts par erreur checkDocument (règle 30
+      exclue, sa version JS sur-flagge). Piège trouvé par les nouveaux
+      tests : checkDocument renvoie {violations, errors} pas un tableau —
+      le try/catch avalait l'erreur et la pénalité était morte (cycle
+      « parfaitement neutre » = symptôme).
+    - **DUAL DE POLARITÉ** (mirrorPolarity) : un circuit à entrée PMOS =
+      miroir vertical de son dual NMOS (N↔P, vdd↔0, sources V/I
+      réorientées, stencils/rails/ancres rétablis, étiquettes ré-ancrées
+      SOUS les corps). ota-2stage-pmos 3 err/15 → 0 err/54. Périmètre
+      VOLONTAIREMENT étroit après revue sceptique (MOS seuls + bias I +
+      miroir NMOS à diode + pas de cc) : sur un cousin à bias résistif ou
+      en BJT le miroir produisait des fils à travers les corps.
+    - **Gabarit ANNEAU** : cycle d'inverseurs détecté → le net de RETOUR
+      reçoit une lane figée SOUS la rangée. ring-vco3 42,5 → 80,8, le
+      dessin des figures publiées.
+    - **BJT diode à collecteur massé DANS la colonne** (pas accolé façon
+      diode MOS) : bandgap 2 err/50 → 0 err/72, colpitts 89.
+    - **Fixtures GÉNÉRATEUR dans npm test** (10 circuits → LVS + 0 erreur
+      checker JS) : ont trouvé le bug de la pénalité morte dès leur
+      première exécution. Le checker JS exclut désormais les cellules
+      texte du through (aligné sur le juge Python).
+    Revue sceptique (sous-agent) : chiffres exacts vérifiés à la source,
+    mais dual cassé hors benchmark (corrigé par le périmètre étroit),
+    étiquettes miroitées sur les fils (corrigé), tests qui évitaient les
+    changements risqués (corrigé). Restent 11 : strongarm 3 (fils du X),
+    cherry 2, lna-shunt-fb 2, delay-cell 1, beta/pierce/wilson 1.
+
+59. **Cinq boucles d'amélioration mesurées + 2 revues sceptiques
+    (2026-09-03, 11→4 erreurs, 40/43 à zéro, beauty ~72)** :
+    - B1 : règle wrap-around portée dans le checker JS (zéro faux positif
+      sur 43) — la règle VOIT la faute de cherry mais l'optimiseur ne sait
+      pas la réparer (placement forcé, pas flip) ;
+    - B2 : DEMI-LATCH — une paire cc + une paire diff de polarité opposée
+      sur les mêmes drains = gabarit latch (delay-cell 24→60). Deux
+      tentatives cherry mesurées-retirées (lane feedback, alignement de
+      rangées) : il faut un vrai gabarit deux-étages ;
+    - B3 : ENTREFER du latch élargi (+0.3 col à droite du centre, queue
+      +0.15) — les 2 verticales du X ne tiennent pas dans 15 px
+      (strongarm 3→0, X en diagonales publiées) ;
+    - B4 : garde ultime anti CORPS-PROPRE en fin de routage (reroute en U,
+      échappées ±14 des deux côtés) — through 2→0 ; expose les tés de
+      self-edge à 4 px d'un dot (dédup 5 px les avale, cas coincé beta) ;
+    - B5 : la R de SHUNT-FEEDBACK (gate↔drain d'UN transistor) est une
+      Miller ; à DEUX transistors c'est le feedback d'un inverseur qui
+      reste en pile — la garde doit vivre aux deux entrées (markFloating
+      ET placement, le chemin « reste » contournait la première).
+    Revue sceptique 2 : 3 bugs hors-distribution corrigés (indexation
+    latchRoots quand une précharge manque ; exemption de taille de la
+    garde en boîte DESSINÉE — une R rot90 fait 20 de large mais 100 de
+    long ; gardes Miller alignées sur ccRefs). Leçon de communication :
+    « zéro erreur checker » ≠ publiable — le juge ne voit ni les ports
+    enterrés, ni les asymétries OUTP/OUTM, ni folded-cascode à 17.
+    Restent 4 : beta 30 (té coincé), cherry 2 (gabarit 2-étages à
+    écrire), wilson 28 (side-diode instable).

@@ -1,0 +1,7 @@
+* Miroir de Wilson charge (biblio: ampli/ota)
+I1 vdd a 100u
+M1 out a b 0 NMOS
+M2 a b 0 0 NMOS
+M3 b b 0 0 NMOS
+R1 vdd out 5k
+.end

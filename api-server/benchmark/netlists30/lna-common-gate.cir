@@ -1,0 +1,7 @@
+* LNA grille commune (biblio: lna, VLSI96p-derek)
+M1 out vb in 0 NMOS
+L1 in 0 4n
+L2 vdd out 6n
+C1 in rf 1p
+C2 out 0 200f
+.end

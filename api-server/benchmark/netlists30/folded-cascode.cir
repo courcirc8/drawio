@@ -1,0 +1,13 @@
+* OTA folded cascode (biblio: ampli/ota, isscc99p-bendik)
+M0 t vb1 vdd vdd PMOS
+M1 f1 inp t vdd PMOS
+M2 f2 inm t vdd PMOS
+M3 f1 vb4 0 0 NMOS
+M4 f2 vb4 0 0 NMOS
+M5 outm vb3 f1 0 NMOS
+M6 outp vb3 f2 0 NMOS
+M7 outm vb2 c1 vdd PMOS
+M8 outp vb2 c2 vdd PMOS
+M9 c1 vb1 vdd vdd PMOS
+M10 c2 vb1 vdd vdd PMOS
+.end

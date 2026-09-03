@@ -32,6 +32,9 @@ export const SPICE_MAP = {
 export const PIN_ORDER_OVERRIDES = {
   'mxgraph.electrical.transistors.pmos': ['SE', 'W', 'NE'],      // D=SE(bottom), G=W, S=NE(top)
   'mxgraph.electrical.transistors.pmos_bulk': ['SE', 'W', 'NE'],
+  // le stencil PNP est dessiné ÉMETTEUR EN HAUT (flèche au pin NE) — même
+  // situation que le PMOS : SPICE (C,B,E) -> C=SE(bas), B=W, E=NE(haut)
+  'mxgraph.electrical.transistors.pnp_transistor_1': ['SE', 'W', 'NE'],
 };
 
 /** Effective SPICE pin order for a classified component. */
