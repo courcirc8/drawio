@@ -675,3 +675,31 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     étiquettes miroitées sur les fils (corrigé), tests qui évitaient les
     changements risqués (corrigé). Restent 11 : strongarm 3 (fils du X),
     cherry 2, lna-shunt-fb 2, delay-cell 1, beta/pierce/wilson 1.
+
+59. **Cinq boucles d'amélioration mesurées + 2 revues sceptiques
+    (2026-09-03, 11→4 erreurs, 40/43 à zéro, beauty ~72)** :
+    - B1 : règle wrap-around portée dans le checker JS (zéro faux positif
+      sur 43) — la règle VOIT la faute de cherry mais l'optimiseur ne sait
+      pas la réparer (placement forcé, pas flip) ;
+    - B2 : DEMI-LATCH — une paire cc + une paire diff de polarité opposée
+      sur les mêmes drains = gabarit latch (delay-cell 24→60). Deux
+      tentatives cherry mesurées-retirées (lane feedback, alignement de
+      rangées) : il faut un vrai gabarit deux-étages ;
+    - B3 : ENTREFER du latch élargi (+0.3 col à droite du centre, queue
+      +0.15) — les 2 verticales du X ne tiennent pas dans 15 px
+      (strongarm 3→0, X en diagonales publiées) ;
+    - B4 : garde ultime anti CORPS-PROPRE en fin de routage (reroute en U,
+      échappées ±14 des deux côtés) — through 2→0 ; expose les tés de
+      self-edge à 4 px d'un dot (dédup 5 px les avale, cas coincé beta) ;
+    - B5 : la R de SHUNT-FEEDBACK (gate↔drain d'UN transistor) est une
+      Miller ; à DEUX transistors c'est le feedback d'un inverseur qui
+      reste en pile — la garde doit vivre aux deux entrées (markFloating
+      ET placement, le chemin « reste » contournait la première).
+    Revue sceptique 2 : 3 bugs hors-distribution corrigés (indexation
+    latchRoots quand une précharge manque ; exemption de taille de la
+    garde en boîte DESSINÉE — une R rot90 fait 20 de large mais 100 de
+    long ; gardes Miller alignées sur ccRefs). Leçon de communication :
+    « zéro erreur checker » ≠ publiable — le juge ne voit ni les ports
+    enterrés, ni les asymétries OUTP/OUTM, ni folded-cascode à 17.
+    Restent 4 : beta 30 (té coincé), cherry 2 (gabarit 2-étages à
+    écrire), wilson 28 (side-diode instable).

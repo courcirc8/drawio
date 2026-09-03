@@ -852,7 +852,10 @@ export function importNetlist2(model, parsed, opts = {}) {
       if (ci.top === vdd || ci.top === '0' || ci.bot === vdd || ci.bot === '0') continue;
       // R/L de CONTRE-RÉACTION (gate<->drain du même transistor, LNA à
       // shunt-feedback) : flottante comme une cap Miller, pas une pile
+      const ccRefs0 = new Set();
+      try { for (const pr of detectStructures({ components: comps }).crossCoupled) pr.refs.forEach((r) => ccRefs0.add(r)); } catch { /* sans MOS */ }
       const millerMatches = comps.filter((m2) => (m2.prefix === 'M' || m2.prefix === 'Q') &&
+        !ccRefs0.has(m2.ref) &&
         (() => { const mi2 = info.get(m2.ref);
           return mi2 != null && [ci.top, ci.bot].includes(mi2.gate) &&
             [ci.top, ci.bot].includes(m2.nodes[0]) && mi2.gate !== m2.nodes[0]; })());
@@ -920,6 +923,8 @@ export function importNetlist2(model, parsed, opts = {}) {
   //      clk à l'extérieur — comme les figures publiées (Razavi JSSC'09)
   const latchRefs = new Set();
   let latchRoots = null;
+  let latchCc = null; // les 2 refs de la paire cc CENTRALE (revue : indexer
+                      // latchRoots[1]/[2] mentait dès qu'une précharge manquait)
   {
     const cc = structures.crossCoupled;
     const kindOf = (r) => isPmos(comps.find((k) => k.ref === r));
@@ -945,6 +950,7 @@ export function importNetlist2(model, parsed, opts = {}) {
           info.get(k.ref).bot === net);
         const [netL, netR] = pPair.nets;
         const pL = prechOf(netL), pR = prechOf(netR);
+        latchCc = [pPair.refs[0], pPair.refs[1]];
         latchRoots = [pL && pL.ref, pPair.refs[0], pPair.refs[1], pR && pR.ref]
           .filter(Boolean);
         break;
@@ -1328,12 +1334,14 @@ export function importNetlist2(model, parsed, opts = {}) {
   //      font face à ~15 px, où DEUX verticales de nets différents doivent
   //      passer (le X) : impossible à ≥10 px d'écart. +0.3 colonne pour
   //      tout ce qui est à droite du centre.
-  if (latchRoots != null && latchRoots.length >= 3) {
-    const ccL = latchRoots[1], ccR = latchRoots[2];
-    const sL = slots.get(ccL), sR = slots.get(ccR);
-    if (sL != null && sR != null && sR.col > sL.col) {
+  if (latchCc != null) {
+    const sL = slots.get(latchCc[0]), sR = slots.get(latchCc[1]);
+    if (sL != null && sR != null && sR.col !== sL.col) {
       const cut = (sL.col + sR.col) / 2;
-      for (const [, sl2] of slots) if (sl2.col > cut) sl2.col += 0.3;
+      for (const [, sl2] of slots) {
+        if (sl2.col > cut + 0.01) sl2.col += 0.3;
+        else if (Math.abs(sl2.col - cut) <= 0.01) sl2.col += 0.15; // queue centrée
+      }
     }
   }
 

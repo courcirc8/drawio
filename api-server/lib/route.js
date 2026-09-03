@@ -792,7 +792,9 @@ function fixOwnBodyThrough(model, vertices) {
     for (let i = 0; i + 1 < pl.length && !bad; i++) {
       for (const [vid, own] of [[c.source, a], [c.target, b]]) {
         const v = byId.get(vid);
-        if (v.w < 30 || v.h < 30) continue;
+        const rotV = ((parseFloat(v.style.map.get('rotation') || '0') % 180) + 180) % 180 !== 0;
+        const dw = rotV ? v.h : v.w, dh = rotV ? v.w : v.h;
+        if (dw <= 24 && dh <= 24) continue; // ports/dots seulement
         if (ownFar(pl[i], pl[i + 1], v, own) > 8) { bad = true; break; }
       }
     }
