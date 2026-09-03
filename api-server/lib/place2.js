@@ -850,7 +850,16 @@ export function importNetlist2(model, parsed, opts = {}) {
       if (ci == null || !'RCL'.includes(c.prefix)) continue;
       if (axisRefs.has(c.ref)) continue;
       if (ci.top === vdd || ci.top === '0' || ci.bot === vdd || ci.bot === '0') continue;
-      if (c.prefix !== 'C' && (dsNets.has(ci.top) || dsNets.has(ci.bot))) continue;
+      // R/L de CONTRE-RÉACTION (gate<->drain du même transistor, LNA à
+      // shunt-feedback) : flottante comme une cap Miller, pas une pile
+      const millerMatches = comps.filter((m2) => (m2.prefix === 'M' || m2.prefix === 'Q') &&
+        (() => { const mi2 = info.get(m2.ref);
+          return mi2 != null && [ci.top, ci.bot].includes(mi2.gate) &&
+            [ci.top, ci.bot].includes(m2.nodes[0]) && mi2.gate !== m2.nodes[0]; })());
+      // UN seul transistor = shunt-feedback (Miller en R) ; DEUX = le
+      // feedback d'un INVERSEUR (Pierce), qui vit très bien dans sa pile
+      const millerish = millerMatches.length === 1;
+      if (c.prefix !== 'C' && !millerish && (dsNets.has(ci.top) || dsNets.has(ci.bot))) continue;
       floating.add(c.ref);
       unplaced.delete(c.ref);
     }
@@ -1697,9 +1706,9 @@ export function importNetlist2(model, parsed, opts = {}) {
     // le drain du MÊME transistor -> discrète, VERTICALE, collée à côté du
     // transistor entre les deux niveaux (règle utilisateur : pas de voûtes,
     // pas de fils au même potentiel qui se longent, pas de coudes)
-    if (c.prefix === 'C') {
+    if (c.prefix === 'C' || c.prefix === 'R') {
       const ccRefs = new Set(structures.crossCoupled.flatMap((pr) => pr.refs));
-      const fb = comps.find((m2) => {
+      const fbAll = comps.filter((m2) => {
         if ((m2.prefix !== 'M' && m2.prefix !== 'Q') || !placed.has(m2.ref)) return false;
         // cross-couplé : gate/drain sont les nets l'un de l'autre — la cap
         // de RÉSERVOIR n'est pas une Miller
@@ -1709,6 +1718,9 @@ export function importNetlist2(model, parsed, opts = {}) {
         const nets = [ci.top, ci.bot];
         return nets.includes(mi.gate) && nets.includes(m2.nodes[0]) && mi.gate !== m2.nodes[0];
       });
+      // DEUX transistors qui matchent = feedback d'INVERSEUR (Pierce) :
+      // pas une Miller, le corridor inter-rangées est occupé par la pile
+      const fb = fbAll.length === 1 ? fbAll[0] : null;
       if (fb != null) {
         const mi = info.get(fb.ref);
         const pM = placed.get(fb.ref);
