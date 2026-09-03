@@ -1752,7 +1752,21 @@ export function importNetlist2(model, parsed, opts = {}) {
     }
     let cx, cy, flipF = false;
     const empty0 = anchors[0].n === 0, empty1 = anchors[1].n === 0;
-    if (empty0 !== empty1) {
+    // liaison principalement VERTICALE : dipôle tourné (règle 42 — un corps
+    // horizontal entre deux nets superposés force un fil qui enveloppe).
+    // Déterminé AVANT le placement : un dipôle rot90 a ses pins sur l'axe
+    // VERTICAL de son centre, donc son x doit être la MOYENNE des x de ses
+    // deux nets (jamais le barycentre 2D : le routeur orthogonal laissait
+    // pendre un segment oblique — vco-lc-tail-filter w1514/w1517,
+    // strongarm-latch w1193)
+    const rotF = (anchors[0].n > 0 && anchors[1].n > 0 && 'RCLD'.includes(c.prefix) &&
+        Math.abs(anchors[0].y - anchors[1].y) > Math.abs(anchors[0].x - anchors[1].x) + 20)
+      ? (anchors[0].y <= anchors[1].y ? 90 : -90) : 0; // +90 : 'in' en HAUT
+    if (rotF !== 0) {
+      cx = (anchors[0].x + anchors[1].x) / 2;
+      cy = (anchors[0].y + anchors[1].y) / 2 + (P.floatDrop || 0);
+      flipF = false;
+    } else if (empty0 !== empty1) {
       // élément série vers l'extérieur (l'autre net deviendra un port) :
       // posé horizontalement du côté EXTÉRIEUR du schéma, à hauteur du pin
       const a = empty0 ? anchors[1] : anchors[0];
@@ -1768,14 +1782,6 @@ export function importNetlist2(model, parsed, opts = {}) {
       cy = (anchors[0].y + anchors[1].y) / 2 + (P.floatDrop || 0);
       // ORIENTATION : le pin 'in' (nodes[0]) regarde le centroïde de SON net
       flipF = anchors[0].x > anchors[1].x;
-    }
-    // liaison principalement VERTICALE : dipôle tourné (règle 42 — un corps
-    // horizontal entre deux nets superposés force un fil qui enveloppe)
-    let rotF = 0;
-    if (anchors[0].n > 0 && anchors[1].n > 0 && 'RCLD'.includes(c.prefix) &&
-        Math.abs(anchors[0].y - anchors[1].y) > Math.abs(anchors[0].x - anchors[1].x) + 20) {
-      rotF = anchors[0].y <= anchors[1].y ? 90 : -90; // +90 : 'in' en HAUT
-      flipF = false;
     }
     let x = cx - shape.w / 2, y = cy - shape.h / 2;
     // JAMAIS sur un autre corps : on remonte (puis descend) jusqu'à une
@@ -1931,6 +1937,71 @@ export function importNetlist2(model, parsed, opts = {}) {
           cell2.setAttribute('style', st3);
         }
       }
+      // le miroir a décalé les pins des flottants : reposer les dipôles
+      // TOURNÉS (rot ±90) sur le barycentre de leurs deux nets — un dipôle
+      // rot90 a ses pins sur l'axe VERTICAL de son centre, donc le
+      // re-centrage ne change rien aux pins (LVS neutre) et supprime le
+      // segment oblique que le routeur orthogonal laissait pendre
+      // (strongarm-latch w1193, vco-lc-tail-filter w1514/w1517)
+      for (const c of comps) {
+        if (!floating.has(c.ref)) continue;
+        const p2 = placed.get(c.ref);
+        const ci2 = info.get(c.ref);
+        if (p2 == null || ci2 == null || !p2.rotation) continue;
+        const cen = (net) => {
+          const pts = [];
+          for (const o of comps) {
+            const oi = info.get(o.ref);
+            if (oi == null || !placed.has(o.ref)) continue;
+            o.nodes.forEach((n, i) => {
+              if (n === net) pts.push(pinAbs(placed.get(o.ref), getPin(oi.shapeKey, oi.po[i])));
+            });
+          }
+          return pts.length ? { x: pts.reduce((a, q) => a + q.x, 0) / pts.length,
+                               y: pts.reduce((a, q) => a + q.y, 0) / pts.length } : null;
+        };
+        const a0 = cen(ci2.top), a1 = cen(ci2.bot);
+        if (a0 == null || a1 == null) continue;
+        const dx2 = (a0.x + a1.x) / 2 - (p2.x + p2.w / 2);
+        const dy2 = (a0.y + a1.y) / 2 - (p2.y + p2.h / 2);
+        if (Math.abs(dx2) < 1 && Math.abs(dy2) < 1) continue;
+        p2.x += dx2; p2.y += dy2;
+        updateCell(model, c.ref, { dx: dx2, dy: dy2 });
+      }
+    }
+  }
+
+  // ---- le miroir global (règle 52) a décalé les pins des flottants :
+  //      reposer les dipôles TOURNÉS (rot ±90) sur le barycentre de leurs
+  //      deux nets. Un dipôle rot90 a ses pins sur l'axe VERTICAL de son
+  //      centre : le re-centrage ne change rien aux pins (LVS neutre) et
+  //      supprime le segment oblique que le routeur orthogonal laissait
+  //      pendre (strongarm-latch w1193, vco-lc-tail-filter w1514/w1517)
+  {
+    for (const c of comps) {
+      if (!floating.has(c.ref)) continue;
+      const p2 = placed.get(c.ref);
+      const ci2 = info.get(c.ref);
+      if (p2 == null || ci2 == null || !p2.rotation) continue;
+      const cen = (net) => {
+        const pts = [];
+        for (const o of comps) {
+          const oi = info.get(o.ref);
+          if (oi == null || !placed.has(o.ref)) continue;
+          o.nodes.forEach((n, i) => {
+            if (n === net) pts.push(pinAbs(placed.get(o.ref), getPin(oi.shapeKey, oi.po[i])));
+          });
+        }
+        return pts.length ? { x: pts.reduce((a, q) => a + q.x, 0) / pts.length,
+                             y: pts.reduce((a, q) => a + q.y, 0) / pts.length } : null;
+      };
+      const a0 = cen(ci2.top), a1 = cen(ci2.bot);
+      if (a0 == null || a1 == null) continue;
+      const dx2 = (a0.x + a1.x) / 2 - (p2.x + p2.w / 2);
+      const dy2 = (a0.y + a1.y) / 2 - (p2.y + p2.h / 2);
+      if (Math.abs(dx2) < 1 && Math.abs(dy2) < 1) continue;
+      p2.x += dx2; p2.y += dy2;
+      updateCell(model, c.ref, { dx: dx2, dy: dy2 });
     }
   }
 
