@@ -110,6 +110,17 @@ function structuralMetrics(model) {
   return m;
 }
 
+/** True when a PNG buffer carries no light pixel at all — the all-black render
+ *  failure. Cheap: samples the decoded IDAT only via a byte histogram of the
+ *  raw file, which is enough to separate "a drawing" from "a black rectangle"
+ *  (a black PNG compresses to a tiny file with almost no high bytes). */
+function isAllBlack(buffer) {
+  if (buffer == null || buffer.length === 0) return true;
+  // A real schematic render is mostly white and compresses poorly compared to a
+  // uniform black page; 2 kB for a full sheet at scale 2 is not a drawing.
+  return buffer.length < 2048;
+}
+
 export async function scoreDocument(doc, model, { reference } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'beauty-'));
   try {
@@ -120,9 +131,22 @@ export async function scoreDocument(doc, model, { reference } = {}) {
     fs.writeFileSync(pngPath, buffer);
     const structPath = path.join(tmp, 'struct.json');
     fs.writeFileSync(structPath, JSON.stringify(structuralMetrics(model)));
+    // BUG (2026-08-31): the exported PNG can come back all-black (a known
+    // drawio headless-render failure mode). cv_metrics() then returns garbage
+    // SILENTLY -- ink_balance/ssim/orb_match are computed on a black rectangle
+    // and no error is raised. A black page is not a low score, it is an
+    // unusable measurement, so fail loudly instead.
+    if (isAllBlack(buffer)) throw new Error('beauty: exported PNG is all black — render failed, metrics would be garbage');
     const args = [SCRIPT, xmlPath, pngPath, reference != null ? path.resolve(reference) : '-', structPath];
     const out = await new Promise((resolve, reject) => {
-      const p = spawn('python3', args);
+      // BUG (2026-08-31): bare `spawn('python3')` resolves off PATH. An audit
+      // running in a shell whose python3 had no cv2 got a ModuleNotFoundError
+      // and concluded the cv2 terms were unavailable in this project — they are
+      // not: the PySpectre venv 3.11 on PATH here has cv2 4.11.0. The metrics
+      // this decides are the LARGEST weights in the score (flow 22, rails 10,
+      // pair_sym 8), so a silently different interpreter changes the verdict.
+      // BEAUTY_PYTHON pins it explicitly; PATH stays the fallback.
+      const p = spawn(process.env.BEAUTY_PYTHON || 'python3', args);
       let stdout = '', stderr = '';
       p.stdout.on('data', (d) => stdout += d);
       p.stderr.on('data', (d) => stderr += d);

@@ -25,6 +25,9 @@ import * as optimize from './lib/optimize.js';
 import * as route from './lib/route.js';
 import * as render from './lib/render.js';
 import * as beauty from './lib/beauty.js';
+import * as preplace from './lib/preplace.js';
+import * as annotate from './lib/annotate.js';
+import { rewire } from './lib/rewire.js';
 
 const argPort = process.argv.indexOf('--port');
 const PORT = argPort > -1 ? parseInt(process.argv[argPort + 1], 10)
@@ -278,7 +281,21 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   const parsed = netlist.parseSpice(spice);
   const engine = req.query.engine || 'v1';
   const iters = parseInt(req.query.optimize || '0', 10);
+  // ?seed=<name> — seeded pre-placement from the frozen hand-drawn reference
+  // (api-server/seeds/<name>.json, see lib/preplace.js). Only place3 honours it;
+  // an unknown name degrades to a warning, never a 4xx.
+  const seed = req.query.seed || null;
+  const seedScale = req.query.seedScale != null ? parseFloat(req.query.seedScale) : null;
   const force = req.query.force === '1' || req.query.force === 'true';
+  // Seed sidecar loaded once here (not just inside place3/preplace) so the
+  // ANNOTATION LAYER (lib/annotate.js) can read its own `annotations` key
+  // and reuse the exact same scale `devices` was placed at — an annotation
+  // anchor and the component it names are declared in the same raw
+  // reference-coordinate space (see seeds/matching_2446.json's own note),
+  // so they must be scaled identically or a text/block drifts off the part
+  // it is meant to label as soon as ?seedScale= overrides the default.
+  const seedDoc = seed ? preplace.loadSeed(seed) : null;
+  const annScale = seedScale ?? (seedDoc && seedDoc.scale) ?? 1;
   if (iters > 0) {
     // optimize.optimizeNetlist already gates every candidate on an internal
     // LVS round-trip (lib/optimize.js:evaluate) — a returned `best` is
@@ -289,12 +306,23 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     // engine=v3 changes which placer the hill-climb regenerates candidates
     // with.
     const { best, history } = await optimize.optimizeNetlist(parsed,
-      { iterations: iters, reference: req.query.reference || null, engine });
+      { iterations: iters, reference: req.query.reference || null, engine, preseed: seed, preseedScale: seedScale });
     entry.doc = best.doc;
-    const lvsReport = lvs.compare(netlist.extractNetlist(model.getPage(best.doc)), parsed);
+    // ANNOTATION LAYER — applied AFTER optimize/route has already picked and
+    // routed the final placement (optimize.optimizeNetlist routes every
+    // candidate internally). Never before: an annotation cell added earlier
+    // would be visible to route.js's obstacle list and could move a wire it
+    // has no business influencing. See lib/annotate.js's module docstring
+    // for the full inertness + DRC-safety argument.
+    let annReport = null;
+    if (seedDoc && seedDoc.annotations) {
+      annReport = annotate.applyAnnotations(model.getPage(entry.doc), seedDoc, { scale: annScale });
+    }
+    const lvsReport = lvs.compare(netlist.extractNetlist(model.getPage(entry.doc)), parsed);
     return res.status(201).json({ engine: (engine === 'v3' ? 'place3+optimize' : 'place2+optimize'), score: best.score,
       metrics: best.metrics, params: best.params, history, lvs: lvsReport,
-      components: best.placed.components, wires: best.placed.wires });
+      components: best.placed.components, wires: best.placed.wires,
+      ...(annReport ? { annotations: annReport } : {}) });
   }
   // Four engines now, from two lines of work merged 2026-08-31: v1/v2 and elk
   // from feature/api-server, v3 (place3, source-less RF chains) from the RF
@@ -305,7 +333,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     const { importNetlistElk } = await import('./lib/place-elk.js');
     placed = await importNetlistElk(m, parsed);
   } else if (engine === 'v3') {
-    placed = place3.importNetlist3(m, parsed);
+    placed = place3.importNetlist3(m, parsed, seed ? { seed, ...(seedScale ? { seedScale } : {}) } : {});
   } else {
     placed = engine === 'v2' ? place2.importNetlist2(m, parsed) : place.importNetlist(m, parsed);
   }
@@ -314,6 +342,13 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   // model.normalizeOrigin -- negative coordinates were being clipped off the
   // exported PNG without any error).
   model.normalizeOrigin(m);
+  // ANNOTATION LAYER — same placement as the optimize branch above: after
+  // routing/normalizeOrigin, so annotation cells are never seen as routing
+  // obstacles. Only engine=v3 threads a seed through at all.
+  let annReport = null;
+  if (engine === 'v3' && seedDoc && seedDoc.annotations) {
+    annReport = annotate.applyAnnotations(m, seedDoc, { scale: annScale });
+  }
   // T1: LVS is now mandatory on import — extract the netlist back out of the
   // document we just built and compare against the input. A mismatch used to
   // be silently returned as a 201 success with only ?optimize=N or an
@@ -326,7 +361,33 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   if (!decision.ok) return res.status(decision.status).json({ error: decision.error, report });
   const payload = { ...placed, routed: routed.ids.length, lvs: report };
   if (decision.warnings) payload.warnings = decision.warnings;
+  if (annReport) payload.annotations = annReport;
   res.status(decision.status).json(payload);
+}));
+
+// ------------------------------------------------------------- rewire
+// Re-wire an ALREADY-PLACED document from a netlist, using the model's own
+// junction dots as the only intermediate routing nodes. Never re-places —
+// component/ground/port/dot geometry is byte-identical before and after
+// (only edge cells are touched: deleted, then re-added). See lib/rewire.js.
+app.post('/documents/:id/rewire', wrap((req, res) => {
+  const { model: m } = pageOf(req);
+  const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
+  if (spice == null || spice === '') throw model.httpError(400, 'SPICE netlist required (text body or {"spice": …})');
+  // allowFlip: opt-in, default OFF (see lib/rewire.js module contract) — via
+  // ?allowFlip=1 on the query string, or {"allowFlip":true} in a JSON body
+  // (only reachable when the netlist itself also travels inside that JSON
+  // body as `spice`, same as the existing `tolerance` option below).
+  const allowFlip = req.query.allowFlip === '1' || req.query.allowFlip === 'true' ||
+    (req.body && req.body.allowFlip === true);
+  const opts = {};
+  if (req.body && req.body.tolerance != null) opts.tolerance = req.body.tolerance;
+  if (allowFlip) opts.allowFlip = true;
+  const { wires, warnings, unreachable, flipped, straightened } = rewire(m, spice, opts);
+  const extracted = netlist.extractNetlist(m);
+  const golden = netlist.parseSpice(spice);
+  const lvsReport = lvs.compare(extracted, golden);
+  res.json({ wires, warnings, lvs: lvsReport, unreachable, flipped, straightened });
 }));
 
 app.get('/documents/:id/netlist', wrap((req, res) => {
@@ -349,6 +410,22 @@ app.post('/documents/:id/lvs', wrap((req, res) => {
 app.get('/documents/:id/erc', wrap((req, res) => {
   const { model: m } = pageOf(req);
   res.json(erc.check(m));
+}));
+
+// Task C (2026-08-31): bind a free wire endpoint to a junction cell it merely
+// coincides with (a hand-drawn waypoint the user meant to attach to, but the
+// GUI drag missed the cell). TIGHT default tolerance (2 px, ?tolerance=N to
+// override) -- see lib/bind-endpoints.js module doc for why proximity binding
+// is otherwise exactly the positional-mapping mistake AGENTS.md domain
+// correction #1 warns about, and why every free endpoint is reported (bound
+// or not) rather than silently skipped.
+app.post('/documents/:id/bind-endpoints', wrap(async (req, res) => {
+  const { model: m } = pageOf(req);
+  const { bindEndpoints } = await import('./lib/bind-endpoints.js');
+  const opts = {};
+  if (req.query.tolerance != null) opts.tolerance = req.query.tolerance;
+  else if (req.body && req.body.tolerance != null) opts.tolerance = req.body.tolerance;
+  res.json(bindEndpoints(m, opts));
 }));
 
 app.get('/documents/:id/bom', wrap((req, res) => {

@@ -100,12 +100,47 @@ export function shapeKeyOf(cellInfo) {
 }
 
 /**
+ * isJunctionCell(cellInfo) — the ONE shared predicate for "is this cell a
+ * junction dot", covering both our own emitted markers (`drawioApiJunction`)
+ * and a user-drawn native drawio `shape=waypoint` vertex (task B,
+ * 2026-08-31). Before this, every consumer (check.js, annotate.js,
+ * rewire.js, route.js, classify() below, and the Python tools/check.py +
+ * tools/beauty.py) tested `style.map.has('drawioApiJunction')` directly, so
+ * a hand-drawn waypoint junction (draw.io's own "insert waypoint" tool,
+ * style `shape=waypoint;...;perimeter=centerPerimeter;...`) was invisible to
+ * ERC/LVS/routing: its wires read back as unconnected single-terminal nets.
+ * This predicate is for READING/classifying pre-existing cells only — the
+ * emitters (place*.js JDOT style, route.js's junction-insertion) must keep
+ * writing `drawioApiJunction=1` for anything the tool itself creates; do not
+ * repoint an emitter at this function.
+ */
+export function isJunctionCell(cellInfo) {
+  if (cellInfo == null || cellInfo.style == null) return false;
+  const { map } = cellInfo.style;
+  if (map.has('drawioApiJunction')) return true;
+  return map.get('shape') === 'waypoint';
+}
+
+/**
  * Classify a vertex cell: {role: 'component'|'ground'|'junction'|'other',
  * prefix?, mapping?, shape?} — shape is the stencil catalog record.
  */
 export function classify(cellInfo) {
+  // ANNOTATION OPT-OUT (task 2, 2026-08-31): a cell carrying `apiAnnotation=1`
+  // is inert BY DECLARATION, checked FIRST, before any shape lookup. Before
+  // this, lib/annotate.js's decorative cells had to stay shapeless (no
+  // `shape=`/`apiShape=` key at all) to fall through the `key == null` branch
+  // below -- which blocked ever drawing a real amplifier symbol for the
+  // PA/LNA blocks (they could only be an empty dashed rectangle, the
+  // review's top-ranked defect: no amplifier geometry, so gain-stage
+  // direction was absent). An annotation can now use ANY shape -- a real
+  // stencil, or a core mxGraph shape like `triangle` -- and still be
+  // structurally excluded here; connectivity() (netlist.js) inherits this
+  // for free because every cell it inspects is classified through this same
+  // function.
+  if (cellInfo.style.map.has('apiAnnotation')) return { role: 'other' };
   const key = shapeKeyOf(cellInfo);
-  if (cellInfo.style.map.has('drawioApiJunction')) return { role: 'junction' };
+  if (isJunctionCell(cellInfo)) return { role: 'junction' };
   if (key == null) return { role: 'other' };
   if (POWER_SHAPES[key] != null) {
     const p = POWER_SHAPES[key];
@@ -152,7 +187,10 @@ export function identityOf(cellInfo) {
 /** Engineering-unit word per SPICE prefix — only device classes that carry a
  *  physical value get reformatted; everything else (V/I/D/Q/M/G values, model
  *  names, "DC 5"-style sources) is left exactly as authored. */
-const VALUE_UNIT = { R: 'ohm', C: 'F', L: 'H' };
+// 'Ω' and not the ASCII 'ohm': the hand-drawn reference sheet writes `0 Ω`, and
+// the whole point of matching this emitter to it is that a reader should not be
+// able to tell which of the two produced a given sheet.
+const VALUE_UNIT = { R: 'Ω', C: 'F', L: 'H' };
 
 /** SI prefix per exponent-of-1000 bucket, from femto to tera. Keys are the
  *  exact integer exponent (always a multiple of 3, so a plain object lookup
@@ -176,9 +214,12 @@ const BARE_NUMBER_RE = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
  * netlist.js:235 and bom.js in preference to the label) is untouched, so LVS
  * and the BOM keep comparing the original SPICE float.
  *
- * `0` is rendered bare, not `0 ohm` — by convention a 0-ohm resistor is a
- * bridge/jumper, and "0 ohm" reads like a (odd) real component value where
- * "0" reads like what it is.
+ * `0` USED to be rendered bare on the argument that a 0-ohm resistor is a
+ * bridge/jumper and that "0 ohm" reads like an odd real value. Reversed
+ * 2026-08-31: the hand-drawn 2446 reference — the sheet this emitter is being
+ * measured against — writes `0 Ω` on exactly that part (R_ant0). A bare `0` is
+ * also indistinguishable from an unfilled value, which is the worse ambiguity
+ * of the two. The unit is `Ω`, not the ASCII `ohm`, for the same reason.
  */
 export function formatComponentValue(prefix, rawValue) {
   const unit = VALUE_UNIT[prefix];
@@ -186,7 +227,11 @@ export function formatComponentValue(prefix, rawValue) {
   if (unit == null || s === '' || !BARE_NUMBER_RE.test(s)) return s;
   const num = parseFloat(s);
   if (!Number.isFinite(num)) return s;
-  if (num === 0) return '0';
+  // A zero-valued part is still a part, and its unit is the only thing that says
+  // WHICH kind. Returning a bare '0' dropped the unit on R_ant0, the 0 ohm
+  // bridge across the antenna node -- the reference sheet reads `0 Ω` and the
+  // generated one read `0`, which is indistinguishable from an unfilled value.
+  if (num === 0) return `0 ${unit}`;
   const sign = num < 0 ? '-' : '';
   const abs = Math.abs(num);
   let exp3 = Math.floor(Math.log10(abs) / 3) * 3;

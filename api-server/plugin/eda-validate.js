@@ -135,6 +135,33 @@ Draw.loadPlugin(function(ui)
 	clearBtn.onclick = function() { clearWarnings(); statusEl.innerHTML = 'Overlays cleared.'; };
 	div.appendChild(clearBtn);
 
+	// Re-wire the CURRENT page from the golden netlist textarea below, using
+	// only the junction dots already drawn on the page as routing nodes
+	// (POST /documents/:id/rewire, see lib/rewire.js). Placement is never
+	// touched — only edges are replaced. Reuses the same textarea as LVS so
+	// there is one place to paste the reference netlist, not two.
+	var rewireBtn = document.createElement('button');
+	rewireBtn.textContent = 'Rewire from dots';
+	rewireBtn.style.marginTop = '6px';
+	rewireBtn.style.display = 'block';
+	rewireBtn.onclick = function() { runRewire(); };
+	div.appendChild(rewireBtn);
+
+	// allowFlip: opt-in mirror pass for unroutable 2-pin R/L/C parts, off by
+	// default (see lib/rewire.js's allowFlip contract — geometry is otherwise
+	// byte-identical). One query-string flag on the same POST, surfaced here
+	// as a plain checkbox rather than a separate control to keep this a
+	// low-risk addition to an already-working action.
+	var allowFlipLabel = document.createElement('label');
+	allowFlipLabel.style.display = 'block';
+	allowFlipLabel.style.marginTop = '4px';
+	var allowFlipBox = document.createElement('input');
+	allowFlipBox.type = 'checkbox';
+	allowFlipBox.id = 'eda-rewire-allow-flip';
+	allowFlipLabel.appendChild(allowFlipBox);
+	allowFlipLabel.appendChild(document.createTextNode(' allow mirroring unroutable R/L/C parts (allowFlip)'));
+	div.appendChild(allowFlipLabel);
+
 	var lvsToggleLabel = document.createElement('div');
 	lvsToggleLabel.style.marginTop = '10px';
 	lvsToggleLabel.style.fontWeight = 'bold';
@@ -324,16 +351,120 @@ Draw.loadPlugin(function(ui)
 		});
 	}
 
+	/**
+	 * Re-wires the current page from the golden netlist textarea, through the
+	 * page's own junction dots (POST /documents/:id/rewire). On success the
+	 * returned document is fetched back as XML and loaded into the graph via
+	 * setGraphXml — placement is untouched server-side, so this only replaces
+	 * the edge set. Never throws; a server-down / empty-netlist / rewire
+	 * error degrades to a status message, exactly like runCheck.
+	 */
+	function runRewire()
+	{
+		var netlistText = goldenSpice && goldenSpice.trim() !== '' ? goldenSpice : goldenBox.value;
+		if (!netlistText || netlistText.trim() === '')
+		{
+			statusEl.style.color = '#b71c1c';
+			statusEl.innerHTML = 'Paste a SPICE netlist in the box below first.';
+			return;
+		}
+		goldenSpice = netlistText;
+
+		var xmlNode = ui.editor.getGraphXml();
+		var xml = mxUtils.getXml(xmlNode);
+		var docId = null;
+
+		statusEl.style.color = '#000';
+		statusEl.innerHTML = 'Rewiring…';
+		resultsEl.innerHTML = '';
+
+		fetchJson(SERVER + '/documents', {
+			method: 'POST',
+			headers: { 'Content-Type': 'text/xml' },
+			body: xml,
+		})
+		.then(function(created)
+		{
+			docId = created.id;
+			var rewireUrl = SERVER + '/documents/' + docId + '/rewire' +
+				(allowFlipBox.checked ? '?allowFlip=1' : '');
+			return fetchJson(rewireUrl, {
+				method: 'POST',
+				headers: { 'Content-Type': 'text/plain' },
+				body: netlistText,
+			});
+		})
+		.then(function(result)
+		{
+			return fetch(SERVER + '/documents/' + docId).then(function(resp)
+			{
+				return resp.text().then(function(rewiredXml) { return { result: result, xml: rewiredXml }; });
+			});
+		})
+		.then(function(pair)
+		{
+			var parsed = mxUtils.parseXml(pair.xml);
+			ui.editor.setGraphXml(parsed.documentElement);
+
+			var lvsOk = pair.result.lvs == null || pair.result.lvs.match;
+			var unreach = pair.result.unreachable || [];
+			var flipped = pair.result.flipped || [];
+			statusEl.style.color = (!lvsOk || unreach.length > 0) ? '#e65100' : '#2e7d32';
+			statusEl.innerHTML = 'Rewire: ' + (pair.result.wires || []).length + ' wire(s) drawn' +
+				' &nbsp;|&nbsp; LVS: ' + (lvsOk ? 'MATCH' : 'MISMATCH') +
+				(unreach.length > 0 ? ' &nbsp;|&nbsp; ' + unreach.length + ' terminal(s) unreachable' : '') +
+				(flipped.length > 0 ? ' &nbsp;|&nbsp; mirrored: ' + flipped.map(esc).join(', ') : '');
+
+			var html = '';
+			if ((pair.result.warnings || []).length > 0)
+			{
+				html += '<div style="font-weight:bold;margin-top:6px">Warnings:</div><ul style="padding-left:16px;margin:4px 0">';
+				pair.result.warnings.forEach(function(w) { html += '<li style="color:#e65100">' + esc(w) + '</li>'; });
+				html += '</ul>';
+			}
+			if (unreach.length > 0)
+			{
+				html += '<div style="font-weight:bold;margin-top:6px">Unreachable terminals:</div><ul style="padding-left:16px;margin:4px 0">';
+				unreach.forEach(function(u) { html += '<li style="color:#b71c1c">net ' + esc(u.net) + ': ' + esc(u.terminal) + '</li>'; });
+				html += '</ul>';
+			}
+			if (!lvsOk)
+			{
+				html += '<div style="font-weight:bold;margin-top:6px">LVS mismatch after rewire — see Check now for details.</div>';
+			}
+			if (html === '') html = '<p style="color:#2e7d32">Clean — every net wired, LVS matches.</p>';
+			resultsEl.innerHTML = html;
+		})
+		.catch(function(err)
+		{
+			statusEl.style.color = '#b71c1c';
+			statusEl.innerHTML = 'Rewire failed: ' + esc(err.message);
+			resultsEl.innerHTML = '';
+			console.warn('[eda-validate] rewire failed: ' + err.message);
+		})
+		.then(function()
+		{
+			if (docId != null) fetch(SERVER + '/documents/' + docId, { method: 'DELETE' }).catch(function() {});
+		});
+	}
+
 	// ---------------------------------------------------------------
 	// Action + menu + toolbar wiring
 	// ---------------------------------------------------------------
 
 	mxResources.parse('edaValidate=Check schematic (LVS/ERC)');
+	mxResources.parse('edaRewire=Rewire from dots');
 
 	ui.actions.addAction('edaValidate', function()
 	{
 		win.setVisible(true);
 		runCheck();
+	});
+
+	ui.actions.addAction('edaRewire', function()
+	{
+		win.setVisible(true);
+		runRewire();
 	});
 
 	if (!ui.editor.isChromelessView())
@@ -344,7 +475,7 @@ Draw.loadPlugin(function(ui)
 		menu.funct = function(menu, parent)
 		{
 			oldFunct.apply(this, arguments);
-			ui.menus.addMenuItems(menu, ['-', 'edaValidate'], parent);
+			ui.menus.addMenuItems(menu, ['-', 'edaValidate', 'edaRewire'], parent);
 		};
 
 		// Toolbar button — best-effort: some layouts (chromeless, minimal
@@ -355,6 +486,9 @@ Draw.loadPlugin(function(ui)
 			{
 				ui.addButton(null, mxResources.get('edaValidate'),
 					function() { ui.actions.get('edaValidate').funct(); },
+					ui.toolbar.container);
+				ui.addButton(null, mxResources.get('edaRewire'),
+					function() { ui.actions.get('edaRewire').funct(); },
 					ui.toolbar.container);
 			}
 		}

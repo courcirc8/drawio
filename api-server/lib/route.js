@@ -12,6 +12,7 @@ import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import { allCells, cellInfo, setEdgePoints, updateCell, mergeStyle } from './model.js';
 import { getShape } from './stencils.js';
+import { isJunctionCell } from './components.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const LIB_DIR = path.resolve(HERE, '../../src/main/webapp/js/libavoid-js');
@@ -388,7 +389,8 @@ export async function routePage(model, edgeIds, opts) {
   // ---- nettoyage : points dupliqués et pointes A->B->A laissés par les réparations
   cleanupDegeneratePoints(model);
   // ---- points de contact sur les branches >=3 terminaux (après géométrie finale)
-  if (process.env.DISABLE_DOTS !== '1') addContactDots(model);
+  if (process.env.DISABLE_DOTS !== '1') { addContactDots(model); hideDegenerateJunctions(model); }
+  offsetEdgeLabels(model);
   return { ids: routed };
 }
 
@@ -401,7 +403,7 @@ function netGroups(cells) {
   const endKey = (c, which) => {
     const cid = which === 'src' ? c.source : c.target;
     const cell = byId2.get(cid);
-    if (cell != null && cell.style.map.has('drawioApiJunction')) return 'J:' + cid;
+    if (cell != null && isJunctionCell(cell)) return 'J:' + cid;
     const X = c.style.map.get(which === 'src' ? 'exitX' : 'entryX');
     const Y = c.style.map.get(which === 'src' ? 'exitY' : 'entryY');
     // clé par position ABSOLUE arrondie : deux ancres relatives différentes
@@ -775,6 +777,216 @@ function cleanupDegeneratePoints(model) {
   }
 }
 
+/**
+ * Un point de contact au MILIEU d'une ligne est interdit (règle utilisateur) :
+ * il ne veut rien dire, et il se lit comme une jonction là où il n'y en a pas.
+ *
+ * DEFECT (2026-08-31): place3 câble chaque net en ETOILE autour d'un moyeu
+ * `J_<net>` et peint un dot dessus, sans jamais regarder la géométrie qui en
+ * résulte. Mesuré sur 2446 : les quatre fils de `J_Bp` arrivent TOUS sur la même
+ * horizontale y=80 (C4 x=363, L3 x=336 à droite ; C1 x=122, P_Bp x=64 à gauche)
+ * — deux directions distinctes, pas trois. Le dot était donc peint au milieu du
+ * rail Bp. Même cas pour `J_n_pi1_out` et `J_rx_Bn_dcblk`.
+ *
+ * On NE SUPPRIME PAS la cellule : les fils s'y raccordent, elle porte la
+ * connectivité. On éteint seulement le GLYPHE, et on pose `apiJunctionHidden=1`
+ * pour que tools/check.py ne la compte pas comme un dot dessiné.
+ *
+ * La cause profonde reste le câblage en étoile (les taps colinéaires se
+ * recouvrent — c'est aussi la règle 29). Éteindre le glyphe corrige ce qui est
+ * FAUX (un point là où il n'y a pas de jonction) sans prétendre corriger ce qui
+ * est seulement MOCHE (deux conducteurs superposés).
+ */
+/**
+ * Décaler le label d'un fil PERPENDICULAIREMENT au segment qui le porte.
+ *
+ * DEFECT (2026-08-31, régression introduite le même jour) : pour empêcher un fil
+ * de barrer le texte de son propre nom de net, le style d'arête par défaut avait
+ * reçu `labelBackgroundColor=#ffffff`. mxGraph peint ce fond en OPAQUE derrière
+ * le texte, et un label d'arête est posé SUR le fil : le halo a donc effacé ~12 px
+ * de conducteur sous chaque nom. Une revue visuelle l'a lu comme un circuit
+ * OUVERT. Un faux open est une affirmation électrique fausse ; un texte barré
+ * n'est que laid — le remède était pire que le mal.
+ *
+ * `verticalAlign=bottom` ne marche pas non plus en général : au moment où
+ * l'arête est créée on ignore la direction du segment médian, et l'astuce ne
+ * vaut que pour un segment horizontal. Ici, en revanche, le routage EST terminé
+ * et la polyligne est connue — la direction se mesure au lieu d'être supposée.
+ *
+ * mxGraph pose le label d'arête à 50 % de la longueur d'arc, puis y ajoute
+ * l'`<mxPoint as="offset">` de la géométrie. On mesure donc le segment à 50 %,
+ * et on décale de son côté : vers le haut pour un segment horizontal, vers la
+ * droite pour un vertical (d'une demi-largeur de texte estimée, sinon le texte
+ * centré chevauche encore le fil).
+ */
+/**
+ * DEFECT B (2026-08-31): the offset above only ever considers the WIRE
+ * segment it rides on, never the model's own junction/dot glyphs — a label
+ * pushed clear of its conductor can still land squarely on a 3-way dot a few
+ * px away (measured: net "Up" on the 2446 hand-in file, painted over the
+ * junction where the C2 branch, the L3 branch and the vertical bus to
+ * L11/C10 meet; the dot renders as a half-moon under the letter "p", making
+ * a junction indistinguishable from a crossing without zooming).
+ *
+ * Fix reuses the SAME mechanism rather than adding a second one: the
+ * direction (above the segment for a horizontal wire, to the side for a
+ * vertical one) is still chosen exactly as before from the mid-segment's own
+ * orientation; only the MAGNITUDE now grows in that fixed direction, in the
+ * existing step's units, until the label's estimated box (centred on the
+ * offset point, using the same 3.6-px/char metric as the horizontal case)
+ * clears every junction/dot cell's hub by a margin. This is deliberately NOT
+ * `annotate.js::findClearSpot()`'s ring search — that tool is for a free
+ * *decoration* cell with no fixed anchor; an edge label's anchor (50% of arc
+ * length) is not something we get to move, only its offset from it, so a
+ * 1-D growth along the already-chosen axis is the right amount of machinery,
+ * not a second geometry model. Capped at a few steps: if it still can't
+ * clear (e.g. a dot sitting exactly on the label's own axis on both sides),
+ * the last computed offset is kept rather than searched forever — legibility
+ * is a quality goal here, not a DRC-gated correctness one.
+ */
+export function offsetEdgeLabels(model) {
+  const cells = allCells(model);
+  const infos = cells.map(cellInfo);
+  const byId = new Map(infos.filter((c) => c.kind === 'vertex').map((c) => [c.id, c]));
+  // Junction/dot hubs to steer labels clear of: any vertex carrying the
+  // `drawioApiJunction` marker, hidden (apiJunctionHidden=1) or not -- a
+  // hidden dot still marks a real electrical branch point and a label
+  // painted over it is just as illegible once zoomed, the glyph merely
+  // wasn't there to make it obvious.
+  const dotHubs = infos
+    .filter((c) => c.kind === 'vertex' && isJunctionCell(c) && c.x != null)
+    .map((c) => ({ x: c.x + c.w / 2, y: c.y + c.h / 2, r: Math.max(c.w, c.h) / 2 }));
+  for (let i = 0; i < cells.length; i++) {
+    const c = infos[i];
+    if (c.kind !== 'edge') continue;
+    const label = String(c.value || '').trim();
+    if (!label) continue;
+    const poly = polylineOf(c, byId);
+    if (poly == null || poly.length < 2) continue;
+    const segs = [];
+    let total = 0;
+    for (let k = 0; k + 1 < poly.length; k++) {
+      const L = Math.hypot(poly[k + 1].x - poly[k].x, poly[k + 1].y - poly[k].y);
+      segs.push({ a: poly[k], b: poly[k + 1], L });
+      total += L;
+    }
+    if (total <= 0) continue;
+    let acc = 0, mid = segs[0];
+    for (const sg of segs) { if (acc + sg.L >= total / 2) { mid = sg; break; } acc += sg.L; }
+    const t = mid.L > 0 ? Math.max(0, Math.min(1, (total / 2 - acc) / mid.L)) : 0;
+    const anchor = { x: mid.a.x + t * (mid.b.x - mid.a.x), y: mid.a.y + t * (mid.b.y - mid.a.y) };
+    const dx = Math.abs(mid.b.x - mid.a.x), dy = Math.abs(mid.b.y - mid.a.y);
+    const horiz = dx >= dy;
+    // 3.6 px/caractère : demi-largeur d'un helvetica 12 px, mesurée sur les
+    // labels de nets existants (`n_pi1_out_rf`, le plus long, 12 caractères).
+    const halfW = 3.6 * label.length, halfH = 7;
+    // step direction is exactly the pre-existing choice (up for a horizontal
+    // wire, right for a vertical one); only its magnitude grows below.
+    const dir = horiz ? { x: 0, y: -1 } : { x: 1, y: 0 };
+    const base = horiz ? 11 : 7 + halfW;
+    const growStep = horiz ? 9 : 14;
+    let off = { x: dir.x * base, y: dir.y * base };
+    for (let grow = 0; grow < 6; grow++) {
+      const labelCx = anchor.x + off.x, labelCy = anchor.y + off.y;
+      const blocked = dotHubs.some((h) => {
+        // closest point on the label's AABB to the hub centre, vs. the hub's
+        // own radius plus a small clearance margin -- same rect/circle test
+        // annotate.js's isClear() uses for wires, just against a circle.
+        const cx = Math.max(labelCx - halfW, Math.min(h.x, labelCx + halfW));
+        const cy = Math.max(labelCy - halfH, Math.min(h.y, labelCy + halfH));
+        return Math.hypot(h.x - cx, h.y - cy) < h.r + 3;
+      });
+      if (!blocked) break;
+      off = { x: off.x + dir.x * growStep, y: off.y + dir.y * growStep };
+    }
+    setLabelOffset(cells[i], off);
+  }
+}
+
+function setLabelOffset(cell, off) {
+  const doc = cell.ownerDocument;
+  const mx = cell.nodeName === 'object' ? cell.getElementsByTagName('mxCell')[0] : cell;
+  let g = null;
+  for (const n of Array.from(mx.childNodes)) {
+    if (n.nodeType === 1 && n.nodeName === 'mxGeometry') { g = n; break; }
+  }
+  if (g == null) {
+    g = doc.createElement('mxGeometry');
+    g.setAttribute('relative', '1');
+    g.setAttribute('as', 'geometry');
+    mx.appendChild(g);
+  }
+  for (const n of Array.from(g.childNodes)) {
+    if (n.nodeType === 1 && n.nodeName === 'mxPoint' && n.getAttribute('as') === 'offset') g.removeChild(n);
+  }
+  const pt = doc.createElement('mxPoint');
+  pt.setAttribute('x', String(Math.round(off.x)));
+  pt.setAttribute('y', String(Math.round(off.y)));
+  pt.setAttribute('as', 'offset');
+  g.appendChild(pt);
+}
+
+function hideDegenerateJunctions(model) {
+  const cells = allCells(model).map(cellInfo);
+  const byId2 = new Map(cells.map((c) => [c.id, c]));
+  const edges = cells.filter((c) => c.kind === 'edge' && c.source != null && c.target != null);
+  // Toutes les polylignes routees, une fois. On mesure les directions comme le
+  // fait `tools/check.py::_dirs_at()` : par la GEOMETRIE au voisinage du moyeu,
+  // et non par la liste des aretes dont le moyeu est source/cible.
+  //
+  // DEFECT (2026-08-31) : la version precedente ne comptait que les aretes
+  // incidentes. Un fil du meme net qui PASSE par le point sans y etre ancre
+  // vaut pourtant deux directions — c'est une vraie jonction a trois branches.
+  // Sur le placement manuel de l'utilisateur, `J_n_pi1_out` a donc ete eteint
+  // alors que check.py exigeait un point exactement la : une erreur regle 30.
+  // Deux composants qui repondent differemment a « combien de directions se
+  // rejoignent ici ? » produisent forcement un glyphe faux ; ils partagent
+  // maintenant la meme definition.
+  const polys = [];
+  for (const e of edges) {
+    const pl = polylineOf(e, byId2);
+    if (pl != null && pl.length >= 2) polys.push(pl);
+  }
+  const dirOf = (a, b) => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    if (Math.abs(dx) < 0.6 && Math.abs(dy) < 0.6) return null;
+    return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'E' : 'W') : (dy > 0 ? 'S' : 'N');
+  };
+  const opposite = { E: 'W', W: 'E', N: 'S', S: 'N' };
+  const distToSeg = (p, a, b) => {
+    const vx = b.x - a.x, vy = b.y - a.y;
+    const L2 = vx * vx + vy * vy;
+    let t = L2 > 0 ? ((p.x - a.x) * vx + (p.y - a.y) * vy) / L2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (a.x + t * vx), p.y - (a.y + t * vy));
+  };
+  for (const el of allCells(model)) {
+    const style = el.getAttribute('style') || '';
+    if (el.getAttribute('vertex') !== '1') continue;
+    if (!/drawioApiJunction=1/.test(style) || /contactDot=1/.test(style)) continue;
+    const info = byId2.get(el.getAttribute('id'));
+    if (info == null || info.x == null) continue;
+    const hub = { x: info.x + info.w / 2, y: info.y + info.h / 2 };
+    const dirs = new Set();
+    for (const pl of polys) {
+      for (let k = 0; k + 1 < pl.length; k++) {
+        const a = pl[k], b = pl[k + 1];
+        if (distToSeg(hub, a, b) >= 4.5) continue;
+        const da = Math.hypot(hub.x - a.x, hub.y - a.y);
+        const db = Math.hypot(hub.x - b.x, hub.y - b.y);
+        const d = dirOf(a, b);
+        if (d == null) continue;
+        if (da > 4 && db > 4) { dirs.add(d); dirs.add(opposite[d]); }  // le moyeu est A L INTERIEUR du segment
+        else if (da <= 4) dirs.add(d);
+        else if (db <= 4) dirs.add(opposite[d]);
+      }
+    }
+    if (dirs.size >= 3) continue;
+    el.setAttribute('style', style.replace(/fillColor=[^;]*;?/, '').replace(/strokeColor=[^;]*;?/, '') +
+      'fillColor=none;strokeColor=none;apiJunctionHidden=1;');
+  }
+}
+
 function addContactDots(model) {
   const JDOT = 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;';
   const dirOf = (from, to) => {
@@ -794,7 +1006,7 @@ function addContactDots(model) {
   const byId2 = new Map(cells.map((c) => [c.id, c]));
   const edgeNet = netGroups(cells);
   const wires = cells.filter((c) => c.kind === 'edge' && c.source != null && c.target != null && c.source !== c.target);
-  const existingDots = cells.filter((c) => c.kind === 'vertex' && c.style.map.has('drawioApiJunction'))
+  const existingDots = cells.filter((c) => c.kind === 'vertex' && isJunctionCell(c))
     .map((c) => ({ x: c.x + c.w / 2, y: c.y + c.h / 2 }));
   const newDots = [];
   const onSeg = (pt, p, q) => {
@@ -857,7 +1069,7 @@ function addContactDots(model) {
     const all = new Set(dirs);
     for (const cid of cids) {
       const cell = byId2.get(cid);
-      if (cell == null || cell.style.map.has('drawioApiJunction') || cell.x == null) continue;
+      if (cell == null || isJunctionCell(cell) || cell.x == null) continue;
       const d = dirOf(pt, { x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 });
       if (d != null) all.add(d);
     }
@@ -910,7 +1122,7 @@ function separateNets(model, obstacles) {
     const endKey = (c, which) => {
       const cid = which === 'src' ? c.source : c.target;
       const cell = byId2.get(cid);
-      if (cell != null && cell.style.map.has('drawioApiJunction')) return 'J:' + cid;
+      if (cell != null && isJunctionCell(cell)) return 'J:' + cid;
       const X = c.style.map.get(which === 'src' ? 'exitX' : 'entryX');
       const Y = c.style.map.get(which === 'src' ? 'exitY' : 'entryY');
       return cid + ':' + X + ',' + Y;

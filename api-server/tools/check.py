@@ -35,6 +35,20 @@ TOL = {
 
 # ------------------------------------------------------------------- parsing
 
+def is_junction_cell(smap):
+    """Shared predicate (task B, 2026-08-31): a cell is a junction if it
+    carries our own `drawioApiJunction` marker OR is a native drawio
+    `shape=waypoint` vertex the USER drew with draw.io's own "insert
+    waypoint" tool. Mirrors lib/components.js::isJunctionCell() -- keep both
+    in sync. Before this, only `drawioApiJunction`/`contactDot` were
+    recognized, so a hand-drawn waypoint junction (12 of them in the real
+    BOM_2446 hand file) read back as an ordinary unconnected vertex: every
+    wire touching it became a single-terminal-net / unconnected-pin ERC
+    finding instead of joining the net it visually belongs to.
+    """
+    return 'drawioApiJunction' in smap or smap.get('shape') == 'waypoint'
+
+
 def parse(path):
     with open(path, 'r', encoding='utf-8') as f:
         text = f.read()
@@ -84,10 +98,38 @@ def parse(path):
                 'vlp': smap.get('verticalLabelPosition'),
                 'no_label': smap.get('noLabel') == '1',
                 'is_text': style.startswith('text;'),
+                # api-server annotation layer (lib/annotate.js, task 2
+                # 2026-08-31): a cell carrying `apiAnnotation=1` is
+                # DECLARED electrically/DRC inert -- decorative colour,
+                # text or the PA/LNA amplifier symbol, never real
+                # component geometry. Every `is_text`-gated exclusion
+                # below (through/edge-hug/comp-overlap/_seg_feasible)
+                # also excludes `is_annotation`, because an annotation
+                # can now carry a REAL shape (e.g. `shape=triangle` for
+                # the amplifier block) that would otherwise be
+                # indistinguishable from an actual component body.
+                'is_annotation': 'apiAnnotation' in smap,
             }
-            if 'contactDot' in smap:
+            # DEFECT (2026-08-31): only `contactDot` cells were indexed as dots,
+            # so `_dot_at()` could not see place3's own `J_<net>` junction dots
+            # (style `drawioApiJunction=1;`, no `contactDot` -- only route.js's
+            # addContactDots pass writes that marker). Rule 30 therefore demanded
+            # "un point de contact" at a point where a dot was already DRAWN:
+            # on the 2446 sheet, `J_Up` sits at exactly the reported (361,340),
+            # distance 0 from the branch, and was still reported as missing.
+            # Both kinds are the same glyph with the same electrical meaning; the
+            # marker only records WHICH pass emitted it. A junction cell is still
+            # registered as a vertex as well, because the dot-membership and
+            # dot-orphan rules below reason about it as a cell.
+            # `apiJunctionHidden` : cellule de jonction dont le glyphe est
+            # ETEINT (route.js hideDegenerateJunctions) -- aucun point n'est
+            # dessiné là, donc elle ne doit compter ni comme dot présent
+            # (règle 30) ni comme dot interdit (dot-2way).
+            if 'apiJunctionHidden' in smap:
+                pass
+            elif 'contactDot' in smap or is_junction_cell(smap):
                 dots.append({'id': cid, 'x': v['x'] + v['w'] / 2, 'y': v['y'] + v['h'] / 2})
-            elif 'drawioApiJunction' in smap:
+            if is_junction_cell(smap):
                 v['junction'] = True
                 verts[cid] = v
             else:
@@ -279,7 +321,7 @@ class Checker:
             pl = self.polys[e['id']]
             for i, (a, b) in enumerate(self.segs(e['id'])):
                 for cid, v in self.verts.items():
-                    if v.get('junction') or v.get('is_text') or v['w'] < 12:
+                    if v.get('junction') or v.get('is_text') or v.get('is_annotation') or v['w'] < 12:
                         continue
                     x, y, w, h = aabb(v)
                     r = (x + sh, y + sh, w - 2 * sh, h - 2 * sh)
@@ -408,7 +450,7 @@ class Checker:
             if math.hypot(p2['pt'][0] - pt[0], p2['pt'][1] - pt[1]) >= 4:
                 continue
             v = self.verts.get(p2['cell'])
-            if v is None or v.get('junction') or v.get('is_text'):
+            if v is None or v.get('junction') or v.get('is_text') or v.get('is_annotation'):
                 continue
             d1 = self._dir8(pt, (v['x'] + v['w'] / 2, v['y'] + v['h'] / 2))
             if d1 is not None:
@@ -531,7 +573,7 @@ class Checker:
                 if ax == 'd':
                     continue
                 for cid, v in self.verts.items():
-                    if v.get('junction') or v.get('is_text') or v['h'] < 60:
+                    if v.get('junction') or v.get('is_text') or v.get('is_annotation') or v['h'] < 60:
                         continue
                     x, y, w, h = aabb(v)
                     if ax == 'v' and (abs(a[0] - x) < 2.5 or abs(a[0] - (x + w)) < 2.5):
@@ -556,7 +598,7 @@ class Checker:
         txt = v['value']
         if not txt or v.get('no_label'):
             return None
-        if v.get('is_text'):
+        if v.get('is_text') or v.get('is_annotation'):
             return (v['x'], v['y'], v['w'], v['h'])
         lw, lh = 7.2 * len(txt) + 6, 16
         cx = v['x'] + v['w'] / 2
@@ -668,7 +710,7 @@ class Checker:
         8 px autour du pin), pas de pin étranger à <5 px, pas de lane
         étrangère à <10 px sur >6 px."""
         for cid, v in self.verts.items():
-            if v.get('junction') or v['w'] < 12:
+            if v.get('junction') or v.get('is_annotation') or v['w'] < 12:
                 continue
             x, y, w, h = aabb(v)
             r = (x + 1.5, y + 1.5, w - 3, h - 3)
@@ -798,7 +840,7 @@ class Checker:
 
     def check_comp_overlap(self):
         ids = [cid for cid, v in self.verts.items()
-               if not v.get('junction') and not v.get('is_text')
+               if not v.get('junction') and not v.get('is_text') and not v.get('is_annotation')
                and v['w'] >= 20 and v['h'] >= 20]
         for i, c1 in enumerate(ids):
             for c2 in ids[i + 1:]:
@@ -860,6 +902,72 @@ class Checker:
                              f"l'opposé de sa destination — dipôle monté à l'envers",
                              pt)
 
+    def check_annotation_clear(self):
+        """Un TEXTE d'annotation ne doit pas se poser sur le corps d'un composant.
+
+        DEFECT (2026-08-31) : les cellules `apiAnnotation=1` ont ete exemptees des
+        regles de corps (`through`, `too_close`, `edge-hug`, `comp-overlap`) — a
+        raison pour les BLOCS, dont le metier est justement d'encadrer des pieces
+        et d'etre traverses par des fils. Mais l'exemption a aussi couvert le
+        texte, et plus rien ne gardait son placement : seul le nudge interne
+        d'`annotate.js` s'en chargeait, c'est-a-dire l'emetteur se certifiant
+        lui-meme. Prouve par un test de DEPLACEMENT — poser l'annotation « PA » en
+        plein milieu du corps de C9 laissait check.py ET beauty.py rigoureusement
+        inchanges (0 err / 12 warn, through=0, too_close=2, label_overlap=0).
+
+        On ne retire pas l'exemption des blocs ; on rend seulement le TEXTE
+        mesurable, ce qui est le seul des deux cas ou le chevauchement est un
+        defaut et non l'intention.
+        """
+        texts = [(cid, v) for cid, v in self.verts.items()
+                 if v.get('is_annotation') and v.get('is_text')]
+        bodies = [(cid, v) for cid, v in self.verts.items()
+                  if not v.get('is_annotation') and not v.get('is_text')
+                  and not v.get('junction') and v['w'] >= 12]
+        # `aabb()` et NON la geometrie brute : un composant tourne (`rotation=90`,
+        # la moitie de cette feuille) a une boite brute couchee la ou il est
+        # debout. Premiere version de cette regle, comparee au brut, a signale
+        # l'annotation « PA » sur L3 : L3 est en fait a x 336..344 une fois
+        # tournee, l'annotation a 264..290 — un faux positif pur.
+        # Tolerance `ov`: un contact d'une fraction de pixel n'est pas lisible;
+        # on ne signale qu'un recouvrement d'au moins 2 px sur les DEUX axes.
+        for tid, t in texts:
+            tb = aabb(t)
+            for bid, b in bodies:
+                bb = aabb(b)
+                ovx = min(tb[0] + tb[2], bb[0] + bb[2]) - max(tb[0], bb[0])
+                ovy = min(tb[1] + tb[3], bb[1] + bb[3]) - max(tb[1], bb[1])
+                if ovx >= 2 and ovy >= 2:
+                    self.add('annotation-on-body', 'warning',
+                             f"annotation {tid} posee sur le corps de {bid} "
+                             f"(recouvrement {ovx:.0f}x{ovy:.0f} px)",
+                             (tb[0] + tb[2] / 2, tb[1] + tb[3] / 2))
+                    break
+
+    def check_orthogonal(self):
+        """EXIGENCE UTILISATEUR (2026-08-31) : que des segments HORIZONTAUX ou
+        VERTICAUX. Aucune diagonale, nulle part.
+
+        Le routeur emet deja de l'orthogonal (`edgeStyle=orthogonalEdgeStyle`) et
+        la mesure au moment ou cette regle a ete ecrite donnait 0 diagonale sur
+        54 et 55 segments. C'est donc une GARDE, pas un correctif : elle existe
+        pour qu'une future retouche du routeur, du compacteur ou de l'optimiseur
+        ne puisse pas reintroduire une oblique en silence. Erreur, pas
+        avertissement -- l'utilisateur l'a posee comme une contrainte, pas comme
+        une preference.
+        """
+        for eid, pl in self.polys.items():
+            for k in range(len(pl) - 1):
+                a, b = pl[k], pl[k + 1]
+                dx, dy = abs(b[0] - a[0]), abs(b[1] - a[1])
+                if dx < 0.6 and dy < 0.6:
+                    continue          # segment degenere, traite ailleurs
+                if dx >= 0.6 and dy >= 0.6:
+                    self.add('diagonal', 'error',
+                             f"fil {eid} : segment oblique ({dx:.0f}x{dy:.0f} px) "
+                             '— seuls horizontal et vertical sont autorises',
+                             ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2))
+
     def run(self):
         self.check_wrap()
         self.check_comp_overlap()
@@ -867,6 +975,8 @@ class Checker:
         self.check_net_separation()
         self.check_pin_clearance()
         self.check_dots()
+        self.check_annotation_clear()
+        self.check_orthogonal()
         self.check_same_net_parallel()
         self.check_edge_hug()
         self.check_labels()

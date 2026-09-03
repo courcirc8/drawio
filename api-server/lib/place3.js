@@ -61,10 +61,11 @@
  * direction) until clear. This is the "real fix" the task calls out: place2
  * only retries for ports/junctions, never for the floating-passive path.
  */
-import { addVertex, addWire, httpError, mxCellPart } from './model.js';
+import { addVertex, addWire, httpError, mxCellPart, getCell } from './model.js';
 import { SPICE_MAP, formatComponentValue } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs, rotatedAabb } from './route.js';
+import { loadSeed, applySeed } from './preplace.js';
 
 const JCT = 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;';
 // DEFECT (2026-08-28, api-hardening): was 'equipotential', a filled triangle
@@ -475,6 +476,32 @@ export function importNetlist3(model, parsed, opts = {}) {
   const wire = (a, b) => wires.push(addWire(model, a === null ? b : a).getAttribute('id'));
   let seq = 0;
 
+  /**
+   * TASK 3 label dedup (2026-08-31): a boundary net's port glyph (added by
+   * addBoundaryPortTap, below) already carries `value: net` on its own
+   * vertex -- netlist.js connectivity() recovers a net's name at priority 2
+   * from that port tap, and only at priority 3 from a wire's own `value`
+   * label. Repeating the SAME name on the internal wire drew it twice
+   * (three times for `ANT`: port + wire + the free-text "ANT" annotation --
+   * the review's item 3). Strip the wire's now-redundant label, but ONLY
+   * after VERIFYING the port tap actually carries that exact name: if a
+   * future edit ever left the port's value blank (or renamed it), blindly
+   * stripping the wire label here would silently demote the whole net to an
+   * anonymous n1/n2/... with NO name left anywhere. Fail safe: keep the wire
+   * label and record a warning instead.
+   */
+  function dedupNetLabel(net, edgeCell) {
+    if (edgeCell == null) return;
+    const portId = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+    const portCell = getCell(model, portId);
+    const portValue = portCell != null ? (portCell.getAttribute('value') || '') : '';
+    if (portValue !== '' && portValue === net) {
+      edgeCell.removeAttribute('value');
+    } else {
+      warnings.push(`label-dedup: port ${portId} value "${portValue}" does not match net "${net}" -- keeping wire label to avoid an unnamed net`);
+    }
+  }
+
   // DEFECT (2026-08-28, api-hardening round 3): ports were emitted only for
   // `terms.length === 1` nets — a DEGREE heuristic. That happened to work
   // for matching_915.cir (Bp/Bn/rx_Bp are all degree-1 there) but produced
@@ -636,11 +663,15 @@ export function importNetlist3(model, parsed, opts = {}) {
       wire(null, { source: id, target: t.ref, sourcePin: ex1.pin, targetPin: { x: t.pin.x, y: t.pin.y, name: t.pin.name } });
     } else if (terms.length === 2) {
       const [a, b] = terms;
-      wire(null, { source: a.ref, target: b.ref, value: net, sourcePin: { x: a.pin.x, y: a.pin.y, name: a.pin.name }, targetPin: { x: b.pin.x, y: b.pin.y, name: b.pin.name } });
+      const edgeCell = addWire(model, { source: a.ref, target: b.ref, value: net, sourcePin: { x: a.pin.x, y: a.pin.y, name: a.pin.name }, targetPin: { x: b.pin.x, y: b.pin.y, name: b.pin.name } });
+      wires.push(edgeCell.getAttribute('id'));
       // boundary net (differential-pair member or axis end) with 2 internal
       // terminals, e.g. matching_2446.cir's Bp (C1, L3) or Bn (C1, C2): the
       // real wiring above is unchanged, this only taps on the port glyph.
-      if (boundaryNets.has(net)) addBoundaryPortTap(net, a);
+      if (boundaryNets.has(net)) {
+        addBoundaryPortTap(net, a);
+        dedupNetLabel(net, edgeCell);
+      }
     } else {
       const pts = terms.map((t) => pinAbs(placed.get(t.ref), t.pin));
       let cx = 0, cy = 0;
@@ -652,19 +683,41 @@ export function importNetlist3(model, parsed, opts = {}) {
       addVertex(model, { id, style: JCT, x: pos.x, y: pos.y, w: 6, h: 6 });
       placed.set(id, { id, x: pos.x, y: pos.y, w: 6, h: 6, rotation: 0 });
       let labelled = false;
+      let firstLabelledEdge = null;
       for (const t of terms) {
-        wire(null, { source: t.ref, target: id, value: labelled ? undefined : net,
+        const edgeCell = addWire(model, { source: t.ref, target: id, value: labelled ? undefined : net,
           sourcePin: { x: t.pin.x, y: t.pin.y, name: t.pin.name } });
+        wires.push(edgeCell.getAttribute('id'));
+        if (!labelled) firstLabelledEdge = edgeCell;
         labelled = true;
       }
       // boundary net with >2 internal terminals: tap the port onto the
       // junction dot that was just placed for the real wiring.
-      if (boundaryNets.has(net)) addBoundaryPortTap(net, { x: pos.x + 3, y: pos.y + 3 }, id);
+      if (boundaryNets.has(net)) {
+        addBoundaryPortTap(net, { x: pos.x + 3, y: pos.y + 3 }, id);
+        dedupNetLabel(net, firstLabelledEdge);
+      }
+    }
+  }
+
+  // ---- optional SEEDED PRE-PLACEMENT (lib/preplace.js). Applied LAST, on the
+  // finished placement, so it can only move cells: topology, wires and the LVS
+  // round-trip are untouched by construction. `P.seed` is either a seed name
+  // (resolved under api-server/seeds/) or an already-parsed seed object; an
+  // unknown name is a no-op, never an error -- a netlist with no reference
+  // figure must still place.
+  let seedInfo = null;
+  if (P.seed) {
+    const sd = typeof P.seed === 'string' ? loadSeed(P.seed) : P.seed;
+    if (sd == null) warnings.push(`seed inconnu, pre-placement ignore: ${P.seed}`);
+    else {
+      seedInfo = applySeed(model, placed, sd, { scale: P.seedScale ?? sd.scale ?? 1 });
+      if (seedInfo.missing.length) warnings.push(`seed: refdes absents du netlist: ${seedInfo.missing.join(',')}`);
     }
   }
 
   return { components: comps.map((c) => c.ref), wires, warnings,
-    engine: 'place3', params: P, roots: [],
+    engine: 'place3', params: P, seed: seedInfo, roots: [],
     pairs: pairsFound.map((pr) => [pr.p, pr.n].sort().join('/')),
     flippable: [...new Set(shuntRefs)],
     secondaryRows: [...new Set(secondaryRowIds)] };

@@ -351,6 +351,17 @@ export function addWire(model, { id, source, target, sourcePin, targetPin, style
   const doc = model.ownerDocument;
   const cell = doc.createElement('mxCell');
   cell.setAttribute('id', id != null ? String(id) : freshId(model, 'w'));
+  // NO `labelBackgroundColor` here -- deliberately. Two visual reviews reported
+  // the same legibility defect (a wire's net-name label is drawn CENTRED ON that
+  // wire, so the trace runs through the glyphs) and a white label halo was added
+  // here to clear the stroke. It made things WORSE: mxGraph paints that halo
+  // OPAQUE, so it erased ~12 px of the conductor under every net name and the
+  // next review read it as an OPEN circuit. A false open is a false electrical
+  // claim; struck-through text is only ugly.
+  // The fix lives in `route.js::offsetEdgeLabels()` instead, which runs AFTER
+  // routing -- the only place where the label segment's direction is measurable
+  // rather than assumed (which is also why `verticalAlign=bottom` cannot work
+  // from here: the middle segment's orientation is unknown at add time).
   let st = style || 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;jettySize=auto;endArrow=none;endFill=0;';
   const anchors = {};
   if (sourcePin != null) {

@@ -5,11 +5,16 @@ import { parseSpice, extractNetlist, connectivity } from '../lib/netlist.js';
 import { importNetlist } from '../lib/place.js';
 import { routePage } from '../lib/route.js';
 import { compare, gate } from '../lib/lvs.js';
+import { loadSeed } from '../lib/preplace.js';
+import { applyAnnotations } from '../lib/annotate.js';
 import { check as ercCheck } from '../lib/erc.js';
 import { bom } from '../lib/bom.js';
 import { searchShapes, getShape, getPin } from '../lib/stencils.js';
 import zlib from 'node:zlib';
-import { formatComponentValue } from '../lib/components.js';
+import { formatComponentValue, classify, isJunctionCell } from '../lib/components.js';
+import { rewire, obstaclesOf } from '../lib/rewire.js';
+import { bindEndpoints } from '../lib/bind-endpoints.js';
+import fs from 'node:fs';
 
 const RC = `* RC low-pass
 V1 in 0 DC 5
@@ -521,15 +526,16 @@ test('formatComponentValue: reformats raw SPICE floats into engineering units fo
   assert.equal(formatComponentValue('L', '3.6e-08'), '36 nH');
   // Second inductor value seen in the golden 915 netlist (L3).
   assert.equal(formatComponentValue('L', '6.8e-09'), '6.8 nH');
-  // 0-ohm bridge/jumper: bare "0", not "0 ohm" (see components.js docstring).
-  assert.equal(formatComponentValue('R', '0.0'), '0');
-  assert.equal(formatComponentValue('R', '0'), '0');
+  // 0-ohm bridge/jumper still carries its unit: the reference sheet writes
+  // "0 Ω" on R_ant0, and a bare "0" reads as an unfilled value.
+  assert.equal(formatComponentValue('R', '0.0'), '0 Ω');
+  assert.equal(formatComponentValue('R', '0'), '0 Ω');
   // Exact prefix boundaries: mantissa must land as "1", not "1000" of the
   // prefix one step down (1e-9 is 1 n, not 1000 p; 1e-12 is 1 p).
   assert.equal(formatComponentValue('L', '1e-9'), '1 nH');
   assert.equal(formatComponentValue('C', '1e-12'), '1 pF');
   // A normal resistor value.
-  assert.equal(formatComponentValue('R', '5e3'), '5 kohm');
+  assert.equal(formatComponentValue('R', '5e3'), '5 kΩ');
   // Non-numeric / already-suffixed / model-carrying values pass through
   // UNCHANGED — reformatting "1k" would silently reinterpret it as 1 (ohm).
   assert.equal(formatComponentValue('R', '1k'), '1k');
@@ -541,3 +547,611 @@ test('formatComponentValue: reformats raw SPICE floats into engineering units fo
   assert.equal(formatComponentValue('R', undefined), '');
 });
 
+
+// ---- seeded pre-placement (lib/preplace.js) --------------------------------
+// The gate that matters is DRC: a seed is only worth having if it makes the
+// checker happier. Measured 2026-08-31 with engine=v3&optimize=12:
+// 915 went 2 errors -> 0, 2446 5 -> 1. These tests pin the mechanism, not the
+// numbers (the numbers live in seeds/*.json's own scale_note).
+test('preplace: seeds load and expose the frozen reference geometry', () => {
+  const s915 = loadSeed('matching_915'), s2446 = loadSeed('matching_2446');
+  assert.ok(s915 && s2446, 'both band seeds must resolve');
+  // rotation is DERIVED from the reference pin axis, not guessed: 2446's C1 is
+  // a vertical shunt there and a horizontal series part in bare place3.
+  assert.equal(s2446.devices.C1.rot, 90);
+  assert.equal(s915.devices.C1.rot, 0);
+  assert.equal(loadSeed('does-not-exist'), null, 'unknown seed must be a no-op, not a throw');
+  assert.equal(loadSeed('../../etc/passwd'), null, 'seed name must not escape seeds/');
+});
+
+test('preplace: seeding moves cells onto the reference centres, LVS unchanged', async () => {
+  const fs = await import('node:fs');
+  const { importNetlist3 } = await import('../lib/place3.js');
+  const parsed = parseSpice(fs.readFileSync(GOLDEN_DIR + 'matching_2446.cir', 'utf8'));
+  const seed = loadSeed('matching_2446');
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  const placed = importNetlist3(m, parsed, { seed: 'matching_2446' });
+  assert.ok(placed.seed, 'seed report must come back on the placement result');
+  assert.equal(placed.seed.missing.length, 0, 'every seeded refdes exists in the netlist');
+  await routePage(m, placed.wires, {});
+  // topology is untouched by construction — preplace only rewrites x/y/rotation
+  assert.equal(compare(extractNetlist(m), parsed).match, true);
+  // C1 landed on its reference centre, dilated by the seed's own scale
+  const g = model.mxCellPart(model.getCell(m, 'C1')).getElementsByTagName('mxGeometry')[0];
+  const cx = parseFloat(g.getAttribute('x')) + parseFloat(g.getAttribute('width')) / 2;
+  assert.ok(Math.abs(cx - seed.devices.C1.cx * seed.scale) < 40,
+    `C1 cx ${cx} should sit near ${seed.devices.C1.cx * seed.scale}`);
+});
+
+// ---- task 3: net label dedup (place3.js, 2026-08-31) -----------------------
+test('place3: a boundary net is named exactly once (port tap OR wire label, never both)', async () => {
+  const fs = await import('node:fs');
+  const { importNetlist3 } = await import('../lib/place3.js');
+  const parsed = parseSpice(fs.readFileSync(GOLDEN_DIR + 'matching_2446.cir', 'utf8'));
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  const placed = importNetlist3(m, parsed, {});
+  await routePage(m, placed.wires, {});
+  assert.equal(compare(extractNetlist(m), parsed).match, true, 'LVS must still match with dedup applied');
+
+  // Before the fix, a boundary net (ANT, Bp, Bn, rx_Bp, rx_Bn on 2446) was
+  // named on BOTH its port glyph (value=net) and its internal wire
+  // (value=net) -- five nets labelled twice, ANT three times once the
+  // annotation layer's own duplicate "ANT" text is added on top (that text
+  // was removed in the same fix; this test covers the place3.js half).
+  const cells = model.allCells(m).map(model.cellInfo);
+  const nameCount = new Map();
+  for (const c of cells) {
+    if (!c.value) continue;
+    const isPortTap = c.kind === 'vertex' && /^P_/.test(c.id);
+    const isWireLabel = c.kind === 'edge';
+    if (!isPortTap && !isWireLabel) continue;
+    nameCount.set(c.value, (nameCount.get(c.value) || 0) + 1);
+  }
+  for (const [net, n] of nameCount) {
+    assert.equal(n, 1, `net "${net}" is named ${n} times across port taps + wire labels (expected exactly once)`);
+  }
+  // sanity: this document actually HAS boundary nets with a port tap, so the
+  // assertion above is not vacuous.
+  assert.ok([...nameCount.keys()].includes('ANT'), 'ANT must still be named exactly once');
+});
+
+// ---- annotation layer (lib/annotate.js) ------------------------------------
+// The gate that matters here is the SAME `drawing == netlist` invariant the
+// rest of this file pins: an annotation carries zone colour / value-suffix /
+// free-text / decoration intent that the SPICE netlist has no room for, so it
+// must be provably invisible to connectivity()/LVS while still landing on the
+// page and clearing the router's own DRC (tools/check.py's `through` rule,
+// which — unlike connectivity() — inspects every vertex regardless of
+// classify()).
+test('annotate: zone colours, value suffixes and free text/blocks are emitted, LVS unchanged', async () => {
+  const fs = await import('node:fs');
+  const { importNetlist3 } = await import('../lib/place3.js');
+  const parsed = parseSpice(fs.readFileSync(GOLDEN_DIR + 'matching_2446.cir', 'utf8'));
+  const seed = loadSeed('matching_2446');
+  assert.ok(seed.annotations, 'matching_2446 seed must carry an annotations block for this test to mean anything');
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  const placed = importNetlist3(m, parsed, { seed: 'matching_2446' });
+  await routePage(m, placed.wires, {});
+  model.normalizeOrigin(m);
+  const beforeCount = model.allCells(m).length;
+
+  const report = applyAnnotations(m, seed, { scale: seed.scale });
+  assert.equal(report.zones, seed.annotations.zones.reduce((n, z) => n + z.refs.length, 0),
+    'every zoned refdes must be found and coloured');
+  assert.equal(report.suffixes, Object.keys(seed.annotations.value_suffix).length);
+  assert.equal(report.texts, seed.annotations.texts.length);
+  assert.equal(report.blocks, seed.annotations.blocks.length);
+  assert.deepEqual(report.warnings, [], 'no ref should be missing and no cell should be unplaceable on the frozen reference');
+
+  // cell count grew by exactly the number of new (text + block) cells —
+  // zone colouring and value suffixes only PATCH existing cells.
+  const afterCells = model.allCells(m);
+  assert.equal(afterCells.length, beforeCount + report.texts + report.blocks);
+
+  // C1 (zoned PA/red) got its strokeColor patched, in place — same cell id,
+  // same geometry, only the style changed.
+  const c1 = model.cellInfo(model.getCell(m, 'C1'));
+  assert.equal(c1.style.map.get('strokeColor'), '#cf3b2e');
+
+  // C13's drawn label picked up its " DC BLOCK" suffix on the VALUE line
+  // only (labelFor() emits "REF\nVALUE") — spice_value (LVS/BOM source of
+  // truth) must be untouched.
+  const c13 = model.getCell(m, 'C13');
+  assert.ok(model.cellInfo(c13).value.endsWith(' DC BLOCK'));
+  assert.equal(c13.getAttribute('spice_value'), '3.3e-11');
+
+  // INERTNESS: connectivity() must not have grown a single new terminal/net
+  // from the new cells — this is the actual predicate the task's hard
+  // constraint rests on, not just "LVS still matches" (which a coincidental
+  // cancellation could also produce). Both kinds are now identified by the
+  // DECLARED `apiAnnotation=1` marker (task 2), not by an accident of
+  // shapelessness: the block carries a real `shape=triangle` amplifier
+  // symbol and must still be excluded.
+  const connBefore = connectivity(model.getPage(model.newDocument()));
+  const conn = connectivity(m);
+  const newAnnotationCells = afterCells.filter((c) => (model.styleOf(c) || '').includes('apiAnnotation=1'));
+  const newTexts = newAnnotationCells.filter((c) => (model.styleOf(c) || '').startsWith('text;'));
+  const newBlocks = newAnnotationCells.filter((c) => (model.styleOf(c) || '').includes('shape=triangle'));
+  assert.equal(newAnnotationCells.length, report.texts + report.blocks);
+  assert.equal(newTexts.length, report.texts);
+  assert.equal(newBlocks.length, report.blocks);
+  for (const c of newAnnotationCells) {
+    const id = c.getAttribute('id');
+    assert.ok(![...conn.termInfo.keys()].some((k) => k.startsWith(id + ':')),
+      `annotation cell ${id} must not appear as a netlist terminal`);
+    // and the SAME predicate classify() itself relies on (task 2): role
+    // must be 'other', regardless of the shape the cell happens to carry.
+    assert.equal(classify(model.cellInfo(c)).role, 'other',
+      `annotation cell ${id} must classify as 'other' via its apiAnnotation marker`);
+  }
+  assert.equal(connBefore.components.length, 0); // sanity: empty doc has no components
+
+  // LVS must still match the original netlist exactly, with the annotation
+  // layer present on the document.
+  assert.equal(compare(extractNetlist(m), parsed).match, true);
+
+  // Task 1: a PA/LNA block's rectangle is the UNION of its zone's member
+  // components' placed AABBs, padded — it must therefore ENCLOSE every one
+  // of them (this is the fix: a block computed from its own members can
+  // never enclose the wrong parts). Checked against the real placed
+  // geometry, not the seed's old absolute cx/cy/w/h (which no longer exist).
+  for (const zone of seed.annotations.zones) {
+    const blockSeed = seed.annotations.blocks.find((b) => b.zone === zone.name);
+    if (blockSeed == null) continue; // shared zone has no block in this seed
+    const block = newBlocks.find((c) => (model.styleOf(c) || '').includes(`strokeColor=${zone.color}`));
+    assert.ok(block != null, `no rendered block found for zone ${zone.name}`);
+    const bi = model.cellInfo(block);
+    // ROTATION-AWARE: a rotated component's raw x/y/w/h is its PRE-rotation
+    // footprint, not its visual extent (e.g. L5, rotated 90, has raw
+    // w=100/h=8 for a part that actually occupies ~8 wide x 100 tall on the
+    // page) -- the block was derived from the rotated AABB (aabbOf() in
+    // lib/annotate.js), so the enclosure check must use the same transform
+    // or it wrongly reports a rotated member as unenclosed.
+    const aabbOf = (v) => {
+      const t = ((v.rotation || 0) * Math.PI) / 180;
+      const w = Math.abs(v.w * Math.cos(t)) + Math.abs(v.h * Math.sin(t));
+      const h = Math.abs(v.w * Math.sin(t)) + Math.abs(v.h * Math.cos(t));
+      return { x: v.x + v.w / 2 - w / 2, y: v.y + v.h / 2 - h / 2, w, h };
+    };
+    for (const ref of zone.refs) {
+      const ci = aabbOf(model.cellInfo(model.getCell(m, ref)));
+      assert.ok(ci.x >= bi.x - 1 && ci.y >= bi.y - 1 &&
+        ci.x + ci.w <= bi.x + bi.w + 1 && ci.y + ci.h <= bi.y + bi.h + 1,
+        `zone ${zone.name} member ${ref} is not enclosed by its own block`);
+    }
+  }
+
+  // DRC gate the task is measured on: no wire drawn across a TEXT
+  // annotation's own bounding box (tools/check.py's `through` rule sees ALL
+  // vertices before is_annotation exclusion is applied at the SHAPE level —
+  // this is the readability nudge findClearSpot() still performs for texts).
+  // Blocks are deliberately EXCLUDED from this check: they are designed to
+  // enclose their own zone's real components (checked above), so wire
+  // endpoints landing "inside" a block is the correct, intended outcome, not
+  // a DRC violation — tools/check.py's `is_annotation` exclusion (task 2) is
+  // what keeps that legal at the DRC level.
+  const cellsInfo = new Map(afterCells.map((c) => [c.getAttribute('id'), model.cellInfo(c)]));
+  const wires = afterCells.filter((c) => model.cellInfo(c).kind === 'edge');
+  for (const w of wires) {
+    const wi = model.cellInfo(w);
+    const src = cellsInfo.get(wi.source), tgt = cellsInfo.get(wi.target);
+    if (src == null || tgt == null || src.x == null || tgt.x == null) continue;
+    for (const ann of newTexts) {
+      const a = model.cellInfo(ann);
+      const overlapsSrc = ann.getAttribute('id') === wi.source, overlapsTgt = ann.getAttribute('id') === wi.target;
+      if (overlapsSrc || overlapsTgt) continue;
+      // a very loose containment check: neither wire endpoint should land
+      // strictly inside the annotation's own box (the real `through` rule in
+      // tools/check.py also walks intermediate bend points; this is the
+      // cheap necessary-not-sufficient half of it, enough to catch the
+      // regression class this task is about).
+      const inside = (p) => p != null && p.x > a.x + 3 && p.x < a.x + a.w - 3 && p.y > a.y + 3 && p.y < a.y + a.h - 3;
+      const srcPt = src.x != null ? { x: src.x + src.w / 2, y: src.y + src.h / 2 } : null;
+      const tgtPt = tgt.x != null ? { x: tgt.x + tgt.w / 2, y: tgt.y + tgt.h / 2 } : null;
+      assert.ok(!inside(srcPt) && !inside(tgtPt), `wire ${w.getAttribute('id')} endpoint lands inside annotation ${ann.getAttribute('id')}`);
+    }
+  }
+});
+
+// ---- task 1: anchoring (2026-08-31) -----------------------------------------
+test('annotate: a text anchored to a cell tracks that cell, not a fixed offset', () => {
+  // Two otherwise-identical documents, R1 at two different positions: the
+  // SAME anchor spec must place the text at a position offset from R1's own
+  // (different) geometry, not at the same absolute spot both times — that is
+  // the measured defect this task fixes (an absolute cx/cy could drift ~200px
+  // away from the component it was meant to label).
+  const seedSpec = { annotations: { zones: [], texts: [
+    { text: 'note', anchor: 'R1', side: 'right', dx: 10, dy: 0, size: 10 },
+  ] } };
+  const posOf = (x, y) => {
+    const doc = model.newDocument(); const m = model.getPage(doc);
+    model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x, y, w: 80, h: 20 });
+    const report = applyAnnotations(m, seedSpec, { scale: 1 });
+    assert.deepEqual(report.warnings, []);
+    const cell = model.allCells(m).find((c) => (model.styleOf(c) || '').startsWith('text;'));
+    assert.ok(cell != null, 'anchored text must be placed');
+    return model.cellInfo(cell);
+  };
+  const p1 = posOf(0, 0);
+  const p2 = posOf(500, 300);
+  assert.ok(Math.abs((p2.x - p1.x) - 500) < 2, `text should track R1's dx=500, got ${p2.x - p1.x}`);
+  assert.ok(Math.abs((p2.y - p1.y) - 300) < 2, `text should track R1's dy=300, got ${p2.y - p1.y}`);
+});
+
+test('annotate: an anchor/zone that does not exist is reported, never silently dropped', () => {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 80, h: 20 });
+  const seed = { annotations: { zones: [], texts: [{ text: 'ghost', anchor: 'NOPE', side: 'right' }],
+    blocks: [{ zone: 'nope-zone', color: '#000', label: '' }] } };
+  const report = applyAnnotations(m, seed, { scale: 1 });
+  assert.equal(report.texts, 0);
+  assert.equal(report.blocks, 0);
+  assert.equal(report.warnings.length, 2);
+  assert.ok(report.warnings.some((w) => w.includes('NOPE')));
+  assert.ok(report.warnings.some((w) => w.includes('nope-zone')));
+});
+
+test('annotate: an unknown/absent annotations block is a no-op, never a throw', () => {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  let report;
+  assert.doesNotThrow(() => { report = applyAnnotations(m, { devices: {} }, { scale: 1 }); });
+  assert.deepEqual(report, { zones: 0, suffixes: 0, texts: 0, blocks: 0, warnings: [] });
+});
+
+// ---------------------------------------------------------------- rewire.js
+//
+// Fixture shared by the three tests below: R1 (0,0,100x20) and R2
+// (300,200,100x20), joined on net "n2" (R1's out pin, R2's in pin) through a
+// single junction dot placed at their Manhattan corner (100,210) — exactly
+// the shape of the real bug found on the 2446 file (a dot bridging two
+// terminals that don't share an X or Y with each other, only with the dot).
+
+function addDot(m, id, cx, cy) {
+  const dot = m.ownerDocument.createElement('mxCell');
+  dot.setAttribute('id', id); dot.setAttribute('vertex', '1'); dot.setAttribute('parent', '1');
+  dot.setAttribute('style', 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;');
+  const g = m.ownerDocument.createElement('mxGeometry');
+  g.setAttribute('x', String(cx - 3)); g.setAttribute('y', String(cy - 3));
+  g.setAttribute('width', '6'); g.setAttribute('height', '6');
+  g.setAttribute('as', 'geometry'); dot.appendChild(g);
+  m.getElementsByTagName('root')[0].appendChild(dot);
+}
+
+test('rewire: every emitted segment is strictly horizontal or vertical', () => {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'R2', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 200, w: 100, h: 20 });
+  addDot(m, 'D1', 100, 210); // shares X with R1's out pin (100,10), Y with R2's in pin (300,210)
+  const net = 'R1 n1 n2 1k\nR2 n2 n3 2k\n.end';
+  const result = rewire(m, net);
+  assert.equal(result.unreachable.length, 0, JSON.stringify(result));
+  assert.ok(result.wires.length >= 2, 'expected at least the two R1-dot / dot-R2 legs');
+  for (const id of result.wires) {
+    const cell = model.getCell(m, id);
+    const info = model.cellInfo(cell);
+    // reconstruct the full polyline the way tools/check.py does: src pin,
+    // waypoints, tgt pin (endpoints resolved via pinAbs/dot-centre — here we
+    // only need to confirm the WAYPOINTS themselves don't introduce a
+    // diagonal relative to each other, which is what the emitter controls).
+    const pts = info.points || [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const dx = Math.abs(pts[i + 1].x - pts[i].x), dy = Math.abs(pts[i + 1].y - pts[i].y);
+      assert.ok(dx < 0.6 || dy < 0.6, `wire ${id} has a diagonal segment: ${JSON.stringify(pts)}`);
+    }
+  }
+});
+
+test('rewire: an unspannable terminal is reported as a warning, never as a diagonal or a silent drop', () => {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'R2', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 200, w: 100, h: 20 });
+  // R3 sits far off in both X and Y from every other terminal and the dot —
+  // no tryEdge() candidate can ever connect it without a diagonal, so it
+  // must come back as `unreachable`, not get silently skipped or wired
+  // diagonally.
+  model.addVertex(m, { id: 'R3', shape: 'mxgraph.electrical.resistors.resistor_2', x: 555, y: 555, w: 100, h: 20 });
+  addDot(m, 'D1', 100, 210);
+  const net = 'R1 n1 n2 1k\nR2 n2 n3 2k\nR3 n2 n4 3k\n.end';
+  const result = rewire(m, net);
+  assert.ok(result.unreachable.some((u) => u.net === 'n2' && u.terminal.startsWith('R3:')),
+    JSON.stringify(result));
+  assert.ok(result.warnings.some((w) => w.includes('R3')), JSON.stringify(result.warnings));
+  // still no diagonal anywhere among what WAS emitted
+  for (const id of result.wires) {
+    const pts = model.cellInfo(model.getCell(m, id)).points || [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const dx = Math.abs(pts[i + 1].x - pts[i].x), dy = Math.abs(pts[i + 1].y - pts[i].y);
+      assert.ok(dx < 0.6 || dy < 0.6, `wire ${id} has a diagonal segment: ${JSON.stringify(pts)}`);
+    }
+  }
+});
+
+// ---- port pin tie-break: prefer ROUTABLE, not merely ALIGNED (real 2446
+// hand-placed file, 5th instance of the tapCells selector defect — see the
+// comment block above the fix in lib/rewire.js). Fixture: a port P1 (24x24,
+// pins N/S/W/E) whose W and E pins are BOTH y-aligned with a dot placed to
+// the port's EAST — W would have to cross the port's own 24px body to reach
+// it (segmentBlocked correctly refuses that), E does not. N/S are placed to
+// NOT align with the dot at all, so the old "first canonical pin that
+// aligns with anything" rule picks W (wrong); the fix must pick E.
+test('rewire: port tie-break prefers a ROUTABLE pin over a merely-aligned one (W blocked by own body, E clear)', () => {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  model.addVertex(m, { id: 'P1', shape: 'port', x: 0, y: 0, w: 24, h: 24, value: 'px' });
+  addDot(m, 'D1', 200, 12); // shares Y (12) with BOTH P1's W (0,12) and E (24,12)
+  // second terminal on the same net, reached from the dot on its own W pin —
+  // needed so the net is actually SOLVABLE end to end, not just single-term.
+  model.addVertex(m, { id: 'P2', shape: 'port', x: 300, y: 0, w: 24, h: 24, value: 'px' });
+  const net = '.end'; // no SPICE elements: both terminals come from the ports themselves
+  const result = rewire(m, net);
+  assert.equal(result.unreachable.length, 0, JSON.stringify(result));
+  const p1Wire = result.wires
+    .map((id) => model.cellInfo(model.getCell(m, id)))
+    .find((c) => c.source === 'P1' || c.target === 'P1');
+  assert.ok(p1Wire, 'expected a wire touching P1');
+  const pinName = p1Wire.source === 'P1' ? p1Wire.style.map.get('exitName') : p1Wire.style.map.get('entryName');
+  assert.equal(pinName, 'E', `P1 should route from its E pin (routable), not W (blocked by own body): ${JSON.stringify(p1Wire)}`);
+});
+
+// ---- allowFlip: opt-in mirror pass for an unroutable 2-pin R/L/C part (the
+// real C6 defect on the 2446 file: flipH=1 put BOTH pins on the wrong side
+// of a 100px-wide cap, each needing to cross the cap's own body to reach its
+// target — unflipping swaps sides and both terminals become reachable).
+// Two power taps (single canonical pin, no tie-break ambiguity) stand in for
+// C6's real targets (a trunk dot and a port), placed so C1's flipped pins
+// point the wrong way and its unflipped pins point the right way.
+function buildFlipFixture() {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  model.addVertex(m, { id: 'C1', shape: 'mxgraph.electrical.capacitors.capacitor_1', x: 0, y: 0, w: 100, h: 60 });
+  model.updateCell(m, 'C1', { style: { flipH: 1 } });
+  // 'in' (net rx_Bp) must reach a terminal to the LEFT; 'out' (net Up) a
+  // terminal to the RIGHT — but flipH=1 currently puts 'in' on the RIGHT
+  // (100,30) and 'out' on the LEFT (0,30), i.e. exactly backwards.
+  model.addVertex(m, { id: 'T_left', shape: 'mxgraph.electrical.signal_sources.vdd', x: -124, y: 30, w: 24, h: 24, value: 'rx_Bp' });
+  model.addVertex(m, { id: 'T_right', shape: 'mxgraph.electrical.signal_sources.vdd', x: 200, y: 30, w: 24, h: 24, value: 'Up' });
+  const net = 'C1 rx_Bp Up 1p\n.end';
+  return { m, net };
+}
+
+test('rewire: allowFlip absent/false leaves geometry byte-identical (including flipH)', () => {
+  const { m, net } = buildFlipFixture();
+  const before = {};
+  for (const el of model.allCells(m)) {
+    const c = model.cellInfo(el);
+    if (c.kind === 'vertex') before[c.id] = { x: c.x, y: c.y, w: c.w, h: c.h, flipH: c.flipH };
+  }
+  const result = rewire(m, net); // allowFlip not passed -> must default off
+  assert.deepEqual(result.flipped, []);
+  // C1 sits between two 1-terminal-per-net taps with no dot to break the
+  // tie, so solveNet reports whichever single terminal it kept out of the
+  // (unreachable) pair; either way NEITHER net gets a wire while C1 stays
+  // mirrored the wrong way — the whole point of the fixture.
+  assert.equal(result.wires.length, 0, JSON.stringify(result));
+  assert.equal(result.unreachable.length, 2, JSON.stringify(result));
+  for (const el of model.allCells(m)) {
+    const c = model.cellInfo(el);
+    if (c.kind !== 'vertex') continue;
+    assert.deepEqual({ x: c.x, y: c.y, w: c.w, h: c.h, flipH: c.flipH }, before[c.id],
+      `geometry/flipH of ${c.id} changed with allowFlip off: ${JSON.stringify(before[c.id])} -> ${JSON.stringify({ x: c.x, y: c.y, w: c.w, h: c.h, flipH: c.flipH })}`);
+  }
+});
+
+test('rewire: allowFlip=true flips exactly C1 and reports it, making both its terminals reachable', () => {
+  const { m, net } = buildFlipFixture();
+  const result = rewire(m, net, { allowFlip: true });
+  assert.deepEqual(result.flipped, ['C1']);
+  assert.ok(result.warnings.some((w) => w.includes('C1') && w.includes('allowFlip')), JSON.stringify(result.warnings));
+  assert.equal(result.unreachable.length, 0, JSON.stringify(result));
+  assert.equal(result.wires.length, 2, JSON.stringify(result));
+  const c1 = model.cellInfo(model.getCell(m, 'C1'));
+  assert.equal(c1.flipH, false, 'C1 should have been unflipped');
+  // nothing else about C1's geometry moved
+  assert.equal(c1.x, 0); assert.equal(c1.y, 0); assert.equal(c1.w, 100); assert.equal(c1.h, 60);
+});
+
+// ---- DEFECT A (2026-08-31): a wire's end anchored on a junction/dot cell
+// used to get NO explicit exit/entry anchor at all, so mxGraph resolved the
+// connection via the shape's floating PERIMETER function instead of its
+// centre. Two wires reaching the same dot from opposite directions then
+// landed on two different points of the dot's rim (as far apart as the dot
+// is wide), leaving a real gap in the conductor wherever the dot's glyph is
+// hidden (a genuine 2-way pass-through, painted transparent by
+// hideDegenerateJunctions()). See lib/rewire.js::mkEdge()'s DEFECT A comment
+// for the root-cause writeup and the measured pixel evidence on the real
+// 2446 hand-in file (test/fixtures/matching_2446_hand_in.drawio, cell
+// `J_Bp`). This test re-derives the fix from the model alone: every emitted
+// wire touching a junction/dot cell must carry an explicit 0.5/0.5 anchor
+// with the perimeter turned off, on whichever end is the dot.
+//
+// MUTATION-TESTED: reverting lib/rewire.js::mkEdge() to
+// `src.isDot ? undefined : {...}` (the pre-fix code) turns this test RED —
+// confirmed by hand while developing the fix, see the coder's report.
+test('rewire: every wire endpoint on a junction/dot cell is pinned to its centre, perimeter off', () => {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'R2', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 200, w: 100, h: 20 });
+  addDot(m, 'D1', 100, 210);
+  const net = 'R1 n1 n2 1k\nR2 n2 n3 2k\n.end';
+  const result = rewire(m, net);
+  const dotWires = result.wires
+    .map((id) => model.getCell(m, id))
+    .filter((cell) => cell.getAttribute('source') === 'D1' || cell.getAttribute('target') === 'D1');
+  assert.ok(dotWires.length >= 2, `expected at least 2 legs touching D1, got ${dotWires.length}`);
+  for (const cell of dotWires) {
+    const smap = model.cellInfo(cell).style.map;
+    const isSrcDot = cell.getAttribute('source') === 'D1';
+    const pref = isSrcDot ? 'exit' : 'entry';
+    assert.equal(smap.get(pref + 'X'), '0.5', `${cell.getAttribute('id')}: ${pref}X must be 0.5 on the dot end`);
+    assert.equal(smap.get(pref + 'Y'), '0.5', `${cell.getAttribute('id')}: ${pref}Y must be 0.5 on the dot end`);
+    assert.equal(smap.get(pref + 'Perimeter'), '0', `${cell.getAttribute('id')}: ${pref}Perimeter must be 0 on the dot end`);
+  }
+});
+
+test('rewire: never moves, resizes, or reshapes an existing cell', () => {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'R2', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 200, w: 100, h: 20 });
+  addDot(m, 'D1', 100, 210);
+  const before = {};
+  for (const el of model.allCells(m)) {
+    const c = model.cellInfo(el);
+    if (c.kind === 'vertex') before[c.id] = { x: c.x, y: c.y, w: c.w, h: c.h };
+  }
+  const net = 'R1 n1 n2 1k\nR2 n2 n3 2k\n.end';
+  rewire(m, net);
+  for (const el of model.allCells(m)) {
+    const c = model.cellInfo(el);
+    if (c.kind !== 'vertex') continue;
+    assert.ok(before[c.id], `unexpected new vertex ${c.id}`);
+    assert.deepEqual({ x: c.x, y: c.y, w: c.w, h: c.h }, before[c.id],
+      `geometry of ${c.id} changed: ${JSON.stringify(before[c.id])} -> ${JSON.stringify({ x: c.x, y: c.y, w: c.w, h: c.h })}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Task A/B/C (2026-08-31): the application 2446 netlist variant, native
+// drawio `shape=waypoint` junction recognition, and the tight-tolerance
+// bind-endpoints repair pass.
+// ---------------------------------------------------------------------------
+
+const APP_2446_PATH = '/eda/dm/home/evandel/CURSOR/PySpectre/Match_BOM_optimizer/multi_agent_opt/rf_schematics/golden/matching_2446_app.cir';
+
+test('Task A: matching_2446_app.cir has R_ant0 shorted out — 14 components, no n_pi1_out_rf net, C13 lands on ANT', () => {
+  const text = fs.readFileSync(APP_2446_PATH, 'utf8');
+  const { components } = parseSpice(text);
+  assert.equal(components.length, 14, 'R_ant0 must be removed, not just left in place');
+  const nets = new Set(components.flatMap((c) => c.nodes));
+  assert.ok(!nets.has('n_pi1_out_rf'), 'n_pi1_out_rf must be merged away, not survive as an orphan net');
+  const c13 = components.find((c) => c.ref === 'C13');
+  assert.ok(c13, 'C13 must still be present');
+  assert.deepEqual(c13.nodes, ['n_pi1_out', 'ANT'],
+    'C13\'s far terminal must be rewritten from n_pi1_out_rf to ANT, not left dangling');
+  // MUTATION CHECK (do by hand, not automated): reverting matching_2446_app.cir
+  // to the frozen matching_2446.cir content (R_ant0 present, C13 -> n_pi1_out_rf)
+  // makes this test fail on both the components.length and the c13.nodes
+  // assertions -- confirmed manually 2026-08-31 before writing this comment.
+});
+
+/** Raw <mxCell> for a native drawio "insert waypoint" vertex — NOT our own
+ *  drawioApiJunction dot. 20x20, centerPerimeter, matches the real cells
+ *  measured in the hand-drawn subject file (task B). */
+function addWaypoint(m, id, cx, cy) {
+  const wp = m.ownerDocument.createElement('mxCell');
+  wp.setAttribute('id', id); wp.setAttribute('vertex', '1'); wp.setAttribute('parent', '1');
+  wp.setAttribute('style', 'shape=waypoint;points=[];perimeter=centerPerimeter;fillColor=none;');
+  const g = m.ownerDocument.createElement('mxGeometry');
+  g.setAttribute('x', String(cx - 10)); g.setAttribute('y', String(cy - 10));
+  g.setAttribute('width', '20'); g.setAttribute('height', '20');
+  g.setAttribute('as', 'geometry'); wp.appendChild(g);
+  m.getElementsByTagName('root')[0].appendChild(wp);
+  return wp;
+}
+
+test('Task B: isJunctionCell recognizes a native shape=waypoint vertex', () => {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  const wp = addWaypoint(m, 'W1', 200, 100);
+  const info = model.cellInfo(wp);
+  assert.equal(isJunctionCell(info), true);
+  // MUTATION: an ordinary component vertex must NOT read as a junction.
+  model.addVertex(m, { id: 'R9', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 100, h: 20 });
+  const rInfo = model.cellInfo(model.getCell(m, 'R9'));
+  assert.equal(isJunctionCell(rInfo), false);
+});
+
+test('Task B: a shape=waypoint joining three wires extracts as ONE net, not three single-terminal nets', () => {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 80, w: 100, h: 20 });
+  model.addVertex(m, { id: 'R2', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 0, w: 100, h: 20 });
+  model.addVertex(m, { id: 'R3', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 160, w: 100, h: 20 });
+  addWaypoint(m, 'W1', 200, 100);
+  model.addWire(m, { id: 'w1', source: 'R1', target: 'W1', sourcePin: { x: 1, y: 0.5 } });
+  model.addWire(m, { id: 'w2', source: 'R2', target: 'W1', sourcePin: { x: 0, y: 0.5 } });
+  model.addWire(m, { id: 'w3', source: 'R3', target: 'W1', sourcePin: { x: 0, y: 0.5 } });
+  // Ground the other pin of each resistor so it lands on the shared "0" net
+  // (excluded from single-terminal-net checks) instead of producing three
+  // UNRELATED single-terminal findings that would drown out the one this
+  // test is actually about.
+  model.addVertex(m, { id: 'G1', shape: 'mxgraph.electrical.signal_sources.signal_ground', x: -30, y: 110, w: 30, h: 20 });
+  model.addVertex(m, { id: 'G2', shape: 'mxgraph.electrical.signal_sources.signal_ground', x: 450, y: 30, w: 30, h: 20 });
+  model.addVertex(m, { id: 'G3', shape: 'mxgraph.electrical.signal_sources.signal_ground', x: 450, y: 190, w: 30, h: 20 });
+  model.addWire(m, { id: 'g1', source: 'R1', target: 'G1', sourcePin: { x: 0, y: 0.5 } });
+  model.addWire(m, { id: 'g2', source: 'R2', target: 'G2', sourcePin: { x: 1, y: 0.5 } });
+  model.addWire(m, { id: 'g3', source: 'R3', target: 'G3', sourcePin: { x: 1, y: 0.5 } });
+  const conn = connectivity(m);
+  const netSizes = [...conn.nets.entries()].filter(([name]) => name !== '0')
+    .map(([, terms]) => terms.length).sort((a, b) => b - a);
+  assert.deepEqual(netSizes, [3], `expected one 3-terminal non-ground net, got net sizes ${JSON.stringify(netSizes)}`);
+  const ercReport = ercCheck(m);
+  const singleTerminal = ercReport.findings.filter((f) => f.code === 'single-terminal-net');
+  assert.equal(singleTerminal.length, 0, 'a single-terminal-net finding would mean the waypoint was not recognized as merging the net');
+  // MUTATION CHECK (manual, 2026-08-31): with isJunctionCell hardcoded to
+  // `map.has('drawioApiJunction')` only (the pre-task-B behavior), classify()
+  // returns {role:'other'} for the waypoint and activePins() returns [] for
+  // an unmapped 'other' shape -- netlist.js's endpointKey() then falls into
+  // its OWN "unknown shape -> single lumped node" fallback (pins.length===0),
+  // which happens to also merge the net correctly for BOUND wires. This test
+  // therefore does NOT discriminate that specific fallback path; it does
+  // discriminate classify()'s role (checked directly above) and is kept
+  // primarily as the ERC-surface regression check the task specifies.
+});
+
+test('Task B/trap: a shape=waypoint must never be treated as a routing obstacle (rewire.js)', () => {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  addWaypoint(m, 'W1', 100, 100);
+  model.addVertex(m, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: 0, y: 0, w: 40, h: 20 });
+  const cells = model.allCells(m).map(model.cellInfo);
+  const obstacles = obstaclesOf(cells);
+  assert.ok(!obstacles.some((o) => o.ownerId === 'W1'),
+    'a 20x20 waypoint is >= OBSTACLE_MIN(12) on both axes and must be excluded by isJunctionCell, not by size');
+  assert.ok(obstacles.some((o) => o.ownerId === 'R1'), 'a real component must still be an obstacle');
+  // MUTATION CHECK (manual, 2026-08-31): reverting obstaclesOf()'s junction
+  // test to `c.style.map.has('drawioApiJunction')` makes the first assertion
+  // above fail -- the waypoint (20x20, both dims >= OBSTACLE_MIN=12) is no
+  // longer size-filtered out and appears in `obstacles`. Confirmed by hand
+  // before writing this comment; this is the exact trap the task brief names.
+});
+
+test('Task C: bindEndpoints binds a 0.2px-coincident free endpoint, refuses and reports one 32px away', () => {
+  const doc = model.newDocument(); const m = model.getPage(doc);
+  addWaypoint(m, 'W1', 500, 500);
+  const mkPoint = (as, x, y) => { const p = m.ownerDocument.createElement('mxPoint'); p.setAttribute('as', as); p.setAttribute('x', String(x)); p.setAttribute('y', String(y)); return p; };
+
+  // wire A: properly bound to a real component at its source, and a FREE
+  // target 0.2 px from W1's centre -- only that one end is this pass's concern.
+  model.addVertex(m, { id: 'RA', shape: 'mxgraph.electrical.resistors.resistor_2', x: 300, y: 490, w: 100, h: 20 });
+  const wa = model.addWire(m, { id: 'wA', source: 'RA', target: null, sourcePin: { x: 1, y: 0.5 } });
+  const gA = wa.getElementsByTagName('mxGeometry')[0];
+  gA.appendChild(mkPoint('targetPoint', 500.2, 500.0)); // 0.2 px from W1 centre (500,500)
+
+  // wire B: properly bound to a real component at its target, and a FREE
+  // source 32 px from the SAME waypoint -- must be refused and reported.
+  model.addVertex(m, { id: 'RB', shape: 'mxgraph.electrical.resistors.resistor_2', x: 700, y: 458, w: 100, h: 20 });
+  const wb = model.addWire(m, { id: 'wB', source: null, target: 'RB', targetPin: { x: 0, y: 0.5 } });
+  const gB = wb.getElementsByTagName('mxGeometry')[0];
+  gB.appendChild(mkPoint('sourcePoint', 500, 468)); // 32 px away from W1 centre
+
+  const result = bindEndpoints(m, { tolerance: 2 });
+  assert.equal(result.bound.length, 1);
+  assert.equal(result.bound[0].edge, 'wA');
+  assert.equal(result.bound[0].junction, 'W1');
+  assert.ok(result.bound[0].distance <= 2 && result.bound[0].distance > 0);
+
+  assert.equal(result.unresolved.length, 1);
+  assert.equal(result.unresolved[0].edge, 'wB');
+  assert.equal(Math.round(result.unresolved[0].distance), 32);
+
+  // the bound edge must now actually be attached, pinned dead-centre, perimeter off
+  const boundInfo = model.cellInfo(model.getCell(m, 'wA'));
+  assert.equal(boundInfo.target, 'W1');
+  const st = boundInfo.style.map;
+  assert.equal(st.get('entryX'), '0.5');
+  assert.equal(st.get('entryY'), '0.5');
+  assert.equal(st.get('entryPerimeter'), '0');
+
+  // the unresolved edge must be left exactly alone (still free).
+  const unresolvedInfo = model.cellInfo(model.getCell(m, 'wB'));
+  assert.equal(unresolvedInfo.source, null);
+
+  // MUTATION CHECK (manual, 2026-08-31): setting tolerance to 40 makes wire B
+  // bind too (distance 32 <= 40) -- confirmed the tolerance parameter is load-
+  // bearing, not decorative, before writing this comment.
+});

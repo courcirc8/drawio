@@ -198,6 +198,43 @@ def main():
         fails += forbid(r, 'clean', rule)
 
     print()
+    # FN-G (2026-08-31) : texte d'annotation pose sur un corps de composant.
+    # Les cellules `apiAnnotation=1` sont exemptees des regles de corps -- a
+    # raison pour les BLOCS d'encadrement, dont le metier est de contenir des
+    # pieces. L'exemption couvrait aussi le TEXTE, et plus rien ne gardait son
+    # placement : prouve par deplacement, poser une annotation en plein milieu
+    # d'un composant laissait check.py ET beauty.py rigoureusement inchanges.
+    # Les DEUX directions sont exigees ici, parce que la premiere version de la
+    # regle comparait a la geometrie BRUTE et signalait un faux positif sur un
+    # composant a `rotation=90` (boite couchee la ou la piece est debout).
+    ANN = ('<mxCell id="{id}" value="{val}" style="text;apiAnnotation=1;html=1;" '
+           'vertex="1" parent="1"><mxGeometry x="{x}" y="{y}" width="40" '
+           'height="20" as="geometry"/></mxCell>')
+    ROT = ('<mxCell id="{id}" value="{val}" style="shape=mxgraph.electrical.'
+           'inductors.inductor_3;html=1;rotation=90;" vertex="1" parent="1">'
+           '<mxGeometry x="{x}" y="{y}" width="100" height="8" as="geometry"/>'
+           '</mxCell>')
+    # (a) DOIT tirer : annotation en plein milieu d'une resistance horizontale
+    x = synth('fnG-hit', [
+        R.format(id='R1', val='R1', x=200, y=200),
+        ANN.format(id='A1', val='PA', x=230, y=203),
+    ])
+    fails += expect(run(x), 'FN-G-hit', 'annotation-on-body', contains='R1')
+    # (b) NE DOIT PAS tirer, et le gabarit est choisi pour que la MUTATION soit
+    # detectee : L1 (100x8 a x=300,y=246) tourne de 90 degres occupe reellement
+    # x 346..354, y 200..300. L'annotation posee a x 300..340 / y 246..266
+    # recouvre donc franchement la boite BRUTE (40x20 px) et pas du tout la
+    # boite tournee. Un gabarit qui ne recouvre ni l'une ni l'autre passerait
+    # quelle que soit la version de la regle — c'est-a-dire ne testerait rien.
+    x = synth('fnG-miss', [
+        ROT.format(id='L1', val='L1', x=300, y=246),
+        ANN.format(id='A2', val='PA', x=300, y=246),
+    ])
+    if [v for v in run(x)['violations'] if v['rule'] == 'annotation-on-body']:
+        fails.append('FN-G-miss : faux positif — la regle compare la geometrie '
+                     'BRUTE au lieu de la boite englobante tournee')
+
+
     if fails:
         print(f'✗ {len(fails)} exigence(s) non satisfaite(s) :')
         for f in fails:

@@ -26,6 +26,20 @@ terme MANQUANT comme un terme PARFAIT, jamais comme "inconnu":
 """
 import sys, json, math, xml.etree.ElementTree as ET
 
+
+def is_junction_style(style):
+    """Shared predicate (task B, 2026-08-31), mirrors tools/check.py's
+    is_junction_cell() / lib/components.js's isJunctionCell(): true for our
+    own `drawioApiJunction` marker OR a native drawio `shape=waypoint`
+    vertex the user drew by hand. `style` here is the raw ';'-joined style
+    string (this module doesn't build a key/value map), so match on tokens
+    rather than substring to avoid a false hit on an unrelated key whose
+    value happens to contain the word.
+    """
+    toks = style.split(';')
+    return 'drawioApiJunction' in style or 'shape=waypoint' in toks
+
+
 WEIGHTS = {
     'crossing': 6.0,        # par croisement fil-fil
     'through': 14.0,        # par segment traversant un composant sans s'y connecter
@@ -90,8 +104,22 @@ def load(xml_path):
                           'vlp': next((tok.split('=')[1] for tok in style.split(';') if tok.startswith('verticalLabelPosition=')), None),
                           'x': float(g.get('x', 0)), 'y': float(g.get('y', 0)),
                           'w': float(g.get('width', 0)), 'h': float(g.get('height', 0)),
-                          'rot': rot, 'junction': 'drawioApiJunction' in style,
+                          'rot': rot, 'junction': is_junction_style(style),
                           'is_text': style.startswith('text;'),
+                          # api-server annotation layer (lib/annotate.js,
+                          # task 2 2026-08-31): `apiAnnotation=1` marks a
+                          # cell DECLARED inert -- decorative colour/text/
+                          # amplifier-symbol geometry, never a real
+                          # component. Without this, the PA/LNA blocks
+                          # (real geometry now: a `shape=triangle` sized to
+                          # ENCLOSE their own zone's real components, by
+                          # design) get counted by `comps` below as 27
+                          # ordinary bodies overlapping everything they
+                          # enclose -- measured: through_component 35,
+                          # too_close 17, tanking score_raw from -30-ish to
+                          # -508.7 for a drawing tools/check.py itself
+                          # reports as 0 errors / 12 warnings.
+                          'is_annotation': 'apiAnnotation' in style,
                           'no_label': 'noLabel=1' in style,
                           'flipH': 'flipH=1' in style, 'flipV': 'flipV=1' in style}
         elif c.get('edge') == '1':
@@ -209,7 +237,7 @@ def xml_metrics(verts, edges):
     bends, excess, length = 0, 0, 0.0
     body_boxes = []
     for cid, v in verts.items():
-        if v['junction'] or v.get('is_text') or v['w'] < 12:
+        if v['junction'] or v.get('is_text') or v.get('is_annotation') or v['w'] < 12:
             continue
         t = math.radians(v['rot'] or 0)
         w = abs(v['w']*math.cos(t)) + abs(v['h']*math.sin(t))
@@ -280,7 +308,7 @@ def xml_metrics(verts, edges):
     # segments traversant un composant (hors ses propres terminaux)
     through = 0
     comps = [(cid, v) for cid, v in verts.items()
-             if not v['junction'] and not v.get('is_text')]
+             if not v['junction'] and not v.get('is_text') and not v.get('is_annotation')]
     for e, pl in zip(edges, polys):
         for (x1, y1), (x2, y2) in zip(pl, pl[1:]):
             for cid, v in comps:
@@ -328,7 +356,7 @@ def xml_metrics(verts, edges):
         txt = v.get('value', '')
         if not txt or v.get('no_label'):
             return None
-        if v.get('is_text'):
+        if v.get('is_text') or v.get('is_annotation'):
             return (v['x'], v['y'], v['x']+v['w'], v['y']+v['h'])
         lw, lh = 7.2*len(txt)+6, 16
         cx = v['x'] + v['w']/2

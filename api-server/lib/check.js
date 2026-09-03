@@ -8,6 +8,7 @@ import { allCells, cellInfo } from './model.js';
 import { pinAbs } from './route.js';
 import { extractNetlist, connectivity } from './netlist.js';
 import { detectStructures } from './patterns.js';
+import { isJunctionCell } from './components.js';
 
 function polyOf(c, byId) {
   const src = byId.get(c.source), tgt = byId.get(c.target);
@@ -42,8 +43,15 @@ export function checkDocument(model) {
   const V = [];
   const cells = allCells(model).map(cellInfo);
   const byId = new Map(cells.map((c) => [c.id, c]));
-  const comps = cells.filter((c) => c.kind === 'vertex' && c.x != null && !c.style.map.has('drawioApiJunction'));
-  const dots = cells.filter((c) => c.kind === 'vertex' && c.style.map.has('drawioApiJunction'))
+  // `apiAnnotation=1` (lib/annotate.js, task 2 2026-08-31) is a DECLARED
+  // inertness marker: an annotation cell (PA/LNA amplifier symbol, free-text
+  // callout) is excluded from the `through`-rule obstacle set the same way a
+  // junction dot is, even though it can now carry a real shape (e.g.
+  // `shape=triangle`) that would otherwise read as an ordinary component
+  // body. Mirrors tools/check.py's `is_annotation` flag.
+  const comps = cells.filter((c) => c.kind === 'vertex' && c.x != null &&
+    !isJunctionCell(c) && !c.style.map.has('apiAnnotation'));
+  const dots = cells.filter((c) => c.kind === 'vertex' && isJunctionCell(c))
     .map((c) => ({ id: c.id, x: c.x + c.w / 2, y: c.y + c.h / 2 }));
   const wires = cells.filter((c) => c.kind === 'edge' && c.source != null && c.target != null);
 
@@ -52,7 +60,7 @@ export function checkDocument(model) {
   const netOfEnd = (c, which) => {
     const cid = which === 'src' ? c.source : c.target;
     const cell = byId.get(cid);
-    if (cell != null && cell.style.map.has('drawioApiJunction')) return 'JCELL:' + cid;
+    if (cell != null && isJunctionCell(cell)) return 'JCELL:' + cid;
     const X = c.style.map.get(which === 'src' ? 'exitX' : 'entryX');
     return cid + ':' + X + ',' + c.style.map.get(which === 'src' ? 'exitY' : 'entryY');
   };
@@ -120,7 +128,7 @@ export function checkDocument(model) {
   for (const { pt: cpt, list } of clusters) {
     // au pin d'un composant : 2 fils + la broche = 3 voies ; sur une cellule
     // de jonction : il faut >=3 fils (2 = simple traversée)
-    const onJunction = list.every((l) => byId.get(l.cid)?.style.map.has('drawioApiJunction'));
+    const onJunction = list.every((l) => isJunctionCell(byId.get(l.cid)));
     if (list.length < (onJunction ? 3 : 2)) continue;
     const pt = cpt;
     const hasDot = dots.some((dd) => Math.hypot(dd.x - pt.x, dd.y - pt.y) < 12);

@@ -123,13 +123,18 @@ function perturb(rnd, base, placedInfo) {
  */
 const rankValue = (r) => (r == null ? -Infinity : (r.score_raw != null ? r.score_raw : r.score));
 
-export async function optimizeNetlist(parsed, { iterations = 10, reference = null, seed = 42, engine = 'v2' } = {}) {
+export async function optimizeNetlist(parsed, { iterations = 10, reference = null, seed = 42, engine = 'v2', preseed = null, preseedScale = null } = {}) {
   const rnd = mulberry(seed);
   const history = [];
   // ---- recherche à FAISCEAU sur score rapide (géométrie seule)
   const beamW = 4;
   const generations = Math.max(2, Math.round(iterations / 4));
-  const seed0 = await evaluate(parsed, {}, reference, true, engine);
+  // `preseed` (seeded pre-placement, lib/preplace.js) rides in the params of
+  // EVERY candidate: it is a starting geometry, not a post-hoc filter, so the
+  // beam must explore perturbations OF the reference layout, not of a layout
+  // the reference then overwrites.
+  const base = preseed ? { seed: preseed, ...(preseedScale ? { seedScale: preseedScale } : {}) } : {};
+  const seed0 = await evaluate(parsed, base, reference, true, engine);
   if (!seed0.ok) throw new Error('placement initial rejeté par le LVS: ' + JSON.stringify(seed0.lvs).slice(0, 300));
   let beam = [seed0];
   history.push({ iter: 'g0', score: seed0.score, accepted: true });

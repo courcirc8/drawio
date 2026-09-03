@@ -1,0 +1,82 @@
+{
+ "name": "matching_915",
+ "source": "Match_BOM_optimizer/multi_agent_opt/rf_schematics/draw_matching_915.py build_schematic().devices (frozen hand-drawn reference)",
+ "canvas": [
+  1320,
+  820
+ ],
+ "devices": {
+  "C1": {
+   "cx": 300.0,
+   "cy": 140.0,
+   "rot": 0
+  },
+  "C2": {
+   "cx": 300.0,
+   "cy": 240.0,
+   "rot": 0
+  },
+  "L1": {
+   "cx": 343.0,
+   "cy": 190.0,
+   "rot": 90
+  },
+  "C4": {
+   "cx": 430.0,
+   "cy": 260.0,
+   "rot": 90
+  },
+  "C3": {
+   "cx": 250.0,
+   "cy": 310.0,
+   "rot": 90
+  },
+  "L2": {
+   "cx": 560.0,
+   "cy": 137.0,
+   "rot": 0
+  },
+  "C5": {
+   "cx": 645.0,
+   "cy": 260.0,
+   "rot": 90
+  },
+  "L3": {
+   "cx": 730.0,
+   "cy": 137.0,
+   "rot": 0
+  },
+  "C8": {
+   "cx": 890.0,
+   "cy": 140.0,
+   "rot": 0
+  },
+  "C6": {
+   "cx": 1000.0,
+   "cy": 260.0,
+   "rot": 90
+  },
+  "L4": {
+   "cx": 340.0,
+   "cy": 455.0,
+   "rot": 0
+  },
+  "C7": {
+   "cx": 498.0,
+   "cy": 299.0,
+   "rot": 90
+  },
+  "L5": {
+   "cx": 430.0,
+   "cy": 559.0,
+   "rot": 0
+  },
+  "C9": {
+   "cx": 560.0,
+   "cy": 631.0,
+   "rot": 90
+  }
+ },
+ "scale": 2.4,
+ "scale_note": "Default dilation of the reference arrangement, chosen by measurement not by eye (tools/check.py errors first, beauty score_raw second -- the same gate order lib/optimize.js uses). Sweep 1.0..3.2 on both bands with engine=v3&optimize=12: 915 goes 2 errors -> 0 at 2.4, 2446 5 -> 1. Below ~1.8 the fixed-width drawio stencils leave the router no corridor between the reference rails and it threads wires through component bodies; above ~2.6 the sprawl penalty eats the score with no further error reduction. Override per request with ?seedScale=."
+}

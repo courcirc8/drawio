@@ -1,0 +1,114 @@
+{
+ "name": "matching_2446",
+ "source": "Match_BOM_optimizer/multi_agent_opt/rf_schematics/draw_matching_2446.py build_schematic().devices (frozen hand-drawn reference)",
+ "canvas": [
+  1060,
+  640
+ ],
+ "devices": {
+  "C1": {
+   "cx": 208.0,
+   "cy": 120.0,
+   "rot": 90
+  },
+  "C2": {
+   "cx": 270.0,
+   "cy": 170.0,
+   "rot": 0
+  },
+  "L3": {
+   "cx": 373.0,
+   "cy": 120.0,
+   "rot": 90
+  },
+  "C4": {
+   "cx": 420.0,
+   "cy": 70.0,
+   "rot": 0
+  },
+  "L5": {
+   "cx": 211.0,
+   "cy": 450.0,
+   "rot": 90
+  },
+  "C6": {
+   "cx": 270.0,
+   "cy": 398.0,
+   "rot": 0
+  },
+  "L7": {
+   "cx": 373.0,
+   "cy": 488.0,
+   "rot": 90
+  },
+  "C8": {
+   "cx": 270.0,
+   "cy": 502.0,
+   "rot": 0
+  },
+  "C9": {
+   "cx": 420.0,
+   "cy": 538.0,
+   "rot": 0
+  },
+  "C10": {
+   "cx": 466.0,
+   "cy": 273.0,
+   "rot": 90
+  },
+  "L11": {
+   "cx": 523.0,
+   "cy": 252.8,
+   "rot": 0
+  },
+  "C12": {
+   "cx": 586.0,
+   "cy": 273.0,
+   "rot": 90
+  },
+  "C13": {
+   "cx": 635.0,
+   "cy": 255.0,
+   "rot": 0
+  },
+  "R_ant0": {
+   "cx": 760.0,
+   "cy": 255.0,
+   "rot": 0
+  },
+  "L14": {
+   "cx": 843.0,
+   "cy": 290.0,
+   "rot": 90
+  }
+ },
+ "scale": 1.3,
+ "scale_note": "Dilatation par defaut de l agencement de reference, choisie par MESURE (2026-08-31), erreurs check.py d abord, surface ensuite, score admissible en dernier -- meme ordre de porte que lib/optimize.js. Balayage 1.0..2.4 sur engine=v3&optimize=12 apres la correction du portage des cellules non-seedees (lib/preplace.js etapes 2b/3) : 1.3 donne 0 erreur / 12 warnings, bbox 947x713 (reference 1060x640), sprawl 0.735, score 51.8. L ancienne valeur 2.4 avait ete choisie sur le seul compte d erreurs, sans jamais mesurer la surface : elle donnait bbox 1636x1228 et sprawl 4.161, soit 5.2x la surface ideale et la moitie de toute la penalite de beaute. Surcharge par requete avec ?seedScale=.",
+ "annotations": {
+  "note": "ANNOTATION LAYER (2026-08-31, lib/annotate.js) -- REWORKED same day to fix a measured defect: every text/block below used to carry an ABSOLUTE cx/cy in the hand-drawn reference's own coordinate space, which is not where the placer actually puts anything, so a caption could drift arbitrarily far from what it names (measured: the ANT/50 ohm caption landed ~200px away from P_ANT, in blank canvas). Every text now carries an `anchor` (a component refdes/id, e.g. `P_ANT`, OR a zone `name` from `zones` below, e.g. `pa`) plus a `side` (left/right/top/bottom/center) and a `dx`/`dy` offset in the SAME raw reference-coordinate units as `devices` above (scaled identically at annotate time, so ?seedScale= cannot desync it). annotate.js resolves the anchor's ACTUAL placed geometry from the live model, so a caption is structurally incapable of drifting off the thing it names -- it moves when that thing moves. Every block now carries a `zone` name instead of its own cx/cy/w/h: its rectangle is the UNION of that zone's member components' placed bounding boxes, padded by `pad` -- a box computed from its own members can never enclose the wrong parts.",
+  "zones": [
+   { "name": "pa", "color": "#cf3b2e", "refs": ["C1", "L3", "C2", "C4"] },
+   { "name": "lna", "color": "#1f6feb", "refs": ["C6", "L5", "L7", "C8", "C9"] },
+   { "name": "shared", "color": "#7a4fbf", "refs": ["C10", "L11", "C12", "C13", "R_ant0", "L14"] }
+  ],
+  "value_suffix": {
+   "C13": "DC BLOCK",
+   "L14": "ESD",
+   "R_ant0": "BRIDGE"
+  },
+  "texts": [
+   { "text": "PA", "anchor": "pa", "side": "center", "color": "#cf3b2e", "size": 14, "weight": 700 },
+   { "text": "LNA", "anchor": "lna", "side": "center", "color": "#1f6feb", "size": 14, "weight": 700 },
+   { "text": "gates x4", "anchor": "C1", "side": "top", "dx": -20.0, "dy": -18.0, "color": "#cf3b2e", "size": 9 },
+   { "text": "bondwire", "anchor": "pa", "side": "top", "dx": -35.0, "dy": -12.0, "color": "#cf3b2e", "size": 9 },
+   { "text": "bondwire", "anchor": "lna", "side": "top", "dx": -35.0, "dy": -12.0, "color": "#1f6feb", "size": 9 },
+   { "text": "50 Ω", "anchor": "P_ANT", "side": "right", "dx": 12.0, "dy": -12.0, "color": "#7a4fbf", "size": 10 },
+   { "text": "Pi1 shared", "anchor": "shared", "side": "top", "dx": 0.0, "dy": -18.0, "color": "#7a4fbf", "size": 13, "weight": 700 },
+   { "text": "PA internally shunted, 1.5 ohm each leg", "anchor": "pa", "side": "bottom", "dx": 0.0, "dy": 20.0, "color": "#555555", "size": 9 }
+  ],
+  "blocks": [
+   { "zone": "pa", "pad": 20.0, "color": "#cf3b2e", "label": "" },
+   { "zone": "lna", "pad": 20.0, "color": "#1f6feb", "label": "" }
+  ]
+ }
+}

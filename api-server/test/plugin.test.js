@@ -104,7 +104,24 @@ async function openEditorAndCapture(page) {
   await page.waitForFunction(() => window.__capturedUi != null, { timeout: 15000 });
 }
 
-test('eda-validate plugin via /editor: boots, registers UI, no page errors', async () => {
+// TIMEOUT (2026-08-31): these two tests carry an EXPLICIT timeout because the
+// runner's default is 5000 ms and neither test can finish inside it — each
+// launches headless Chrome and loads the whole draw.io webapp through
+// /editor, which measured ~8.7 s wall on this host with a 1.6 s api-server
+// start on top. The `timeout: 30000` passed to page.goto() below is
+// PUPPETEER's navigation timeout and does not raise the runner's.
+//
+// This is the "flaky plugin test" that was blamed on headless-Chrome bring-up
+// for several sessions and re-diagnosed three times (an undefined
+// `test.before`, a flooded stdio pipe, an un-awaited async hook — all three
+// checked and refuted: node:test's hooks exist under bun, the server writes
+// ~60 bytes, and an async before hook IS awaited). It was never a race in the
+// browser: on a warm run the editor loaded in under 5 s and both tests passed,
+// on a cold one the first test was killed at exactly 5000 ms — and killing it
+// fires test.after(), which SIGTERMs the shared api-server, so the SECOND test
+// then failed with ConnectionRefused on a port that had been alive moments
+// earlier. That cascade is why the failure signature differed on every run.
+test('eda-validate plugin via /editor: boots, registers UI, no page errors', { timeout: 120000 }, async () => {
   if (!HAS_CHROME) { console.log('  skipped: no chromium found (findChrome() returned null)'); return; }
 
   const puppeteer = (await import('puppeteer-core')).default;
@@ -151,7 +168,7 @@ test('eda-validate plugin via /editor: boots, registers UI, no page errors', asy
   }
 });
 
-test('eda-validate plugin via /editor: check against a broken netlist paints overlays', async () => {
+test('eda-validate plugin via /editor: check against a broken netlist paints overlays', { timeout: 120000 }, async () => {
   if (!HAS_CHROME) { console.log('  skipped: no chromium found (findChrome() returned null)'); return; }
 
   // Build a document with a floating pin via the SAME api-server instance
