@@ -171,6 +171,46 @@ export function checkDocument(model) {
     }
   }
 
+  // R42 (wrap-around, porté du juge Python) : un fil qui part d'un pin de
+  // DIPÔLE et finit de l'autre côté du corps = dipôle monté à l'envers.
+  // Sans cette règle, le faisceau de l'optimiseur restait aveugle aux
+  // moves de flip fautifs (R4 du Cherry-Hooper, L3 du VCO à filtre).
+  {
+    const DIPOLES = ['resistors.', 'capacitors.', 'inductors.', 'diodes.'];
+    for (const w of wires) {
+      if (w.source === w.target) continue;
+      const pl = polyOf(w, byId);
+      if (pl == null || pl.length < 2) continue;
+      for (const [cid, pt, other] of [[w.source, pl[0], pl[pl.length - 1]],
+                                       [w.target, pl[pl.length - 1], pl[0]]]) {
+        const v = byId.get(cid);
+        if (v == null || v.x == null) continue;
+        const shp = v.style.map.get('shape') || '';
+        if (!DIPOLES.some((t) => shp.includes(t))) continue;
+        const r = aabbOf(v);
+        let side = null;
+        const order = r.w >= r.h
+          ? [['left', pt.x <= r.x + 2], ['right', pt.x >= r.x + r.w - 2],
+             ['top', pt.y <= r.y + 2], ['bottom', pt.y >= r.y + r.h - 2]]
+          : [['top', pt.y <= r.y + 2], ['bottom', pt.y >= r.y + r.h - 2],
+             ['left', pt.x <= r.x + 2], ['right', pt.x >= r.x + r.w - 2]];
+        for (const [s2, hit] of order) { if (hit) { side = s2; break; } }
+        if (side == null) continue;
+        const inBandX = other.x >= r.x - 40 && other.x <= r.x + r.w + 40;
+        const inBandY = other.y >= r.y - 40 && other.y <= r.y + r.h + 40;
+        const bad = (side === 'top' && other.y > r.y + r.h + 10 && inBandX) ||
+                    (side === 'bottom' && other.y < r.y - 10 && inBandX) ||
+                    (side === 'left' && other.x > r.x + r.w + 10 && inBandY) ||
+                    (side === 'right' && other.x < r.x - 10 && inBandY);
+        if (bad) {
+          V.push({ rule: 'wrap-around', severity: 'error',
+            message: `fil ${w.id} : le pin (${side}) de ${cid} regarde à l'opposé de sa destination`,
+            cells: [w.id, cid] });
+        }
+      }
+    }
+  }
+
   // R14/26 : paires et miroirs à la même rangée ; R25 drains alignés
   const extracted = extractNetlist(model);
   const structures = detectStructures({ components: extracted.components.map((c) => ({ ...c, model: c.value })) });
