@@ -86,7 +86,7 @@ async function evaluate(parsed, params, reference, fast = false, engine = 'v2') 
       // là où la version Python (directions) ne voit rien
       jsErrs = checkDocument(m).violations
         .filter((v) => v.severity === 'error' && v.rule !== '30').length;
-    } catch { /* le score seul reste utilisable */ }
+    } catch { return { ok: false, reason: 'checker-unavailable' }; }
     return { ok: true, doc, m, placed, score: s - 30 * jsErrs, jsErrs, params, fast: true };
   }
   const b = await scoreDocument(doc, m, { reference });
@@ -185,8 +185,8 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   if (best == null) throw new Error('aucun finaliste valide: ' + finReasons.join(','));
   history.push({ iter: 'final', score: best.score, checkErrors: best.checkErrors, accepted: true });
   // S3 : compaction finale, gardée par LVS + score (avec restauration)
+  const backup = serialize(best.doc);
   try {
-    const backup = serialize(best.doc);
     const m = getPage(best.doc);
     const before = rankValue(best);
     await compactPage(m);
@@ -195,12 +195,12 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
     const b = lvs.match ? await scoreDocument(best.doc, m, { reference }) : null;
     const cAfter = b != null ? checkErrors(best.doc) : 99;
     if (b != null && rankValue(b) >= before && cAfter <= (best.checkErrors ?? 99)) {
-      best = { ...best, score: b.score, score_raw: b.score_raw, metrics: b.metrics };
+      best = { ...best, score: b.score, score_raw: b.score_raw, metrics: b.metrics, checkErrors: cAfter };
       history.push({ iter: 'compact', score: b.score, accepted: true });
     } else {
       best.doc = parseDrawio(backup);
       history.push({ iter: 'compact', score: b ? b.score : null, accepted: false });
     }
-  } catch (e) { history.push({ iter: 'compact', accepted: false, rejected: String(e).slice(0, 120) }); }
+  } catch (e) { best.doc = parseDrawio(backup); history.push({ iter: 'compact', accepted: false, rejected: String(e).slice(0, 120) }); }
   return { best, history };
 }

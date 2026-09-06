@@ -1,3 +1,4 @@
+import { preserveElectricalData } from './electrical-data.js';
 /**
  * place2.js — placement « à la main » : les composants sont organisés en
  * PILES DE CONDUCTION verticales (chemins VDD → masse), comme un designer
@@ -22,7 +23,7 @@ import { detectStructures } from './patterns.js';
 
 const JCT = 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;';
 const VDD_TAP = 'mxgraph.electrical.signal_sources.vss2';
-const PORT = 'mxgraph.electrical.signal_sources.equipotential';
+const PORT = 'port';
 
 const DEF = { colW: 190, rowH: 180, x0: 140, y0: 130, order: [], flip: {} };
 
@@ -81,6 +82,7 @@ function diagBlocked(placed, t0, t1, refA, refB) {
 
 export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   const wires = [];
+  const localBiasNets = new Set();
   const wire = (a, b) => wires.push(addWire(model, a === null ? b : a).getAttribute('id'));
   let seq = 0;
   let ccPairs = [];
@@ -268,6 +270,28 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   };
   for (const [net, terms] of netTerms) {
     if (net === vddNet || net === '0') continue;
+    // Shared external MOS bias gates are named local taps, not long buses
+    // across the signal path. Only explicit VB/VBIAS names qualify.
+    if (P.localBiasPorts !== false && terms.length > 1 && /^vb(?:ias)?\d*$/i.test(net) &&
+        terms.every(t => { const ci=info.get(t.ref); return ci && ci.gate === net; })) {
+      const proposals=terms.map(t => {
+        const p=placed.get(t.ref), a=pinAbs(p,t.pin), left=a.x<=p.x+p.w/2;
+        return {t,a,left,x:a.x+(left?-56:32),y:a.y-12};
+      });
+      const free=proposals.every(q => ![...placed.values()].some(v =>
+        q.x < v.x+v.w+4 && q.x+24 > v.x-4 && q.y < v.y+v.h+4 && q.y+24 > v.y-4));
+      if (free) {
+        localBiasNets.add(net);
+        for (const q of proposals) {
+          const id='PB_'+(++seq)+'_'+q.t.ref;
+          const cell=addVertex(model,{id,shape:PORT,x:q.x,y:q.y,w:24,h:24,value:net.toUpperCase()});
+          cell.setAttribute('style',cell.getAttribute('style')+'verticalLabelPosition=bottom;verticalAlign=top;');
+          placed.set(id,{id,x:q.x,y:q.y,w:24,h:24,rotation:0});
+          wire(null,{source:id,target:q.t.ref,sourcePin:{x:q.left?1:0,y:0.5},targetPin:q.t.pin});
+        }
+        continue;
+      }
+    }
     if (terms.length === 1) {
       // entrée/sortie : port
       const t = terms[0];
@@ -484,6 +508,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   // ports d'interface : un net multi-terminal NOMMÉ (in/out/lo/rf/vb...)
   // sans étiquette est illisible — l'OL du Gilbert n'existait nulle part
   for (const [net, terms] of netTerms) {
+    if (localBiasNets.has(net)) continue;
     if (net === vddNet || net === '0' || terms.length < 2) continue;
     if (!/(^|_)(in|out|rf|lo|if|clk|bias|osc|vb)/i.test(net)) continue;
     // l'axe de signal passif a déjà posé son port sur ce net
@@ -630,7 +655,7 @@ function mirrorPolarity(model, vddName, reversedRefs = new Set()) {
     const el = getCell(model, v.id);
     if (el == null) continue;
     const st = el.getAttribute('style') || '';
-    const shape = v.style.map.get('shape') || '';
+    const shape = v.style.map.get('apiShape') || v.style.map.get('shape') || '';
     const newY = S - v.y - v.h;
     if (/transistors\.(nmos|pmos)\b/.test(shape)) {
       const toP = /transistors\.nmos\b/.test(shape);
@@ -716,7 +741,7 @@ function mirrorPolarity(model, vddName, reversedRefs = new Set()) {
   }
 }
 
-export function importNetlist2(model, parsed, opts = {}) {
+function importNetlist2Impl(model, parsed, opts = {}) {
   const P = { ...DEF, ...opts };
   const comps = parsed.components;
   if (comps.length === 0) throw httpError(400, 'netlist vide');
@@ -2078,4 +2103,10 @@ export function importNetlist2(model, parsed, opts = {}) {
     // vco-lc-pmos 0->4) — la recherche CORRIGE plus d'orientations qu'elle
     // n'en casse (R4/L3 à l'envers = 2 err, contre 9 sans le move)
     flippable: comps.filter((c) => 'RCLD'.includes(c.prefix)).map((c) => c.ref) };
+}
+
+export function importNetlist2(model, parsed, opts = {}) {
+  const result = importNetlist2Impl(model, parsed, opts);
+  if (!opts._dual) preserveElectricalData(model, parsed);
+  return result;
 }

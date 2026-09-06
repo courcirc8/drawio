@@ -1,3 +1,4 @@
+import { preserveElectricalData } from './electrical-data.js';
 /**
  * place.js — initial placement + wiring of a parsed SPICE netlist onto a page.
  * Sources in the left column, then BFS rank across shared nets. Ground nodes
@@ -12,7 +13,7 @@ import { pinAbs } from './route.js';
 const COL_W = 220, ROW_H = 170, X0 = 80, Y0 = 80;
 const JUNCTION_STYLE = 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;';
 
-export function importNetlist(model, parsed) {
+function importNetlistImpl(model, parsed) {
   const comps = parsed.components;
   if (comps.length === 0) throw httpError(400, 'netlist has no supported components');
 
@@ -115,4 +116,10 @@ export function importNetlist(model, parsed) {
     // single-terminal nets are left unwired; ERC reports them
   }
   return { components: comps.map((c) => c.ref), wires, warnings: parsed.warnings || [] };
+}
+
+export function importNetlist(model, parsed, opts = {}) {
+  const result = importNetlistImpl(model, parsed, opts);
+  preserveElectricalData(model, parsed);
+  return result;
 }

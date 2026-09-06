@@ -1,3 +1,4 @@
+import { tryGeometry } from './transaction.js';
 /**
  * compact.js — S3 v2 : compaction par ALIGNEMENT DE PINS CONNECTÉES.
  * Pour chaque fil presque droit (|dx| ou |dy| petit mais non nul), on propose
@@ -89,9 +90,12 @@ function candidates(model, tol) {
  */
 export async function compactPage(model, opts) {
   const before = connectivityFingerprint(model);
-  const result = await compactPageImpl(model, opts);
-  assertGeometryOnly(before, connectivityFingerprint(model), 'compactPage');
-  return result;
+  const trial = await tryGeometry(model, async () => {
+    const result = await compactPageImpl(model, opts);
+    assertGeometryOnly(before, connectivityFingerprint(model), 'compactPage');
+    return result;
+  }, () => true);
+  return trial.result;
 }
 
 async function compactPageImpl(model, { tol = 30, maxMoves = 24 } = {}) {
@@ -108,13 +112,13 @@ async function compactPageImpl(model, { tol = 30, maxMoves = 24 } = {}) {
       const cell = allCells(model).map(cellInfo).find((c) => c.id === mv.ref);
       if (cell == null) continue;
       const patch = mv.axis === 'x' ? { dx: mv.delta } : { dy: mv.delta };
-      updateCell(model, mv.ref, patch);
-      await routePage(model, null, {});
-      const s2 = await fastScore(model);
-      if (s2 > score) { score = s2; applied++; progress = true; }
-      else {
-        updateCell(model, mv.ref, mv.axis === 'x' ? { dx: -mv.delta } : { dy: -mv.delta });
-      }
+      const trial = await tryGeometry(model, async () => {
+        updateCell(model, mv.ref, patch);
+        await routePage(model, null, {});
+        return fastScore(model);
+      }, s2 => Number.isFinite(s2) && s2 > score);
+      if (trial.accepted) { score = trial.result; applied++; progress = true; }
+
     }
     if (!progress) break;
   }

@@ -2,12 +2,17 @@
  * lvs.js — Layout-vs-Schematic style comparison between the netlist extracted
  * from the drawio schematic and a reference SPICE netlist. Components are
  * matched by ref; net correspondence is derived structurally (extracted net
- * names are synthetic, only ground '0' matches by name).
+ * internal names may be synthetic; ground and declared ports retain their identities).
  */
 
 /** @param extracted {components:[{ref,prefix,nodes,value}]} — from extractNetlist
  *  @param golden {components:[…]} — from parseSpice */
 export function compare(extracted, golden) {
+  const errors = [...(golden.warnings || []), ...(extracted.issues || []).filter(x => x.code !== 'anchor-name-stale')];
+  const duplicates = cs => cs.filter((c,i) => cs.findIndex(d => d.ref.toUpperCase() === c.ref.toUpperCase()) !== i).map(c => c.ref);
+  if (!golden.components.length) errors.push({code:'empty-reference'});
+  errors.push(...duplicates(extracted.components).map(ref => ({code:'duplicate-ref',ref})));
+
   const ex = new Map(extracted.components.map((c) => [c.ref.toUpperCase(), c]));
   const go = new Map(golden.components.map((c) => [c.ref.toUpperCase(), c]));
   const report = { match: true, missing: [], extra: [], type_mismatches: [], value_mismatches: [], net_mismatches: [] };
@@ -18,8 +23,10 @@ export function compare(extracted, golden) {
   const common = [...go.keys()].filter((r) => ex.has(r));
   for (const ref of common) {
     const a = ex.get(ref), b = go.get(ref);
+    if (a.symbolModel && /^(NMOS|PMOS|NPN|PNP)$/i.test(b.model || '') && a.symbolModel.toUpperCase() !== b.model.toUpperCase())
+      report.type_mismatches.push({ref:b.ref,schematic:a.symbolModel,netlist:b.model});
     if (a.prefix !== b.prefix) report.type_mismatches.push({ ref: b.ref, schematic: a.prefix, netlist: b.prefix });
-    if (a.value && b.value && norm(a.value) !== norm(b.value)) {
+    if (norm(a.value ?? '') !== norm(b.value ?? '')) {
       report.value_mismatches.push({ ref: b.ref, schematic: a.value, netlist: b.value });
     }
   }
@@ -32,10 +39,10 @@ export function compare(extracted, golden) {
   // resistor still matches.
   const SYMMETRIC = new Set(['R', 'C', 'L']);
   const termId = (c, ref, i) => SYMMETRIC.has(c.prefix) ? ref + '.x' : ref + '.' + i;
-  const termsA = new Map(), termsB = new Map(); // net -> Set(terms)
+  const termsA = new Map(), termsB = new Map(); // net -> terminal multiset
   for (const ref of common) {
-    ex.get(ref).nodes.forEach((netName, i) => addTerm(termsA, netName, termId(ex.get(ref), ref, i)));
-    go.get(ref).nodes.forEach((netName, i) => addTerm(termsB, netName, termId(go.get(ref), ref, i)));
+    (ex.get(ref).fullNodes || ex.get(ref).nodes).forEach((netName, i) => addTerm(termsA, netName, termId(ex.get(ref), ref, i)));
+    (go.get(ref).fullNodes || go.get(ref).nodes).forEach((netName, i) => addTerm(termsB, netName, termId(go.get(ref), ref, i)));
   }
   const sigA = signatures(termsA), sigB = signatures(termsB);
   for (const [sig, nets] of sigA) {
@@ -54,14 +61,23 @@ export function compare(extracted, golden) {
       }
     }
   }
+  if (termsA.has('0') !== termsB.has('0')) report.ground_mismatch = {message:'ground terminal set missing on one side'};
   // ground must match by name when present on both sides
   if (termsA.has('0') && termsB.has('0') && setSig(termsA.get('0')) !== setSig(termsB.get('0'))) {
     // already reported structurally; flag explicitly
     report.ground_mismatch = { schematic: [...termsA.get('0')].sort(), netlist: [...termsB.get('0')].sort() };
   }
 
+  report.named_net_mismatches = [];
+  for (const name of extracted.namedNets || []) {
+    const a = [...termsA.keys()].find(n => n.toUpperCase() === name.toUpperCase());
+    const b = [...termsB.keys()].find(n => n.toUpperCase() === name.toUpperCase());
+    if (a && (!b || setSig(termsA.get(a)) !== setSig(termsB.get(b))))
+      report.named_net_mismatches.push({name, schematic:termsA.get(a), reference:b?termsB.get(b):null});
+  }
   report.values_match = report.value_mismatches.length === 0;
-  report.match = report.missing.length === 0 && report.extra.length === 0 &&
+  report.extraction_errors = errors;
+  report.match = report.values_match && report.named_net_mismatches.length === 0 && errors.length === 0 && !report.ground_mismatch && report.missing.length === 0 && report.extra.length === 0 &&
     report.type_mismatches.length === 0 && report.net_mismatches.length === 0;
   report.compared_components = common.length;
   return report;
@@ -98,8 +114,8 @@ function norm(v) {
   }).join(' ');
 }
 function addTerm(map, net, term) {
-  if (!map.has(net)) map.set(net, new Set());
-  map.get(net).add(term);
+  if (!map.has(net)) map.set(net, []);
+  map.get(net).push(term);
 }
 function setSig(set) { return [...set].sort().join(','); }
 function signatures(terms) {
@@ -115,7 +131,7 @@ function signatures(terms) {
 function closest(set, others) {
   let best = null, bn = 0;
   for (const [net, oset] of others) {
-    const inter = [...set].filter((t) => oset.has(t)).length;
+    const inter = [...set].filter((t) => oset.includes(t)).length;
     if (inter > bn) { bn = inter; best = { net, shared_terminals: inter }; }
   }
   return best;

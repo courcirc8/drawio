@@ -319,6 +319,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
       annReport = annotate.applyAnnotations(model.getPage(entry.doc), seedDoc, { scale: annScale });
     }
     const lvsReport = lvs.compare(netlist.extractNetlist(model.getPage(entry.doc)), parsed);
+    if (!lvsReport.match) throw model.httpError(422, 'final optimized document failed strict LVS');
     return res.status(201).json({ engine: (engine === 'v3' ? 'place3+optimize' : 'place2+optimize'), score: best.score,
       metrics: best.metrics, params: best.params, history, lvs: lvsReport,
       components: best.placed.components, wires: best.placed.wires,

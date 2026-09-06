@@ -417,6 +417,7 @@ async function routePageImpl(model, edgeIds, opts) {
   fixOwnBodyThrough(model, vertices);
   // ---- nettoyage : points dupliqués et pointes A->B->A laissés par les réparations
   cleanupDegeneratePoints(model);
+  repairPinClearance(model, vertices);
   // ---- points de contact sur les branches >=3 terminaux (après géométrie finale)
   if (process.env.DISABLE_DOTS !== '1') { addContactDots(model); hideDegenerateJunctions(model); }
   offsetEdgeLabels(model);
@@ -1505,4 +1506,54 @@ function polishJogs(model, obstacles, tol) {
 /** Absolute position of a shape pin, rotation-aware. Used by netlist wiring/extraction. */
 export function pinAbs(cell, pin) {
   return pinAbsOf(cell, pin.x, pin.y);
+}
+
+/** Slide an interior lane away from a foreign pin after all geometry rewrites.
+ * Only rectangular three-segment paths are changed; endpoints and anchors stay fixed.
+ */
+export function repairPinClearance(model, obstacles) {
+  const cells = allCells(model).map(cellInfo), byId = new Map(cells.map(c => [c.id,c]));
+  const nets = netGroups(cells), pins = [];
+  for (const e of cells.filter(c => c.kind === 'edge')) {
+    const pl = polylineOf(e, byId); if (!pl) continue;
+    pins.push({p:pl[0],net:nets.get(e.id)}, {p:pl.at(-1),net:nets.get(e.id)});
+  }
+  const distance = (p,a,b) => {
+    const dx=b.x-a.x,dy=b.y-a.y,ll=dx*dx+dy*dy;
+    const t=ll?Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/ll)):0;
+    return Math.hypot(p.x-a.x-t*dx,p.y-a.y-t*dy);
+  };
+  for (const e of cells.filter(c => c.kind === 'edge')) {
+    if (e.style.map.get('edgeStyle') === 'none' || e.style.map.has('drawioApiFixedRoute')) continue;
+    const pl = polylineOf(e,byId); if (!pl || pl.length < 4) continue;
+    const foreign = pins.filter(p => p.net !== nets.get(e.id));
+    const contacts = cells.filter(c => c.kind === 'edge' && c.id !== e.id && nets.get(c.id) === nets.get(e.id))
+      .flatMap(c => polylineOf(c,byId) || [])
+      .concat(cells.filter(isJunctionCell).map(c => ({x:c.x+c.w/2,y:c.y+c.h/2})))
+      .filter(p => pl.slice(1).some((b,j) => distance(p,pl[j],b)<0.6));
+    const clear = points => points.slice(1).every((b,j) => {
+      const a=points[j];
+      if (foreign.some(p => distance(p.p,a,b)<6)) return false;
+      return !obstacles.some(v => Math.max(a.x,b.x)>v.x+1.5 && Math.min(a.x,b.x)<v.x+v.w-1.5 &&
+        Math.max(a.y,b.y)>v.y+1.5 && Math.min(a.y,b.y)<v.y+v.h-1.5);
+    });
+    if (!pl.slice(1).some((b,j)=>foreign.some(p=>distance(p.p,pl[j],b)<5))) continue;
+    let accepted = null;
+    for (let i=1;i<pl.length-2 && !accepted;i++) {
+      const vertical=Math.abs(pl[i].x-pl[i+1].x)<0.1;
+      const horizontal=Math.abs(pl[i].y-pl[i+1].y)<0.1;
+      if (!vertical&&!horizontal) continue;
+      if (vertical && (Math.abs(pl[i-1].y-pl[i].y)>0.1 || Math.abs(pl[i+2].y-pl[i+1].y)>0.1)) continue;
+      if (horizontal && (Math.abs(pl[i-1].x-pl[i].x)>0.1 || Math.abs(pl[i+2].x-pl[i+1].x)>0.1)) continue;
+      for (const shift of [-8,8,-16,16]) {
+        const trial=pl.map(p=>({...p})),axis=vertical?'x':'y';
+        trial[i][axis]+=shift;trial[i+1][axis]+=shift;
+        if (clear(trial) && contacts.every(p => trial.slice(1).some((b,j) => distance(p,trial[j],b)<0.6))) {accepted=trial;break;}
+      }
+    }
+    if (accepted) {
+      const el=allCells(model).find(n=>n.getAttribute('id')===e.id);
+      setEdgePoints(el,accepted.slice(1,-1));
+    }
+  }
 }

@@ -1,3 +1,4 @@
+import { preserveElectricalData } from './electrical-data.js';
 /**
  * place3.js — placement for SOURCE-LESS passive networks (RF matching: pure
  * R/L/C between differential port pairs and an antenna). place2.js places by
@@ -113,7 +114,7 @@ function twoTermInfo(c) {
   return { shapeKey: map.shape, po: map.pinOrder, a: c.nodes[0], b: c.nodes[1] };
 }
 
-export function importNetlist3(model, parsed, opts = {}) {
+function importNetlist3Impl(model, parsed, opts = {}) {
   const P = { ...DEF, ...opts, flip: { ...DEF.flip, ...(opts.flip || {}) },
     rowOffset: { ...DEF.rowOffset, ...(opts.rowOffset || {}) },
     shuntDx: { ...DEF.shuntDx, ...(opts.shuntDx || {}) } };
@@ -721,4 +722,10 @@ export function importNetlist3(model, parsed, opts = {}) {
     pairs: pairsFound.map((pr) => [pr.p, pr.n].sort().join('/')),
     flippable: [...new Set(shuntRefs)],
     secondaryRows: [...new Set(secondaryRowIds)] };
+}
+
+export function importNetlist3(model, parsed, opts = {}) {
+  const result = importNetlist3Impl(model, parsed, opts);
+  preserveElectricalData(model, parsed);
+  return result;
 }

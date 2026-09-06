@@ -45,13 +45,15 @@ export function parseSpice(text) {
     let nNodes = map.pinOrder.length + (map.dropNodes ? map.dropNodes.length : 0);
     if (tokens.length < 1 + nNodes) { warnings.push('malformed line skipped: ' + line); continue; }
     let nodes = tokens.slice(1, 1 + nNodes).map(normNode);
+    const fullNodes = [...nodes];
     let rest = tokens.slice(1 + nNodes);
     if (map.dropNodes) nodes = nodes.filter((_, i) => !map.dropNodes.includes(i));
     // V/I may carry "DC 5" style values
+    if (!rest.length) warnings.push('missing value or model: ' + line);
     const value = rest.join(' ');
-    components.push({ ref, prefix, nodes, value, model: rest[rest.length - 1] || '' });
+    components.push({ ref, prefix, nodes, fullNodes, value, model: ['M','Q','D'].includes(prefix) ? (rest[0] || '') : (rest[rest.length - 1] || '') });
   }
-  const dup = components.map((c) => c.ref).filter((r, i, a) => a.indexOf(r) !== i);
+  const dup = components.map((c) => c.ref).filter((r, i, a) => a.findIndex(x => x.toUpperCase() === r.toUpperCase()) !== i);
   if (dup.length) throw httpError(400, 'duplicate refs in netlist: ' + [...new Set(dup)].join(', '));
   return { title, components, warnings };
 }
@@ -223,6 +225,7 @@ export function extractNetlist(model) {
   const conn = connectivity(model);
   const out = [];
   const structured = [];
+  const byRef = new Map(conn.components.map(c => [String(identityOf(c.cell)).toUpperCase(), c]));
   for (const { cell, cls } of conn.components) {
     if (cls.mapping == null) {
       conn.issues.push({ code: 'unmapped-component', message: `cell ${cell.id} (${cls.shape ? cls.shape.name : '?'}) has no SPICE mapping`, cells: [cell.id] });
@@ -236,8 +239,26 @@ export function extractNetlist(model) {
     // T4: the emitted SPICE ref is the persisted refdes when present, never
     // the raw mxCell id — the id is what a GUI copy/paste silently reassigns.
     const ref = identityOf(cell);
-    structured.push({ ref, prefix: cls.prefix, nodes, value });
-    out.push([ref, ...nodes, value].join(' ').trim());
+    const fullNodes = [...nodes];
+    if (cls.mapping.dropNodes) {
+      let hidden;
+      try { hidden = JSON.parse(cell.attrs?.spice_hidden_nodes || 'null'); } catch { hidden = null; }
+      for (const index of cls.mapping.dropNodes) {
+        const h = hidden?.find(h => h.index === index);
+        let net = null;
+        if (h?.anchor) {
+          const target = byRef.get(String(h.anchor.ref).toUpperCase());
+          const pin = target && pinOrderFor(target.cls)[h.anchor.pin];
+          if (pin) net = conn.netOf.get(target.cell.id + ':' + pin);
+        } else if (h?.net) net = h.net;
+        if (!net) conn.issues.push({code:'missing-hidden-terminal', cells:[cell.id], message:`${ref} SPICE terminal ${index} is not represented`});
+        fullNodes.splice(index, 0, net || '?');
+      }
+    }
+    const symbolModel = /\.pmos(?:_|$)/.test(cls.shape?.key || '') ? 'PMOS' : /\.nmos(?:_|$)/.test(cls.shape?.key || '') ? 'NMOS'
+      : /\.pnp_/.test(cls.shape?.key || '') ? 'PNP' : /\.npn_/.test(cls.shape?.key || '') ? 'NPN' : null;
+    structured.push({ ref, prefix: cls.prefix, nodes, fullNodes, value, symbolModel });
+    out.push([ref, ...fullNodes, value].join(' ').trim());
   }
-  return { spice: '* extracted by drawio-api-server\n' + out.join('\n') + '\n.end\n', components: structured, issues: conn.issues };
+  return { spice: '* extracted by drawio-api-server\n' + out.join('\n') + '\n.end\n', components: structured, issues: conn.issues, namedNets: [...new Set(conn.taps.map(t => t.cls.net))] };
 }

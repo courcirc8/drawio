@@ -216,6 +216,9 @@ export function cellInfo(node) {
       attrs[a.name] = a.value;
     }
   }
+  if (!isObj) for (const key of ['refdes', 'spice_value', 'spice_hidden_nodes']) {
+    if (node.hasAttribute(key)) attrs[key] = node.getAttribute(key);
+  }
   const info = {
     id: node.getAttribute('id'),
     kind: cell.getAttribute('edge') === '1' ? 'edge' : (cell.getAttribute('vertex') === '1' ? 'vertex' : 'other'),
@@ -224,8 +227,8 @@ export function cellInfo(node) {
     styleRaw: style,
     // refdes/attrs are null for a plain (non-wrapped) cell — see components.js
     // identityOf() for the "prefer refdes, fall back to id" rule this enables.
-    refdes: isObj && attrs.refdes != null && attrs.refdes !== '' ? attrs.refdes : null,
-    attrs: isObj ? attrs : null,
+    refdes: attrs.refdes != null && attrs.refdes !== '' ? attrs.refdes : null,
+    attrs: Object.keys(attrs).length ? attrs : null,
   };
   if (info.kind === 'vertex' && g != null) {
     info.x = num(g.getAttribute('x'));

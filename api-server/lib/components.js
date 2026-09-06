@@ -15,11 +15,11 @@ export const SPICE_MAP = {
   // SPICE Q: collector base emitter [model] — NE=collector, W=base, SE=emitter
   Q: { shape: 'mxgraph.electrical.transistors.npn_transistor_1', pinOrder: ['NE', 'W', 'SE'], label: 'BJT',
        variants: { PNP: 'mxgraph.electrical.transistors.pnp_transistor_1' } },
-  // SPICE M: drain gate source bulk model — NE=drain, W=gate, SE=source (bulk ignored)
+  // SPICE M: drain gate source bulk model — NE=drain, W=gate, SE=source; bulk persisted as hidden-terminal data
   M: { shape: 'mxgraph.electrical.transistors.nmos', pinOrder: ['NE', 'W', 'SE'], label: 'MOSFET',
        variants: { PMOS: 'mxgraph.electrical.transistors.pmos' }, dropNodes: [3] },
   // SPICE G (VCCS, used for OTA symbols): out+ out- in+ in- gm — the single-ended
-  // OTA symbol has no out- pin, so node 1 (out-) is dropped on both sides.
+  // OTA symbol has no out- pin: node 1 is omitted from placement but persisted for strict extraction.
   G: { shape: 'mxgraph.electrical.abstract.ota_1', pinOrder: ['out', 'in+', 'in-'], dropNodes: [1], label: 'OTA (VCCS)' },
 };
 

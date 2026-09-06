@@ -104,7 +104,7 @@ test('LVS: detects topology and value mismatches', async () => {
   assert.ok(report.net_mismatches.length > 0);
   const val = parseSpice('V1 in 0 DC 5\nR1 in out 47k\nC1 out 0 100n\n');
   const r2 = compare(extractNetlist(m), val);
-  assert.equal(r2.match, true);
+  assert.equal(r2.match, false);
   assert.equal(r2.values_match, false);
   assert.equal(r2.value_mismatches[0].ref, 'R1');
 });

@@ -1,3 +1,4 @@
+import { preserveElectricalData } from './electrical-data.js';
 /**
  * place-elk.js — S2 : moteur de placement par graphe en couches (elkjs),
  * l'approche Weave/netlistsvg, avec le bundle ELK du fork chargé headless.
@@ -46,7 +47,7 @@ const MODES = [
   },
 ];
 
-export async function importNetlistElk(model, parsed, opts = {}) {
+async function importNetlistElkImpl(model, parsed, opts = {}) {
   const comps = parsed.components;
   if (comps.length === 0) throw httpError(400, 'netlist vide');
   const info = new Map();
@@ -157,4 +158,10 @@ export async function importNetlistElk(model, parsed, opts = {}) {
     P: { colW: 190, x0: X0, junctionHint: elkJunctionPos } });
   return { components: comps.map((c) => c.ref), wires, warnings: parsed.warnings || [],
     engine: 'elk', mode: modeUsed, params: {} };
+}
+
+export async function importNetlistElk(model, parsed, opts = {}) {
+  const result = await importNetlistElkImpl(model, parsed, opts);
+  preserveElectricalData(model, parsed);
+  return result;
 }
