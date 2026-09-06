@@ -1458,7 +1458,18 @@ function polishJogs(model, obstacles, tol) {
           const yT = useP0 ? p0.y : p3.y;
           const [qa, qb] = useP0 ? [p2, p3] : [p0, p1];
           if (blocked(Math.min(qa.x, qb.x), yT - 1, Math.max(qa.x, qb.x), yT + 1, skip)) continue;
-          p1.y = yT; p2.y = yT;
+          // DEFECT (2026-09-06, règle 64) : le point LOINTAIN du côté re-posé
+          // (p3 si on aligne sur p0, p0 sinon) restait sur son ancienne lane :
+          // p2→p3 (ou p0→p1) devenait une oblique de `tol` px de haut (strongarm
+          // M7→M9 : 314×14). Il faut le glisser aussi, ce qui n'est légitime
+          // que si le segment au-delà est VERTICAL (il s'allonge/raccourcit) ;
+          // sinon on ne touche pas au coude.
+          const far = useP0 ? p3 : p0, beyond = useP0 ? pl[i + 3] : pl[i - 2];
+          if (Math.abs(far.y - yT) >= 0.6) {
+            if (beyond == null || !isV(far, beyond)) continue;
+            if (blocked(far.x - 1, Math.min(far.y, yT), far.x + 1, Math.max(far.y, yT), skip)) continue;
+          }
+          p1.y = yT; p2.y = yT; far.y = yT;
           changed = true;
         } else if (isV(p0, p1) && isH(p1, p2) && isV(p2, p3) && Math.abs(p1.x - p2.x) <= tol) {
           const fix0 = i - 1 === 0, fix1 = i + 2 === pl.length - 1;
@@ -1467,7 +1478,12 @@ function polishJogs(model, obstacles, tol) {
           const xT = useP0 ? p0.x : p3.x;
           const [qa, qb] = useP0 ? [p2, p3] : [p0, p1];
           if (blocked(xT - 1, Math.min(qa.y, qb.y), xT + 1, Math.max(qa.y, qb.y), skip)) continue;
-          p1.x = xT; p2.x = xT;
+          const far = useP0 ? p3 : p0, beyond = useP0 ? pl[i + 3] : pl[i - 2];
+          if (Math.abs(far.x - xT) >= 0.6) { // même garde, axes échangés
+            if (beyond == null || !isH(far, beyond)) continue;
+            if (blocked(Math.min(far.x, xT), far.y - 1, Math.max(far.x, xT), far.y + 1, skip)) continue;
+          }
+          p1.x = xT; p2.x = xT; far.x = xT;
           changed = true;
         }
       }

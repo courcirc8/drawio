@@ -763,3 +763,21 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     étiquette en haut) comme le port « upFacing ». Beauty gilbert 66.9→60.4
     (étiquette en haut, fil plus long) : un fil à travers un corps est une
     affirmation électrique fausse, la perte esthétique est acceptée.
+
+63. **Un aplatissement de coude doit glisser le point LOINTAIN (2026-09-06,
+    15→11 err ; strongarm 6→2)** : `polishJogs` (route.js) écrase un motif
+    H-V-H court (≤ 22 px) en projetant p1 et p2 sur la lane de p0 (ou p3),
+    mais laissait p3 (ou p0) sur son ancienne lane : p2→p3 devenait une
+    oblique de 14-16 px de haut (strongarm M7→M9 314×14, M7→M8 79×16 et
+    132×16), invisible à l'œil, refusée par la règle « diagonal ».
+    Correctif : le point lointain glisse aussi, à condition que le segment
+    au-delà soit vertical (il s'allonge ou se raccourcit) et que le petit
+    segment créé ne traverse aucun corps ; sinon on renonce à
+    l'aplatissement. Symétrique pour V-H-V. Effet de bord mesuré :
+    l'optimiseur, qui classe d'abord par erreurs checker, choisit désormais
+    pour strongarm un placement à 2 erreurs (les deux X volontaires) et
+    beauty 16 plutôt que 6 erreurs et beauty 45 — beauty moyen 72.9→72.5.
+    Restent 11 : 7 « diagonal » qui sont TOUTES des X volontaires
+    (edgeStyle=none, règle 34) que le juge compte en erreur, cherry 2
+    (wrap-around, pin-clearance), beta 30, wilson 28.
+
