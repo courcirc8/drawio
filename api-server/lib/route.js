@@ -1213,7 +1213,7 @@ function addContactDots(model) {
  * différents (lecture électrique fausse). Réparation : décalage de lane du
  * segment mobile (waypoints intérieurs), sinon insertion d'un dog-leg.
  */
-function separateNets(model, obstacles) {
+export function separateNets(model, obstacles) {
   // les gros composants (transistors…) portent leur étiquette sous le corps :
   // la bande de 18 px sous eux est interdite aux lanes de réparation
   const zones = obstacles.flatMap((v) => v.h >= 80
