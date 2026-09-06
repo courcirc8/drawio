@@ -19,3 +19,11 @@ Validation loop: saved-document LVS â†’ unchanged independent geometry checker â
 Port family A is the default for new imports: named arrow tags for input/output and double-ended tags for inout. Use `portDirections: { VIN: "input", VOUT: "output", RF: "inout" }` to specify electrical intent; name-based guesses are only a fallback. Unknown names remain inout. The electrical port role and net name are preserved independently of the visible shape. Existing documents are not migrated automatically.
 
 The v3 fallback selects PMOS model variants and their source-up terminal order; the saved-netlist regression test checks both symbol polarity and connectivity.
+
+Optional floorplan exploration (no change to default imports):
+
+```sh
+CHROME_PATH=/path/to/chrome node tools/compare-floorplans.mjs /tmp/floorplans benchmark/netlists30/folded-cascode.cir
+```
+
+`reservedChannels: true` in place2 reserves additional row/column whitespace according to visible non-rail net demand. It does not force each wire into an exclusive lane. `branchOrders` reuses existing motif detection and conduction ancestry to propose branch permutations. The explorer tries the original order, channel widths and up to three alternative orders, with and without channels. Every candidate is rebuilt independently and checked from saved XML. Only documentary LVS **and** visible connectivity audit true qualify for selection. Rank by errors, orthogonal crossings, then warnings; retain the original on ties. The checker does not count diagonal intersections. Render baseline and selected candidate for human inspection. Geometry errors can remain in the best candidate; eligibility is not a declaration of drawing perfection.

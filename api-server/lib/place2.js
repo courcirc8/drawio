@@ -1,3 +1,4 @@
+import { reserveChannels } from './floorplan.js';
 import { applyPortStyle } from './port-style.js';
 import { preserveElectricalData } from './electrical-data.js';
 /**
@@ -1505,6 +1506,8 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     }
   }
 
+  const channels = P.reservedChannels ? reserveChannels(comps, slots, P.reservedChannels === true ? {} : P.reservedChannels) : null;
+
   for (const c of comps) {
     let ci = info.get(c.ref);
     if (ci == null && SPICE_MAP[c.prefix] != null && slots.has(c.ref)) {
@@ -1521,8 +1524,8 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     let rotation = 0;
     if ('RCLD'.includes(c.prefix)) rotation = 90 * flip;
     const w = shape.w, h = shape.h;
-    const cx = P.x0 + s.col * P.colW;
-    const cy = P.y0 + s.level * P.rowH;
+    const cx = P.x0 + s.col * P.colW + (channels?.x(s.col) || 0);
+    const cy = P.y0 + s.level * P.rowH + (channels?.y(s.level) || 0);
     // centre la BOÎTE TOURNÉE sur (cx, cy) : le canal (pins NE/SE x=1) des MOS est à +w/2-? — aligner le canal sur l'axe
     const flipped = flipRefs.has(c.ref);
     // axe de conduction UNIQUE par colonne, indépendant des flips (un flip
@@ -2079,7 +2082,7 @@ function importNetlist2Impl(model, parsed, opts = {}) {
   const wires = wireNets(model, { comps, info, placed, netTerms, vddNet, P });
 
   return { components: comps.map((c) => c.ref), wires, warnings: parsed.warnings || [],
-    engine: 'place2', params: P, roots,
+    engine: 'place2', params: P, roots, channels: channels?.report || null,
     structuredRefs: [...new Set([
       ...structures.diffPairs.flatMap((p) => p.refs),
       ...structures.crossCoupled.flatMap((p) => p.refs),
