@@ -99,7 +99,7 @@ for (const [prefix, m] of Object.entries(SPICE_MAP)) {
  * the GUI does not break recognition on the next extraction.
  */
 export function shapeKeyOf(cellInfo) {
-  return cellInfo.style.map.get('shape') || cellInfo.style.map.get(SYNTHETIC_SHAPE_STYLE_KEY) || null;
+  return cellInfo.style.map.get(SYNTHETIC_SHAPE_STYLE_KEY) || cellInfo.style.map.get('shape') || null;
 }
 
 /**

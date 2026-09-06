@@ -1,3 +1,4 @@
+import { applyPortStyle } from './port-style.js';
 import { preserveElectricalData } from './electrical-data.js';
 /**
  * place-elk.js — S2 : moteur de placement par graphe en couches (elkjs),
@@ -162,6 +163,7 @@ async function importNetlistElkImpl(model, parsed, opts = {}) {
 
 export async function importNetlistElk(model, parsed, opts = {}) {
   const result = await importNetlistElkImpl(model, parsed, opts);
+  applyPortStyle(model, opts);
   preserveElectricalData(model, parsed);
   return result;
 }

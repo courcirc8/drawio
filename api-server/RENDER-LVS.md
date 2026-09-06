@@ -12,6 +12,10 @@ The extractor reads the saved XML. Exit 2 means electrical mismatch; exit 1 mean
 
 Geometry trials snapshot the entire document, including wires, and restore it on rejection or exception. The invariant includes effective values, symbol identity and anchor coordinates. Route clearance repair only moves interior orthogonal lanes while preserving endpoints and existing contacts.
 
-Shared external nets named VB/VBIAS with optional numeric suffixes, connected exclusively to MOS gates, may use one local circular port per gate. Occupied placements fall back to the ordinary router. Set `localBiasPorts: false` in place2 options to compare the previous bus representation. The later boundary-port pass must skip those nets to avoid duplicate global buses.
+Shared external nets named VB/VBIAS with optional numeric suffixes, connected exclusively to MOS gates, may use one local named port per gate. Occupied placements fall back to the ordinary router. Set `localBiasPorts: false` in place2 options to compare the previous bus representation. The later boundary-port pass must skip those nets to avoid duplicate global buses.
 
 Validation loop: saved-document LVS → unchanged independent geometry checker → rendered before/after inspection → accept or restore. Do not tune the checker to accept a rendering regression. Report individual circuits and unresolved defects alongside aggregate scores.
+
+Port family A is the default for new imports: named arrow tags for input/output and double-ended tags for inout. Use `portDirections: { VIN: "input", VOUT: "output", RF: "inout" }` to specify electrical intent; name-based guesses are only a fallback. Unknown names remain inout. The electrical port role and net name are preserved independently of the visible shape. Existing documents are not migrated automatically.
+
+The v3 fallback selects PMOS model variants and their source-up terminal order; the saved-netlist regression test checks both symbol polarity and connectivity.

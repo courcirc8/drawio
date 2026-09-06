@@ -1,3 +1,4 @@
+import { applyPortStyle } from './port-style.js';
 import { preserveElectricalData } from './electrical-data.js';
 /**
  * place3.js — placement for SOURCE-LESS passive networks (RF matching: pure
@@ -63,7 +64,7 @@ import { preserveElectricalData } from './electrical-data.js';
  * only retries for ports/junctions, never for the floating-passive path.
  */
 import { addVertex, addWire, httpError, mxCellPart, getCell } from './model.js';
-import { SPICE_MAP, formatComponentValue } from './components.js';
+import { SPICE_MAP, PIN_ORDER_OVERRIDES, formatComponentValue } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs, rotatedAabb } from './route.js';
 import { loadSeed, applySeed } from './preplace.js';
@@ -111,7 +112,7 @@ function pairKey(name) {
 function twoTermInfo(c) {
   const map = SPICE_MAP[c.prefix];
   if (map == null || c.nodes.length !== 2) return null;
-  return { shapeKey: map.shape, po: map.pinOrder, a: c.nodes[0], b: c.nodes[1] };
+  return { shapeKey: map.variants?.[String(c.model || "").toUpperCase()] || map.shape, po: map.pinOrder, a: c.nodes[0], b: c.nodes[1] };
 }
 
 function importNetlist3Impl(model, parsed, opts = {}) {
@@ -459,7 +460,7 @@ function importNetlist3Impl(model, parsed, opts = {}) {
     if (placed.has(c.ref)) continue;
     const map = SPICE_MAP[c.prefix];
     if (map == null) continue;
-    const shapeKey = map.shape, po = map.pinOrder;
+    const shapeKey = map.variants?.[String(c.model || "").toUpperCase()] || map.shape, po = PIN_ORDER_OVERRIDES[map.variants?.[String(c.model || "").toUpperCase()] || map.shape] || map.pinOrder;
     const shape = getShape(shapeKey);
     const x = P.x0 - 260 - fallbackCol * 160, y = P.y0 + 400;
     fallbackCol++;
@@ -726,6 +727,7 @@ function importNetlist3Impl(model, parsed, opts = {}) {
 
 export function importNetlist3(model, parsed, opts = {}) {
   const result = importNetlist3Impl(model, parsed, opts);
+  applyPortStyle(model, opts);
   preserveElectricalData(model, parsed);
   return result;
 }

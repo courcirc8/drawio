@@ -1,3 +1,4 @@
+import { applyPortStyle } from './port-style.js';
 import { preserveElectricalData } from './electrical-data.js';
 /**
  * place.js — initial placement + wiring of a parsed SPICE netlist onto a page.
@@ -120,6 +121,7 @@ function importNetlistImpl(model, parsed) {
 
 export function importNetlist(model, parsed, opts = {}) {
   const result = importNetlistImpl(model, parsed, opts);
+  applyPortStyle(model, opts);
   preserveElectricalData(model, parsed);
   return result;
 }

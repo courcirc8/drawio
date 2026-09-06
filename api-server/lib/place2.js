@@ -1,3 +1,4 @@
+import { applyPortStyle } from './port-style.js';
 import { preserveElectricalData } from './electrical-data.js';
 /**
  * place2.js — placement « à la main » : les composants sont organisés en
@@ -2107,6 +2108,6 @@ function importNetlist2Impl(model, parsed, opts = {}) {
 
 export function importNetlist2(model, parsed, opts = {}) {
   const result = importNetlist2Impl(model, parsed, opts);
-  if (!opts._dual) preserveElectricalData(model, parsed);
+  if (!opts._dual) { applyPortStyle(model, opts); preserveElectricalData(model, parsed); }
   return result;
 }
