@@ -27,7 +27,16 @@ export function alignSignalPaths(model,parsed) {
  const alignedPorts=new Set();
  const rel=(e,id)=>{const pre=e.source===id?'exit':'entry';return {x:Number(e.style.map.get(pre+'X')),y:Number(e.style.map.get(pre+'Y'))};};
  const pin=(c,i)=>{const cl=classify(c),po=pinOrderFor(cl);return cl.shape&&po?.[i]?getPin(cl.shape.key,po[i]):null;};
+ // Labels are part of the same checked proposal as their owner.
+ const withLabels=proposed=>{
+  const ids=new Set(proposed.map(p=>p.id)),result=[...proposed];
+  for(const p of proposed){const label=byId.get('LBL_'+p.id),old=byId.get(p.id);
+   if(label&&old&&!ids.has(label.id))result.push({...label,x:label.x+p.x-old.x,y:label.y+p.y-old.y});
+  }
+  return result;
+ };
  const collides=(proposed,ignored=new Set())=>{
+  proposed=withLabels(proposed);
   const changes=new Map(proposed.map(c=>[c.id,c]));
   return proposed.some(c=>{
    const a=rotatedAabb(c);
@@ -38,7 +47,7 @@ export function alignSignalPaths(model,parsed) {
    });
   });
  };
- const commit=proposed=>{for(const p of proposed){updateCell(model,p.id,{x:p.x,y:p.y,rotation:p.rotation,style:{flipH:p.flipH?'1':'0',flipV:p.flipV?'1':'0'}});Object.assign(byId.get(p.id),p);}};
+ const commit=proposed=>{for(const p of withLabels(proposed)){updateCell(model,p.id,{x:p.x,y:p.y,rotation:p.rotation,style:{flipH:p.flipH?'1':'0',flipV:p.flipV?'1':'0'}});Object.assign(byId.get(p.id),p);}};
  // A gate fed by passive input/bias branches faces those branches as a group.
  // Do not reinterpret cross-coupled or shared transistor-gate networks.
  for(const c of comps.filter(c=>c.prefix==='M')){
@@ -151,6 +160,24 @@ export function alignSignalPaths(model,parsed) {
   for(const next of [...proposed]){const old=byId.get(next.id),label=byId.get('LBL_'+next.id);if(label)proposed.push({...label,x:label.x+next.x-old.x,y:label.y+next.y-old.y});}
   if(collides(proposed)){report.skipped.push({ref:c.ref,reason:'occupied output chain'});continue;}
   commit(proposed);alignedPorts.add(port.id);report.series.push(found.chain.map(t=>t.c.ref));
+ }
+ // Remove small pin-height discrepancies on horizontal input passives.
+ // Anchored MOS and vertical conduction parts stay fixed. This catches the
+ // half-height offset of the 8px inductor stencil without moving a whole stack.
+ for(const c of comps.filter(c=>['R','C','L'].includes(c.prefix))){
+  const part=byId.get(c.ref);if(!part||part.rotation%180!==0)continue;
+  const proposals=[];
+  for(const e of edges.filter(e=>e.source===part.id||e.target===part.id)){
+   const other=byId.get(e.source===part.id?e.target:e.source);if(!other)continue;
+   const cl=classify(other);
+   if(cl.role!=='component'||(!['M','Q'].includes(cl.prefix)&&other.rotation%180===0))continue;
+   const a=pinAbs(part,rel(e,part.id)),b=pinAbs(other,rel(e,other.id)),dy=b.y-a.y;
+   if(Number.isFinite(dy)&&Math.abs(dy)>.01&&Math.abs(dy)<=8)proposals.push(dy);
+  }
+  if(!proposals.length)continue;
+  const dy=proposals[0];if(proposals.some(d=>Math.abs(d-dy)>.01))continue;
+  const next={...part,y:part.y+dy};
+  if(!collides([next])){commit([next]);report.series.push([c.ref]);}
  }
  // A directly attached port follows its neighbour's actual anchor, not bbox centre.
  for(const p of ports){

@@ -49,3 +49,17 @@ test('direct input ports align on OTA gates and alignment audit catches the old 
  assert.equal(directGatePortJogs(before).length,2);assert.equal(directGatePortJogs(after).length,0);
  assert.equal(compare(extractNetlist(after),p).match,true);
 });
+test('standalone labels follow mirrored transistor bodies',()=>{
+ const p=parseSpice(fs.readFileSync(new URL('../benchmark/netlists30/pa-class-a.cir',import.meta.url),'utf8'));
+ const before=getPage(newDocument()),after=getPage(newDocument());importNetlist2(before,p);importNetlist2(after,p,{signalAlignment:true});
+ const a=new Map(allCells(before).map(cellInfo).map(c=>[c.id,c])),b=new Map(allCells(after).map(cellInfo).map(c=>[c.id,c]));
+ const dx=b.get('M1').x-a.get('M1').x;
+ assert.ok(Math.abs(dx)>1);assert.equal(b.get('LBL_M1').x-a.get('LBL_M1').x,dx);
+});
+for(const [name,ref] of [['lna-cs-cascode','L1'],['lna-common-gate','C1']])test(name+' removes sub-grid passive pin jog',()=>{
+ const p=parseSpice(fs.readFileSync(new URL('../benchmark/netlists30/'+name+'.cir',import.meta.url),'utf8'));
+ const before=getPage(newDocument()),after=getPage(newDocument());importNetlist2(before,p);importNetlist2(after,p,{signalAlignment:true});
+ const a=new Map(allCells(before).map(cellInfo).map(c=>[c.id,c])),b=new Map(allCells(after).map(cellInfo).map(c=>[c.id,c]));
+ assert.ok(Math.abs(a.get(ref).y-b.get(ref).y)>1);
+ assert.equal(compare(extractNetlist(after),p).match,true);
+});
