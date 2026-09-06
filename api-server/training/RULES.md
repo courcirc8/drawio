@@ -750,3 +750,16 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     Leçon : un juge qui change la FORME de sa réponse casse silencieusement
     ses clients ; tout score consommé pour comparer doit être vérifié
     `Number.isFinite()`.
+
+62. **Le port d'un rail de quad est SUSPENDU quand l'autre rail passe
+    dessous (2026-09-06, 16→15 err, gilbert through 1→0)** : les deux rails
+    d'un quad sont à 20 px (lanes qTop−48 / qTop−28) et le port d'interface
+    (24×24, pin en haut) était posé SOUS sa lane : le rail inférieur
+    traversait le corps du port supérieur (through sur PN6/OUTM du
+    Gilbert). Le défaut était masqué à f8c4afc par une oblique de
+    compaction (règle 61) et n'apparaissait qu'une fois l'optimiseur réparé.
+    Correctif place2.js : si une lane étrangère passe dans la bande
+    [lane, lane+32], le port est suspendu au-dessus (y = lane−24, flipV,
+    étiquette en haut) comme le port « upFacing ». Beauty gilbert 66.9→60.4
+    (étiquette en haut, fil plus long) : un fil à travers un corps est une
+    affirmation électrique fausse, la perte esthétique est acceptée.

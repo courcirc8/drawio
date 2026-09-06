@@ -500,11 +500,21 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     if (riNet != null && riNet.endRef != null) {
       const id2 = 'PN' + (++seq);
       let pxR = riNet.endX + 46;
+      // Règle 62 (2026-09-06) : le port d'un rail de quad est posé SOUS sa
+      // lane (y = lane, pin en haut). Quand l'AUTRE rail passe 20 px plus bas
+      // (lanes qTop-48 / qTop-28), son fil traverse le corps du port (through,
+      // gilbert OUTM/PN6) — l'ancien code ne voyait ce corps qu'après un
+      // hasard de compaction. Si une lane étrangère passe dans la bande du
+      // corps, le port est SUSPENDU au-dessus de sa lane (flipV, pin en bas),
+      // comme le port « upFacing » plus bas.
+      const hang = [...quadRail.values()].some((r2) => r2 !== riNet && r2.lane > riNet.lane && r2.lane < riNet.lane + 24 + 8);
+      const pyR = hang ? riNet.lane - 24 : riNet.lane;
       const clashR = () => [...placed.values()].some((v) =>
-        pxR < v.x + v.w + 8 && pxR + 24 > v.x - 8 && riNet.lane < v.y + v.h + 8 && riNet.lane + 24 > v.y - 8);
+        pxR < v.x + v.w + 8 && pxR + 24 > v.x - 8 && pyR < v.y + v.h + 8 && pyR + 24 > v.y - 8);
       for (let k3 = 0; k3 < 8 && clashR(); k3++) pxR += 40;
-      addVertex(model, { id: id2, shape: PORT, x: pxR, y: riNet.lane, w: 24, h: 24, value: net.toUpperCase() });
-      placed.set(id2, { id: id2, x: pxR, y: riNet.lane, w: 24, h: 24, rotation: 0, railPort: true });
+      const cellR = addVertex(model, { id: id2, shape: PORT, x: pxR, y: pyR, w: 24, h: 24, value: net.toUpperCase() });
+      if (hang) cellR.setAttribute('style', cellR.getAttribute('style') + 'flipV=1;verticalLabelPosition=top;verticalAlign=bottom;');
+      placed.set(id2, { id: id2, x: pxR, y: pyR, w: 24, h: 24, rotation: 0, railPort: true, ...(hang ? { flipV: true } : {}) });
       wire(null, { source: id2, target: riNet.endRef, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: riNet.endPin.x, y: riNet.endPin.y } });
       continue;
     }
