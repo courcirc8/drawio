@@ -63,3 +63,14 @@ for(const [name,ref] of [['lna-cs-cascode','L1'],['lna-common-gate','C1']])test(
  assert.ok(Math.abs(a.get(ref).y-b.get(ref).y)>1);
  assert.equal(compare(extractNetlist(after),p).match,true);
 });
+test('mutually blocking input and bias ports move together onto their pins',()=>{
+ const p=parseSpice(fs.readFileSync(new URL('../benchmark/netlists30/lna-cs-cascode.cir',import.meta.url),'utf8'));
+ const m=getPage(newDocument());importNetlist2(m,p,{signalAlignment:true});
+ const cells=allCells(m).map(cellInfo),byId=new Map(cells.map(c=>[c.id,c]));
+ for(const id of ['P_in','P_vb2']){
+  const e=cells.find(c=>c.kind==='edge'&&(c.source===id||c.target===id));assert.ok(e);
+  const pts=[['exit',e.source],['entry',e.target]].map(([pre,cid])=>pinAbs(byId.get(cid),{x:Number(e.style.map.get(pre+'X')),y:Number(e.style.map.get(pre+'Y'))}));
+  assert.ok(Math.abs(pts[0].y-pts[1].y)<.01,id+' must be aligned');
+ }
+ assert.equal(compare(extractNetlist(m),p).match,true);
+});

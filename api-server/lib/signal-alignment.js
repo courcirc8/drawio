@@ -179,15 +179,27 @@ export function alignSignalPaths(model,parsed) {
   const next={...part,y:part.y+dy};
   if(!collides([next])){commit([next]);report.series.push([c.ref]);}
  }
- // A directly attached port follows its neighbour's actual anchor, not bbox centre.
+ // Ports can mutually occupy each other's intended row. Build their target
+ // positions first, then check a joint move when an individual move is blocked.
+ const portTargets=[];
  for(const p of ports){
   if(alignedPorts.has(p.id))continue;
   const links=edges.filter(e=>e.source===p.id||e.target===p.id);if(links.length!==1)continue;
   const e=links[0],other=byId.get(e.source===p.id?e.target:e.source);if(!other)continue;
   const a=pinAbs(p,rel(e,p.id)),b=pinAbs(other,rel(e,other.id));
   if(!Number.isFinite(a.y+b.y)||Math.abs(a.y-b.y)<.01)continue;
-  const next={...p,y:p.y+b.y-a.y};
-  if(!collides([next])){commit([next]);report.ports.push(p.id);}
+  portTargets.push({...p,y:p.y+b.y-a.y});
+ }
+ const movedPorts=new Set();
+ for(const next of portTargets){
+  if(movedPorts.has(next.id))continue;
+  let proposal=[next];
+  if(collides(proposal)){
+   const partner=portTargets.find(p=>p.id!==next.id&&!movedPorts.has(p.id)&&!collides([next,p]));
+   if(!partner)continue;
+   proposal.push(partner);
+  }
+  commit(proposal);for(const p of proposal){movedPorts.add(p.id);report.ports.push(p.id);}
  }
  return report;
 }
