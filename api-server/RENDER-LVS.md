@@ -27,3 +27,12 @@ CHROME_PATH=/path/to/chrome node tools/compare-floorplans.mjs /tmp/floorplans be
 ```
 
 `reservedChannels: true` in place2 reserves additional row/column whitespace according to visible non-rail net demand. It does not force each wire into an exclusive lane. `branchOrders` reuses existing motif detection and conduction ancestry to propose branch permutations. The explorer tries the original order, channel widths and up to three alternative orders, with and without channels. Every candidate is rebuilt independently and checked from saved XML. Only documentary LVS **and** visible connectivity audit true qualify for selection. Rank by errors, orthogonal crossings, then warnings; retain the original on ties. The checker does not count diagonal intersections. Render baseline and selected candidate for human inspection. Geometry errors can remain in the best candidate; eligibility is not a declaration of drawing perfection.
+
+User alignment rules (optional `signalAlignment: true` on place2):
+
+- Mirror an input MOS around its absolute drain/source axis, compensating the cell translation; gate moves, D/S do not. Externally terminated passive input branches can move to make room for the mirrored body. Shared transistor-gate and feedback networks are not automatically reinterpreted.
+- Align an unbranched passive input chain and its port using stencil pin coordinates, not bounding-box centres. Obstructed proposals are skipped.
+- Place an AC-coupled series output chain horizontally to the right of a drain, retaining supply branches and moving grounded output shunts below it. This rule requires a named OUT/VOUT endpoint and a chain starting with a capacitor; it is not a universal RF topology recognizer.
+- Align directly attached ports vertically to their neighbour's actual pin when space permits.
+
+Set `SIGNAL_ALIGNMENT=1` when running `compare-floorplans.mjs` to compare each floorplan with and without this pass. The selector now ranks errors, orthogonal crossings, direct gate-port jogs, then warnings. The new jog audit is an additional placement metric, not a relaxation of the independent checker. Documentary LVS and visible connectivity must both be true. Some selected drawings still contain geometry errors; these remain recorded. Transistor label placement, feedback geometry, and occupied-port fallbacks need further improvement.

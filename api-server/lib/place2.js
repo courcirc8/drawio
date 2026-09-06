@@ -1,3 +1,4 @@
+import { alignSignalPaths } from './signal-alignment.js';
 import { reserveChannels } from './floorplan.js';
 import { applyPortStyle } from './port-style.js';
 import { preserveElectricalData } from './electrical-data.js';
@@ -2111,6 +2112,6 @@ function importNetlist2Impl(model, parsed, opts = {}) {
 
 export function importNetlist2(model, parsed, opts = {}) {
   const result = importNetlist2Impl(model, parsed, opts);
-  if (!opts._dual) { applyPortStyle(model, opts); preserveElectricalData(model, parsed); }
+  if (!opts._dual) { applyPortStyle(model, opts); preserveElectricalData(model, parsed); if (opts.signalAlignment) result.signalAlignment = alignSignalPaths(model, parsed); }
   return result;
 }

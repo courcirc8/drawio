@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {directGatePortJogs} from '../lib/signal-alignment.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -17,7 +18,8 @@ fs.mkdirSync(out,{recursive:true});
 const checker=fileURLToPath(new URL('./check.py',import.meta.url));
 const summary=[];
 const rank=r=>[r.check.errors,r.check.crossings,r.check.warnings];
-const better=(a,b)=>{const aa=rank(a),bb=rank(b);for(let i=0;i<aa.length;i++)if(aa[i]!==bb[i])return aa[i]<bb[i];return false;};
+const selectionRank=r=>[r.check.errors,r.check.crossings,r.gatePortJogs?.length||0,r.check.warnings];
+const better=(a,b)=>{const aa=selectionRank(a),bb=selectionRank(b);for(let i=0;i<aa.length;i++)if(aa[i]!==bb[i])return aa[i]<bb[i];return false;};
 try{
 for(const file of files){
  const name=path.basename(file,'.cir'),dir=path.join(out,name);fs.mkdirSync(dir,{recursive:true});
@@ -27,6 +29,7 @@ for(const file of files){
  const variants=[{id:'baseline',opts:{}},{id:'channels',opts:{reservedChannels:true}},
    {id:'wide-channels',opts:{reservedChannels:{pitch:28,cap:168}}},
    ...orders.flatMap((order,i)=>[{id:`blocks-${i+1}`,opts:{order}}, {id:`blocks-channels-${i+1}`,opts:{order,reservedChannels:true}}])];
+ if(process.env.SIGNAL_ALIGNMENT==='1'){const original=[...variants];for(const v of original)variants.push({id:v.id+'-aligned',opts:{...v.opts,signalAlignment:true}});}
  const results=[];let best=null;
  for(const v of variants){
   try{
@@ -39,7 +42,7 @@ for(const file of files){
    if(run.error||!run.stdout)throw new Error(run.error?.message||run.stderr||'Checker returned no result');
    const check=JSON.parse(run.stdout);
    if(![check.errors,check.crossings,check.warnings].every(Number.isFinite))throw new Error('Invalid checker counters');
-   const r={id:v.id,opts:v.opts,lvs,visual,check,channels:placement.channels,
+   const r={id:v.id,opts:v.opts,lvs,visual,check,gatePortJogs:directGatePortJogs(saved),channels:placement.channels,
      eligible:lvs.match===true&&visual.visible_connectivity_match===true};
    fs.writeFileSync(p+'.json',JSON.stringify(r,null,2));results.push(r);
    if(r.eligible&&(!best||better(r,best)))best=r;
