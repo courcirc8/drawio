@@ -152,7 +152,17 @@ export async function scoreDocument(doc, model, { reference } = {}) {
       p.stderr.on('data', (d) => stderr += d);
       p.on('close', (code) => code === 0 ? resolve(stdout) : reject(new Error('beauty.py: ' + stderr.slice(0, 400))));
     });
-    return JSON.parse(out);
+    const b = JSON.parse(out);
+    // DEFECT (2026-09-06) : `score` n'est present que si missing_weight == 0
+    // (beauty.py, fusion eab1d7b). S'il manque (ex. un terme cv2 absent),
+    // on expose `score_partial` — clampe [0,100], meme semantique que l'ancien
+    // `score` pour l'utilisateur (POST /beauty, run30.py) — et on laisse
+    // `score_raw` (non clampe) a l'optimiseur via rankValue().
+    if (b.score === undefined) {
+      if (b.score_partial !== undefined) b.score = b.score_partial;
+      else if (b.score_raw !== undefined) b.score = Math.max(0, Math.min(100, b.score_raw));
+    }
+    return b;
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

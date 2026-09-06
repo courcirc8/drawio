@@ -19,6 +19,13 @@ import { connectivityFingerprint, assertGeometryOnly } from './invariant.js';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.resolve(HERE, '../tools/beauty.py');
 
+/** DEFECT (2026-09-06) : depuis la fusion eab1d7b, beauty.py ne renvoie plus la cle `score`
+ *  quand missing_weight != 0 (appel rapide sans PNG ni struct.json). Le faisceau
+ *  d'optimisation et la compaction sont aveugles (NaN) car b.score - a.score trie
+ *  des undefined. Le correctif utilise `score_raw` (non clampe, meilleur gradient)
+ *  comme premier fallback, puis `score` (old behavior), puis `score_partial`, ou
+ *  lève une erreur explicite si tout échoue.
+ */
 export async function fastScore(model) {
   const tmp = path.join(os.tmpdir(), 'compact-' + process.pid + '-' + Date.now() + '.xml');
   fs.writeFileSync(tmp, serialize(model.ownerDocument));
@@ -30,7 +37,13 @@ export async function fastScore(model) {
       p.stderr.on('data', (d) => se += d);
       p.on('close', (c) => c === 0 ? resolve(so) : reject(new Error(se.slice(0, 200))));
     });
-    return JSON.parse(out).score;
+    const j = JSON.parse(out);
+    // Utiliser score_raw (non clampe, meilleur gradient pour l'optimisation)
+    // si score absent (missing_weight > 0). Fallbacks: score -> score_partial.
+    if (j.score_raw !== undefined) return j.score_raw;
+    if (j.score !== undefined) return j.score;
+    if (j.score_partial !== undefined) return j.score_partial;
+    throw new Error('beauty.py output invalide, aucun score trouvé: ' + out.slice(0, 200));
   } finally { fs.unlinkSync(tmp); }
 }
 

@@ -724,3 +724,29 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     enterrés, ni les asymétries OUTP/OUTM, ni folded-cascode à 17.
     Restent 4 : beta 30 (té coincé), cherry 2 (gabarit 2-étages à
     écrire), wilson 28 (side-diode instable).
+
+61. **Score rapide muet depuis la fusion (2026-09-06, 34→16 err, beauty
+    66.6→73.0, LVS 43/43)** : depuis eab1d7b, `tools/beauty.py` ne renvoie
+    la clef `score` que si `missing_weight == 0`. L'appel « rapide » (XML
+    seul, sans PNG ni struct.json) ne fournit donc que `score_partial`
+    (clampé [0,100]) et `score_raw` (non clampé). Or `lib/compact.js::
+    fastScore()` lisait `.score` → `undefined` : le faisceau de
+    `lib/optimize.js` triait des NaN (history `score: null` à g0/g1/g2,
+    résultat final `params: {}` = placement brut jamais amélioré, là où
+    a855c74 trouvait `flip: {R2: true}` sur gilbert-mixer), et la compaction
+    (`if (s2 > score)`) n'appliquait plus AUCUN mouvement. C'est la cause
+    unique de la « régression de +17 erreurs » attribuée au routage : le
+    générateur n'a pas changé, il ne cherchait plus.
+    Correctif : `fastScore()` lit `score_raw` (gradient non clampé, c'est le
+    but du champ), puis `score`, puis `score_partial`, sinon lève ;
+    `optimize.js` rejette un candidat dont le score n'est pas fini (`reason:
+    'score'`) ; `beauty.js::scoreDocument()` expose `score_partial` comme
+    `score` quand il manque (même sémantique [0,100] pour l'utilisateur).
+    Mesuré sur 43 (optimize 8) : gilbert 6→1, bandgap 3→0 (beauty 0→72),
+    mixer-passive-ring 3→0, ota-symmetrical 3→0, vco-lc-tail-filter 4→2,
+    vco-lc-pmos 2→1, pierce 1→0, inverter-amp 1→0 ; strongarm 5→6
+    (+1 diagonale). Restent 16 : diagonal 9, 22-contact 2, 22/30/28/
+    wrap-around/pin-clearance 1 chacune.
+    Leçon : un juge qui change la FORME de sa réponse casse silencieusement
+    ses clients ; tout score consommé pour comparer doit être vérifié
+    `Number.isFinite()`.

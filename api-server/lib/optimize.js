@@ -75,6 +75,11 @@ async function evaluate(parsed, params, reference, fast = false, engine = 'v2') 
     // invisibles au score et le faisceau convergeait vers des fautifs que
     // seul le gate final (3 finalistes) pouvait encore écarter
     const s = await fastScore(m);
+    // DEFECT (2026-09-06) : fastScore() garantit un nombre fini, mais une
+    // erreur d'exécution ou un output malformé pourrait produire NaN/Infinite.
+    // Rejeter le candidat ici évite que b.score - a.score trie des NaN
+    // (comportement du faisceau qui rend l'optimisation aveugle).
+    if (!Number.isFinite(s)) return { ok: false, reason: 'score' };
     let jsErrs = 0;
     try {
       // règle 30 exclue : sa version JS (comptage de branches) sur-flagge
