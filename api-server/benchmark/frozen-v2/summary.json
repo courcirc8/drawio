@@ -1,0 +1,303 @@
+[
+  {
+    "name": "bandgap-core",
+    "source": "api-server/benchmark/frozen-v2/bandgap-core/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "beta-multiplier",
+    "source": "api-server/benchmark/frozen-v2/beta-multiplier/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "biquad-gmc",
+    "source": "api-server/benchmark/frozen-v2/biquad-gmc/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "charge-pump",
+    "source": "api-server/benchmark/frozen-v2/charge-pump/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "cherry-hooper",
+    "source": "api-server/benchmark/frozen-v2/cherry-hooper/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "class-ab-out",
+    "source": "api-server/benchmark/frozen-v2/class-ab-out/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "cml-buffer",
+    "source": "api-server/benchmark/frozen-v2/cml-buffer/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "colpitts-osc",
+    "source": "api-server/benchmark/frozen-v2/colpitts-osc/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "delay-cell-cc",
+    "source": "api-server/benchmark/frozen-v2/delay-cell-cc/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "diffpair-resistive",
+    "source": "api-server/benchmark/frozen-v2/diffpair-resistive/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "folded-cascode",
+    "source": "api-server/benchmark/frozen-v2/folded-cascode/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "fvf-follower",
+    "source": "api-server/benchmark/frozen-v2/fvf-follower/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "gilbert-mixer",
+    "source": "api-server/benchmark/frozen-v2/gilbert-mixer/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "inverter-amp",
+    "source": "api-server/benchmark/frozen-v2/inverter-amp/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "lc-match",
+    "source": "api-server/benchmark/frozen-v2/lc-match/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "lna-common-gate",
+    "source": "api-server/benchmark/frozen-v2/lna-common-gate/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "lna-cs-cascode",
+    "source": "api-server/benchmark/frozen-v2/lna-cs-cascode/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "lna-diff-cascode",
+    "source": "api-server/benchmark/frozen-v2/lna-diff-cascode/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "lna-shaeffer-lee",
+    "source": "api-server/benchmark/frozen-v2/lna-shaeffer-lee/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "lna-shunt-fb",
+    "source": "api-server/benchmark/frozen-v2/lna-shunt-fb/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "mixer-passive-ring",
+    "source": "api-server/benchmark/frozen-v2/mixer-passive-ring/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "mixer-single-balanced",
+    "source": "api-server/benchmark/frozen-v2/mixer-single-balanced/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "ota-2stage-pmos",
+    "source": "api-server/benchmark/frozen-v2/ota-2stage-pmos/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "ota-5t",
+    "source": "api-server/benchmark/frozen-v2/ota-5t/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "ota-cmos",
+    "source": "api-server/benchmark/frozen-v2/ota-cmos/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "ota-miller-nulling",
+    "source": "api-server/benchmark/frozen-v2/ota-miller-nulling/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "ota-symmetrical",
+    "source": "api-server/benchmark/frozen-v2/ota-symmetrical/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "pa-class-a",
+    "source": "api-server/benchmark/frozen-v2/pa-class-a/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "peak-detector",
+    "source": "api-server/benchmark/frozen-v2/peak-detector/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "pi-attenuator",
+    "source": "api-server/benchmark/frozen-v2/pi-attenuator/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "pierce-xtal",
+    "source": "api-server/benchmark/frozen-v2/pierce-xtal/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "rc-cr-quadrature",
+    "source": "api-server/benchmark/frozen-v2/rc-cr-quadrature/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "rc-filter",
+    "source": "api-server/benchmark/frozen-v2/rc-filter/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "rgc-tia",
+    "source": "api-server/benchmark/frozen-v2/rgc-tia/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "ring-vco3",
+    "source": "api-server/benchmark/frozen-v2/ring-vco3/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "sallen-key-gmc",
+    "source": "api-server/benchmark/frozen-v2/sallen-key-gmc/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "source-follower",
+    "source": "api-server/benchmark/frozen-v2/source-follower/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "strongarm-latch",
+    "source": "api-server/benchmark/frozen-v2/strongarm-latch/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "telescopic-ota",
+    "source": "api-server/benchmark/frozen-v2/telescopic-ota/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "vco-lc-pmos",
+    "source": "api-server/benchmark/frozen-v2/vco-lc-pmos/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "vco-lc-tail-filter",
+    "source": "api-server/benchmark/frozen-v2/vco-lc-tail-filter/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "vco-lc",
+    "source": "api-server/benchmark/frozen-v2/vco-lc/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  },
+  {
+    "name": "wilson-mirror",
+    "source": "api-server/benchmark/frozen-v2/wilson-mirror/source.cir",
+    "selected": "before",
+    "split": "regression",
+    "results": []
+  }
+]

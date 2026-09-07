@@ -1,0 +1,394 @@
+{
+  "version": 1,
+  "createdAt": "2026-09-07T08:18:00.350Z",
+  "source": "approved universal-final corpus, 2026-09-07",
+  "rows": [
+    {
+      "name": "bandgap-core",
+      "originalVariant": "blocks-1",
+      "files": {
+        "before.xml": "c2cb8532e908100eb873307e07a4feddd40df66cef9cef4ce310e0d66db4b54e",
+        "before.png": "e81f40fe09e27c05a259c9d16993a57eb8383d84a4c7e0b6ade6f6fe3dba635a",
+        "source.cir": "f1098a71297ae60b0453807e2542a14fc639e815f6b21fb5fc3d15be9e55de70"
+      }
+    },
+    {
+      "name": "beta-multiplier",
+      "originalVariant": "tee-1-w377-1-x-135",
+      "files": {
+        "before.xml": "94b51e06952321da58d0010e2a90ae9565d18c7cc7e78e72f346ac69f2b4b99f",
+        "before.png": "dd7a4b209ce180985d6870b16a2511b5c4aac84991a95ef10a9fb8b91a66f3bb",
+        "source.cir": "ffe9a1310fb4f0a324f97ad0c604ad072a03f925f8274b9ac0bcd7b48316625c"
+      }
+    },
+    {
+      "name": "biquad-gmc",
+      "originalVariant": "channels",
+      "files": {
+        "before.xml": "caa3f04705be9d043ee30219ad3b4ce90cdfbbd9dc9c34df2dd98adb87d78a17",
+        "before.png": "90a614d97b6c70b983d6340537b7386b102cc5fcc2eb6d16898c70edbf575a13",
+        "source.cir": "bae5039b6815d34c9c1a1ab56bb4cbf26fba896713ecac8d1b1ec8186e86b7ed"
+      }
+    },
+    {
+      "name": "charge-pump",
+      "originalVariant": "annotation-loop-5-2-P_vb2-gap28",
+      "files": {
+        "before.xml": "b4a6599e6200f0f68bd76e402652e8bd65f7cf15c2aba634e67f3f697a0ba5a0",
+        "before.png": "8634dbdea737b0be5a8a8ba43439f37a693719a8e52b22bd1fbcf1ba33919d6b",
+        "source.cir": "129bf4876774cf37aebc34fd3c3a9291d126381922b29cf8fc42898d3326cbfe"
+      }
+    },
+    {
+      "name": "cherry-hooper",
+      "originalVariant": "generic-loop-3-2-terminal-escape-7",
+      "files": {
+        "before.xml": "c1f4002b85ca355ab13d5b783d76d439f2b701c79fc57263ac19287e314ba128",
+        "before.png": "f57622ea18cb39bc7181469c6e07af904e3e9396f4e6010b579f0e12d0d2a918",
+        "source.cir": "b12798ac3854cea1160060e1919950249e7370e11a1d36e1390212daafc83f19"
+      }
+    },
+    {
+      "name": "class-ab-out",
+      "originalVariant": "wide-channels",
+      "files": {
+        "before.xml": "0e37965115b861357244cef93e0540aadb13e91f7fedc744e62f3bce9131a62a",
+        "before.png": "fa8bfd0221cb63d0ce89dcc595e4696a6cb9b305cbea1ba0bbc7f8b92e9185a6",
+        "source.cir": "ff40f158dbd99bc3d11a0b0893adea7fe3a3c8f7eda5b67c643c0de38ec4da79"
+      }
+    },
+    {
+      "name": "cml-buffer",
+      "originalVariant": "baseline-aligned",
+      "files": {
+        "before.xml": "0cee4849e8f157506e4e3919f0eedadbc5dfc53dce47abbda73337a357b79a7c",
+        "before.png": "36bd6aac9410cf0976d1e6005b93205cbfb10eb9a67cc6f02d778b93bea3d972",
+        "source.cir": "63b1a0a87ff329bd34c0838f45dc55b8a90b587e4146cfb739c22c0590552d7c"
+      }
+    },
+    {
+      "name": "colpitts-osc",
+      "originalVariant": "blocks-channels-1",
+      "files": {
+        "before.xml": "3a5a256fb08972f08a88d151cea53d43216b6e15aea79981165428aac909e5d5",
+        "before.png": "9e8a2d5b8b7eab8f467509aeca25b412ba39f4dc829841a1f9730eb41c943973",
+        "source.cir": "eaf63cdcec18218b4fad9b5c093252d6a8994e8197aee29c73e450bdf19f5c02"
+      }
+    },
+    {
+      "name": "delay-cell-cc",
+      "originalVariant": "universal-v1",
+      "files": {
+        "before.xml": "3508bdd7e36e80a02651ff1b420ec1e6eff08b4bfeff0b676c0534915f1e20af",
+        "before.png": "5736406b7e381694f61b98022d5656e8e9bf401f7f190ce24114eb149501c9f2",
+        "source.cir": "14152ddd8c51dc3bb91ca512e567b5c47662b78e216519cd231c68a414b2bf1f"
+      }
+    },
+    {
+      "name": "diffpair-resistive",
+      "originalVariant": "universal-v1",
+      "files": {
+        "before.xml": "8075dd0e764aac885c41ca0c96f11ed9866f998d56e0f30ca248acea3fca7505",
+        "before.png": "bf4b70e5b047e55e9f5ee32b81715f52bbd335cfb4cfbc58406ad115375fabc8",
+        "source.cir": "d76f2450f05b02426f90a7cef61dfde9c92bea279cf774dc46f3585a7bd4c962"
+      }
+    },
+    {
+      "name": "folded-cascode",
+      "originalVariant": "annotation-loop-1-1-PN16-gap28",
+      "files": {
+        "before.xml": "7ada78467d226280bef9020575e677979cabc176a123e53e69c7acd0d331d805",
+        "before.png": "9e04e4300b09c2e67706b2c1cd30233410c3269fc2b79b29cbc0770433c2dd3e",
+        "source.cir": "3e1cd00d02be44a8e11a9f1325bcd0f3605c37a45586934f3c4990397f56ef9d"
+      }
+    },
+    {
+      "name": "fvf-follower",
+      "originalVariant": "annotation-loop-1-1-P_in-gap28",
+      "files": {
+        "before.xml": "26ab6c8022a70d4249e6a387521e8bef8db45f4ee1d8cd88597fc2f46ec43fd7",
+        "before.png": "266d21864cacf0b4b30470ca3bdae566ada4be08e13a4ccc272c0a6dab991867",
+        "source.cir": "162800e6b2e206139c76cfe7e5ea446f5d3b4c004247a908360c10a50f281b65"
+      }
+    },
+    {
+      "name": "gilbert-mixer",
+      "originalVariant": "annotation-loop-5-2-P_rfm-gap28",
+      "files": {
+        "before.xml": "6baefe9056bbeb1218ff21b9a85f1bfa7f64797400f7284883a3db0909e1ae15",
+        "before.png": "817f84560c411906de6737e9fc0f2a82ab55276c2d16aefec1ced92dae758311",
+        "source.cir": "cd3b92ef11b14d5d2fd20045853bb3525a29a45f69e48a7a804436ed111276f0"
+      }
+    },
+    {
+      "name": "inverter-amp",
+      "originalVariant": "tee-1-w2891-0-x-304.6666666666667",
+      "files": {
+        "before.xml": "2a4e78b794e8b75073a590c76ca1403234fb0c9a755bf929740163f94d50e33e",
+        "before.png": "c6140afee3812ae11f6efa0c71f8eb9383d9a070c483f576baec687bb6126e38",
+        "source.cir": "3fa0b0c0f4a529e601d10253541ad14c57a3f3e7c7523aeb5d78a386136c49ac"
+      }
+    },
+    {
+      "name": "lc-match",
+      "originalVariant": "annotation-loop-5-1-P_out-y56",
+      "files": {
+        "before.xml": "395720e70a33016f4e44d67264dc5824ccf48939ba71ed892f8ed256113f1316",
+        "before.png": "258631de6439b53ab98642edd2e22feffbeff656279cdd488451b9370d0ab3dc",
+        "source.cir": "f9f35fa98e58475a98cfa1e65ac85f0412fc2ad01f7dd8230880fd9039ea3ce0"
+      }
+    },
+    {
+      "name": "lna-common-gate",
+      "originalVariant": "annotation-loop-1-2-P_vb-gap28",
+      "files": {
+        "before.xml": "dd73a6071da1b7744d16661c559582fb0419b08d2b22596a173fcd66313c76ac",
+        "before.png": "3776975ac3b50bdbce200327cd837ddd9c9fef05af03a84fd9172580f4e76d29",
+        "source.cir": "911609458f7a5ccdeedcfde65c59e6f398ab4169983ba3715868b6a5dcfdd404"
+      }
+    },
+    {
+      "name": "lna-cs-cascode",
+      "originalVariant": "annotation-loop-1-1-P_vb1-gap28",
+      "files": {
+        "before.xml": "dfe0aed8ff4bc4acae1878e6df77c71900e22903bca89a62381512cb01c26b47",
+        "before.png": "21fddd47434717ba28818e25520175c28b06f54539a3f38a12272bb59ce36602",
+        "source.cir": "d4a66d814446c625e193daf639e29d3bf613d4ac054d5e7ad6ba29eaa47bae8b"
+      }
+    },
+    {
+      "name": "lna-diff-cascode",
+      "originalVariant": "generic-loop-4-1-series-branch-9",
+      "files": {
+        "before.xml": "0b7bf4f21ad5892e418d26886e9c024934506ebbe413bdad92d1f7ffca7886f3",
+        "before.png": "dc731ebdb7bd5bb8ee616fc5bc9db143f455a6396481e72bc412d036a71d771e",
+        "source.cir": "8d85cd725d87a8a4201fef21a7a78f995962a2b4581813e69cfb6c6f11bf6ad0"
+      }
+    },
+    {
+      "name": "lna-shaeffer-lee",
+      "originalVariant": "generic-loop-4-1-series-branch-9",
+      "files": {
+        "before.xml": "e99ed8b097f6d2b2154e62241f25987077b2e1d35ebc7cf910f63af8a1db5028",
+        "before.png": "84bcdcf634787e3dcfde873692d8eeb8ea4cd41b6b14759abff1c8988f712ed4",
+        "source.cir": "9c61ff96070ee041c78b54d5d4195fd1c421a622de2448d0748f84f5e5091353"
+      }
+    },
+    {
+      "name": "lna-shunt-fb",
+      "originalVariant": "generic-loop-5-2-port-track-1",
+      "files": {
+        "before.xml": "8e7f6d8103a8faa441ec66a6cf15cb6d697f2f989dff5ba4d66a02b5adde9fb3",
+        "before.png": "f42eb96f5d32643cab95f7616b7020d8fbe3e82c81abbd55188e33f2d811b52f",
+        "source.cir": "20071d911e644afd9df7f548bf6646dc950bee1d946561be1f7a954cbe1620be"
+      }
+    },
+    {
+      "name": "mixer-passive-ring",
+      "originalVariant": "generic-loop-5-1-port-track-6",
+      "files": {
+        "before.xml": "4dce3d8f7e9ae46c784028a468967674d98588d7b5f4debdc384d37bfbf3b18e",
+        "before.png": "284062ec9bcaa99aeeda171f71488c4d2fe03299750ee8888ea6d281e252d9fe",
+        "source.cir": "2d0d7309215e0b6bcc9c193666695a44f86d5a917f480095611309df68ee40c7"
+      }
+    },
+    {
+      "name": "mixer-single-balanced",
+      "originalVariant": "baseline-aligned",
+      "files": {
+        "before.xml": "ee82c55523a6d6b6ac711feafc8ec91d1354245ca71114f767cf8e7a93f687ee",
+        "before.png": "4c471cacb613872ba9aec371928a57c6e6c300faaabfc3ef295a1bfff80ce6f8",
+        "source.cir": "8df6343dea8f235f3240156f119fd47066a6042a81e212640a48c16e196add8e"
+      }
+    },
+    {
+      "name": "ota-2stage-pmos",
+      "originalVariant": "universal-v1",
+      "files": {
+        "before.xml": "f023dc1c5d3be4f1cc8261e302309f43c8b60160ac25f1c6b8db953f52b43db1",
+        "before.png": "530c3062af0e98e9740c9e29ee5be8e251ccc2f87e6b0fc3b8077d9251255478",
+        "source.cir": "f8452d48825a22e5a0339fa6aa5607c6683495ba7cfd2722a9b7f8797f9e5484"
+      }
+    },
+    {
+      "name": "ota-5t",
+      "originalVariant": "clean-loop-2-1-output-right-4",
+      "files": {
+        "before.xml": "0ed611b55a2037376980fc59c4da88fa659311d0d151db0e36f861061010a024",
+        "before.png": "f70782ec0dd0da666d75fd53b2b56c0a85d12e89d8232cf20381f263f169b055",
+        "source.cir": "c957cfe93e0f3eb14ea530ab5f688fedaa456621e91e1c368c0c4606e28f58e3"
+      }
+    },
+    {
+      "name": "ota-cmos",
+      "originalVariant": "clean-loop-6b-1-column-expand-12",
+      "files": {
+        "before.xml": "3b0ddde30d657a928c3827d1f75f4766e272edb440a6212cc5942c143ae57549",
+        "before.png": "2770c57419167d50a28002067d230d8f3fc771d57bc07b2696c31b66a7e44bfc",
+        "source.cir": "ce5a68b9b2933dc3cf3f1632bbab436900d95ab6503635393100e3bf8517152f"
+      }
+    },
+    {
+      "name": "ota-miller-nulling",
+      "originalVariant": "review-loop-5c-1-feedback-chain-level-12",
+      "files": {
+        "before.xml": "4d260a8635c30f5cc5c2f6b5756a546778e0b0cf1731ede6fb477fe39298f080",
+        "before.png": "27a64ddbc752c213e0399bb67623436d03c333d47f0203f4a7549a9989ad0d77",
+        "source.cir": "0b684995252d605dca5af1e1fe1f0e3be1218d1e6b1fba4f183f0d6758a2b421"
+      }
+    },
+    {
+      "name": "ota-symmetrical",
+      "originalVariant": "universal-v1",
+      "files": {
+        "before.xml": "f61b61396060ecbd1785cfcb79a096baf0fd2373cc65de9afae45e45bff82ad7",
+        "before.png": "12bf74455c96ef3f71ef6e9dcfa96680f0b7cf8da1b0a22bb452053579950827",
+        "source.cir": "ee7000063e12953f2922b500818a2101c0ce5a8fcf14b82f214507c84df1302d"
+      }
+    },
+    {
+      "name": "pa-class-a",
+      "originalVariant": "review-loop-5b-1-port-tee-1",
+      "files": {
+        "before.xml": "844e9dcff70320a1d1bc8ce15bb108a33542952bf38ac596f56632d31863c251",
+        "before.png": "3fc4a66afa8a459b51cd94ffa657fb393fb4253ae53e22a7066be6cfb1a4605a",
+        "source.cir": "2eac5b8214a9e5d56ea08ce8280473c41935d51d99986ad99e0a14fa286f3bca"
+      }
+    },
+    {
+      "name": "peak-detector",
+      "originalVariant": "clean-loop-4-1-parallel-shunts-1",
+      "files": {
+        "before.xml": "05695261e667d833ba6de65a072affe11abf121c4fd7dd4fde321401d02caad2",
+        "before.png": "d2a1ec8e323cd6a7e3563c49027a3a32f691c8ba8d3372d466256d922ec61e7b",
+        "source.cir": "1137cdc8bc1dce126ebfe1a7e258de92e5fb59f9239b2e0870bc78c6328dc491"
+      }
+    },
+    {
+      "name": "pi-attenuator",
+      "originalVariant": "baseline",
+      "files": {
+        "before.xml": "d0538e0037a3e2268a859f29d4c14ebda103de7d24e92021c88cdd010bc777ca",
+        "before.png": "550682344f4736a2daf6828e49bc9a523cd3619832d04a17491c9663a180624e",
+        "source.cir": "b3958704869a2e5352fb78db484510275ea57915c4b9d165a96dd76df511761a"
+      }
+    },
+    {
+      "name": "pierce-xtal",
+      "originalVariant": "clean-loop-5-1-conduction-project-5",
+      "files": {
+        "before.xml": "a47a3bae1a220ad2ef7486c9b65f01d338846f421397913940b5fdf358d6c39a",
+        "before.png": "949b81189da767ac3946d87646cc443b840364ebd66c3f6466f48b0748578dde",
+        "source.cir": "5066ec7daa3edb406204dcacaa5cae52871656ec1e8868a96c7c3bb500f3e3fb"
+      }
+    },
+    {
+      "name": "rc-cr-quadrature",
+      "originalVariant": "clean-loop-4-1-passive-column-2",
+      "files": {
+        "before.xml": "503a29a592022a9e1d808a9d300c4be39d3848a9c3479aaac42c0aa59fc5a63b",
+        "before.png": "5e3f60385932fc045af509f87137245307ce00f24888703ee3c1b268786afb87",
+        "source.cir": "d25f010d99d86e230a89586be44e35bb2926f8adb82940415debd7419b4d2fd2"
+      }
+    },
+    {
+      "name": "rc-filter",
+      "originalVariant": "clean-loop-1-1-ground-row-1",
+      "files": {
+        "before.xml": "cee8415dcf569c0471e10035acc66210b2b9d5fccae62ef617b183df9d5ec966",
+        "before.png": "2eb25c4aedf8fd481b691cccbdd7c4ee3a0155a5342d2c97c66f37654ea94fba",
+        "source.cir": "91d1fde3bf871fb509db1783c4b3eab5c105f8a52cc082a72560512095d05745"
+      }
+    },
+    {
+      "name": "rgc-tia",
+      "originalVariant": "generic-loop-4-1-series-branch-10",
+      "files": {
+        "before.xml": "933d9e1a34fbf3c6bfe0617236f8e706608b34eafc353d53417064d39da5e51a",
+        "before.png": "fdea1b009a0c8dbd5575dee934527546ca23972217497283cc789edf3e1a209a",
+        "source.cir": "e5144fd79720b97aa3bb43f40f0682aa4832f8d62a54811b3b10c91f1d9c39a3"
+      }
+    },
+    {
+      "name": "ring-vco3",
+      "originalVariant": "clean-loop-6b-1-outside-feedback-18",
+      "files": {
+        "before.xml": "23546a60e615d163cd11e3ffe82f99730d2e9ddb6b29d84e9d4f0efcb376ecd7",
+        "before.png": "4a81eb0552c7a142d240fba3d8aa53e9d1f35a9fc0df65f9b34fa96d580c8d10",
+        "source.cir": "9779c468bf2d9212e216382438271f50187d4a5e4ed9f682089451ffafd7d820"
+      }
+    },
+    {
+      "name": "sallen-key-gmc",
+      "originalVariant": "clean-final-passive-grid",
+      "files": {
+        "before.xml": "84b2c72554d7b82df01477cab1bd3a9788a1b9b9c6eae849777610892b847065",
+        "before.png": "0d64cd01b3d1220c4f64253c206bf7918100870a3fa9fa1ba3847033c86bc98c",
+        "source.cir": "0f938cfede819d7300ce9b5e9cbfcd4030ad824178f5af90f72db8761f27b36d"
+      }
+    },
+    {
+      "name": "source-follower",
+      "originalVariant": "clean-loop-1-1-ground-row-3",
+      "files": {
+        "before.xml": "435d40d6421fab66d24fc05a7024b15b62be6d0160bc9a9f28f858cbed1d5ef4",
+        "before.png": "396f2a0b9d553a318dab2ecaccbdac5f722a392e4ae02e9a87dfc8c9374bf409",
+        "source.cir": "0858b6275c390b77b366c4b833105f8833a8be5ebeea8bb83bc8ba4075cc7437"
+      }
+    },
+    {
+      "name": "strongarm-latch",
+      "originalVariant": "universal-v1",
+      "files": {
+        "before.xml": "00ae815a9458fe0c55685f1c2fff9f29e817a6eecd004da874475640ff1edfd0",
+        "before.png": "4718499edb95242153bc24de0e48cc58976fe79ad8ac8a1ae3e44634f94ecba2",
+        "source.cir": "8d292a436708efc01faf41c3f90fcbecd2ddb0e3d5d8c4196ea7216e061bb369"
+      }
+    },
+    {
+      "name": "telescopic-ota",
+      "originalVariant": "clean-loop-6-2-io-clearance-61",
+      "files": {
+        "before.xml": "09dfcf406c526849ae8a2704d5578e96e71ebf52ed4d56b9329969290da7a447",
+        "before.png": "97561aa7cb4172fb3b82537879e9fdafb37d73a0bf50407204a175a457c5b1fc",
+        "source.cir": "4d9b57857208ad993c49fabd90bc2a71a4764ffe3cc1769379821cd0fda0e07e"
+      }
+    },
+    {
+      "name": "vco-lc-pmos",
+      "originalVariant": "orient-1-L1-carry",
+      "files": {
+        "before.xml": "27ec987f323f1be0152305cbf7a2a15e4dc2c2c7eebcadb47a64caf9576d3695",
+        "before.png": "b11852d9913720866e4cb285f0879beff48f4af461d50feff9fe7b0466dae0bd",
+        "source.cir": "2a3db264817257fa7eb1160c7906515d937b0aa8df2bab23c998c82c1b82ae69"
+      }
+    },
+    {
+      "name": "vco-lc-tail-filter",
+      "originalVariant": "annotation-loop-1-2-P_vb-gap28",
+      "files": {
+        "before.xml": "f3ef3cf5ccee9cb14d9faeba0a77c1897e36da0f13e9d31094d59fa03e2e4499",
+        "before.png": "c32827b002b13c81536d45313f97577e07621bfe23bb8016be058fca897042b7",
+        "source.cir": "8c9e09d6f903eb1ec30088c5d4ade47fdcb6ca5a64057091e46f9d589c457fff"
+      }
+    },
+    {
+      "name": "vco-lc",
+      "originalVariant": "annotation-loop-1-1-PN4-gap28",
+      "files": {
+        "before.xml": "53e32e4067e2df7d35520186e1bcfed20cadcfbebe72172921a7fc34edd94158",
+        "before.png": "8b84c60fa2d52fdee20fdb34ba959254e13f6035436cb516cd6ad2fa54ad4b60",
+        "source.cir": "4cb21df4adc11eae4ea288a765bf736c6f67c3ac6c9abab0f2c628b07c1287bb"
+      }
+    },
+    {
+      "name": "wilson-mirror",
+      "originalVariant": "generic-loop-4-1-series-branch-5",
+      "files": {
+        "before.xml": "3d8b6bde3d2774f3890e601e1dbfe38f8774a66d1160b7824f8453a3173ece4d",
+        "before.png": "17b58699b972aa08396664c2cc43a39feba499ad91629917e7f8740026594809",
+        "source.cir": "1036b487d113b7c083544c8002840faf267b0394110754abb5630e32c3efe908"
+      }
+    }
+  ]
+}

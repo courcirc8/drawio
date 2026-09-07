@@ -1,0 +1,10 @@
+* VCO LC a filtre de queue (biblio: vco/osc, JSSC99MAY-ali)
+L1 vdd outp 2n
+L2 vdd outm 2n
+C1 outp outm 800f
+M1 outp outm s 0 NMOS
+M2 outm outp s 0 NMOS
+L3 s t 1n
+C2 s 0 5p
+M3 t vb 0 0 NMOS
+.end

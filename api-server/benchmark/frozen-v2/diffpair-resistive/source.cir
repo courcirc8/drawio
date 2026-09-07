@@ -1,0 +1,9 @@
+* Paire differentielle a charge resistive (biblio: ampli/ota, mwscas00p-joel)
+M1 outp inp s 0 NMOS
+M2 outm inm s 0 NMOS
+R1 vdd outp 2k
+R2 vdd outm 2k
+M3 s vb 0 0 NMOS
+M4 vb vb 0 0 NMOS
+I1 vdd vb 100u
+.end

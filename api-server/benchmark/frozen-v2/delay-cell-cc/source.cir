@@ -1,0 +1,9 @@
+* Cellule de delai a charge cross-couplee (biblio: vco/osc)
+M1 outm inp s 0 NMOS
+M2 outp inm s 0 NMOS
+M3 outm outp vdd vdd PMOS
+M4 outp outm vdd vdd PMOS
+M5 outm vb vdd vdd PMOS
+M6 outp vb vdd vdd PMOS
+M7 s bias 0 0 NMOS
+.end

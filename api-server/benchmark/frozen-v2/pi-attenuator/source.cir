@@ -1,0 +1,5 @@
+* Attenuateur en pi (biblio: pa)
+R1 in 0 100
+R2 in out 71
+R3 out 0 100
+.end

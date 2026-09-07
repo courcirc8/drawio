@@ -1,0 +1,11 @@
+* Reference bandgap a BJT (biblio: adc/dac, razavi_BRAug13)
+Q1 0 0 e1 PNP
+Q2 0 0 e2 PNP
+R1 x e2 10k
+M1 a a e1 0 NMOS
+M2 b a x 0 NMOS
+M3 a c vdd vdd PMOS
+M4 b b vdd vdd PMOS
+M5 c b vdd vdd PMOS
+R2 c 0 50k
+.end

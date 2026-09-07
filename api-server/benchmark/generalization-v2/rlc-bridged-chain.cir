@@ -1,0 +1,7 @@
+* Synthetic v2 validation
+R1 in mid 500
+L1 mid out 3n
+C1 in out 800f
+C2 mid 0 1p
+R2 out 0 10k
+.end

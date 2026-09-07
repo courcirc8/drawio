@@ -1,0 +1,9 @@
+* Etage PA classe A (biblio: pa, razavi_RFIC11CK_BR)
+L1 vdd d 3n
+M1 d g 0 0 NMOS
+C1 in g 2p
+R1 vb g 10k
+C2 d m 1p
+L2 m out 2n
+C3 out 0 500f
+.end

@@ -1,0 +1,10 @@
+* Synthetic v2 validation
+I1 vdd bias 100u
+M1 bias bias 0 0 NMOS
+M2 a bias 0 0 NMOS
+M3 b bias 0 0 NMOS
+M4 op vb a 0 NMOS
+M5 om vb b 0 NMOS
+R1 vdd op 10k
+R2 vdd om 20k
+.end

@@ -1,0 +1,10 @@
+* Etage de sortie classe AB (biblio: pa)
+M1 vdd g1 out 0 NMOS
+M2 0 g2 out vdd PMOS
+I1 vdd g1 100u
+D1 g1 g2 DIODE
+I2 g2 0 100u
+C1 in g1 10p
+C2 in g2 10p
+R1 out 0 1k
+.end

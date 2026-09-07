@@ -1,0 +1,8 @@
+* TIA cascode regule RGC (biblio: serdes/io)
+I1 vdd x 100u
+M1 out a x 0 NMOS
+M2 a x 0 0 NMOS
+R1 vdd out 2k
+R2 vdd a 10k
+R3 x 0 1k
+.end

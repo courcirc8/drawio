@@ -1,0 +1,6 @@
+* Adaptation en L serie-shunt (biblio: pa)
+R1 rf in 50
+L1 in out 3n
+C1 out 0 1p
+R2 out 0 5
+.end

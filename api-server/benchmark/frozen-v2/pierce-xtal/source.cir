@@ -1,0 +1,10 @@
+* Oscillateur Pierce a quartz (biblio: vco/osc, iwdmic98p-raf)
+M1 osc xin vdd vdd PMOS
+M2 osc xin 0 0 NMOS
+R1 xin osc 1meg
+L1 xin q1 8m
+C1 q1 q2 4f
+R2 q2 osc 50
+C2 xin 0 12p
+C3 osc 0 12p
+.end

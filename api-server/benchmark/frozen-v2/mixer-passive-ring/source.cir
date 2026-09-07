@@ -1,0 +1,8 @@
+* Melangeur passif en anneau (biblio: mixer, arxiv_2212.03162v1)
+M1 ifp lop rfp 0 NMOS
+M2 ifm lom rfp 0 NMOS
+M3 ifm lop rfm 0 NMOS
+M4 ifp lom rfm 0 NMOS
+C1 ifp 0 1p
+C2 ifm 0 1p
+.end

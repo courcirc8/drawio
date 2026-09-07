@@ -1,0 +1,11 @@
+* Melangeur de Gilbert
+M1 a rfp s 0 NMOS
+M2 b rfm s 0 NMOS
+M3 outp lop a 0 NMOS
+M4 outm lom a 0 NMOS
+M5 outp lom b 0 NMOS
+M6 outm lop b 0 NMOS
+R1 vdd outp 500
+R2 vdd outm 500
+I1 s 0 2m
+.end

@@ -1,0 +1,9 @@
+* LNA source commune degeneree (biblio: lna, arxiv_1807.10306v1)
+L1 in g 8n
+M1 x g s 0 NMOS
+L2 s 0 1n
+M2 out vb1 x 0 NMOS
+L3 vdd out 6n
+C1 out 0 300f
+R1 vb2 g 5k
+.end

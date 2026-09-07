@@ -1,0 +1,10 @@
+* Synthetic v2 validation
+M1 op inp s1 0 NMOS
+M2 om inm s2 0 NMOS
+R1 s1 tail 100
+R2 s2 tail 100
+I1 tail 0 100u
+R3 vdd op 10k
+R4 vdd om 10k
+C1 op om 200f
+.end

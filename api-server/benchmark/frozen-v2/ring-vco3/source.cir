@@ -1,0 +1,9 @@
+* VCO en anneau 3 etages (biblio: vco/osc, islped98p-tam)
+M1 osc2 osc1 vdd vdd PMOS
+M2 osc2 osc1 0 0 NMOS
+M3 osc3 osc2 vdd vdd PMOS
+M4 osc3 osc2 0 0 NMOS
+M5 osc1 osc3 vdd vdd PMOS
+M6 osc1 osc3 0 0 NMOS
+C1 osc1 0 50f
+.end

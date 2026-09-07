@@ -1,0 +1,11 @@
+* Comparateur StrongARM (biblio: adc/dac, razavi_S_RJSSC09)
+M1 x inp t 0 NMOS
+M2 y inm t 0 NMOS
+M3 outm outp x 0 NMOS
+M4 outp outm y 0 NMOS
+M5 outm outp vdd vdd PMOS
+M6 outp outm vdd vdd PMOS
+M7 outm clk vdd vdd PMOS
+M8 outp clk vdd vdd PMOS
+M9 t clk 0 0 NMOS
+.end

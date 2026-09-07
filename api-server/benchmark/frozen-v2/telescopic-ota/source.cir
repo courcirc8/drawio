@@ -1,0 +1,11 @@
+* OTA telescopique (biblio: ampli/ota, razavi_G_RDec04)
+M1 x1 inp s 0 NMOS
+M2 x2 inm s 0 NMOS
+M3 outm vb2 x1 0 NMOS
+M4 outp vb2 x2 0 NMOS
+M5 outm vb3 y1 vdd PMOS
+M6 outp vb3 y2 vdd PMOS
+M7 y1 vb4 vdd vdd PMOS
+M8 y2 vb4 vdd vdd PMOS
+M9 s vb1 0 0 NMOS
+.end

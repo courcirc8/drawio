@@ -1,0 +1,7 @@
+* Pompe de charge PLL (biblio: pll/synth, razavi_A_RMar01)
+M1 x vb1 vdd vdd PMOS
+M2 out upb x vdd PMOS
+M3 out dn y 0 NMOS
+M4 y vb2 0 0 NMOS
+C1 out 0 10p
+.end

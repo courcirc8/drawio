@@ -1,0 +1,8 @@
+* VCO LC cross-couple Hajimiri-Lee
+L1 vdd outp 2n
+L2 vdd outm 2n
+C1 outp outm 1p
+M1 outp outm s 0 NMOS
+M2 outm outp s 0 NMOS
+I1 s 0 4m
+.end

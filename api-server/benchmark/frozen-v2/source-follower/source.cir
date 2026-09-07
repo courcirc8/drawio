@@ -1,0 +1,7 @@
+* Suiveur de source polarise (biblio: ampli/ota)
+M1 vdd in out 0 NMOS
+M2 out vb 0 0 NMOS
+M3 vb vb 0 0 NMOS
+I1 vdd vb 50u
+C1 out 0 1p
+.end

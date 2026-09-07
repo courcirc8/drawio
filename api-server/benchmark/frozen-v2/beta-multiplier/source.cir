@@ -1,0 +1,7 @@
+* Polarisation beta-multiplier (biblio: ampli/ota)
+M1 a a 0 0 NMOS
+M2 b a s 0 NMOS
+R1 s 0 5k
+M3 a b vdd vdd PMOS
+M4 b b vdd vdd PMOS
+.end

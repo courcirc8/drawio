@@ -1,0 +1,14 @@
+* OTA symetrique a miroirs (biblio: ampli/ota, mwscas00p-joel)
+M1 a inp s 0 NMOS
+M2 b inm s 0 NMOS
+M3 a a vdd vdd PMOS
+M4 b b vdd vdd PMOS
+M5 x a vdd vdd PMOS
+M6 out b vdd vdd PMOS
+M7 x x 0 0 NMOS
+M8 out x 0 0 NMOS
+M9 s vb 0 0 NMOS
+M10 vb vb 0 0 NMOS
+I1 vdd vb 20u
+C1 out 0 1p
+.end

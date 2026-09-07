@@ -1,0 +1,9 @@
+* Synthetic v2 validation
+L1 in a 2n
+C1 a 0 1p
+R1 a b 500
+C2 b 0 2p
+L2 b out 4n
+C3 out 0 500f
+R2 out 0 20k
+.end

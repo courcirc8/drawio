@@ -1,0 +1,7 @@
+* Melangeur simple-balance (biblio: mixer, razavi_RISSCC96)
+M1 a rf 0 0 NMOS
+M2 outp lop a 0 NMOS
+M3 outm lom a 0 NMOS
+R1 vdd outp 1k
+R2 vdd outm 1k
+.end

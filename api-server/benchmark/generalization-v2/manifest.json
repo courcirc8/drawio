@@ -1,0 +1,21 @@
+{
+  "purpose": "Independent synthetic v2 combinations frozen before integration evaluation. Do not tune on this lot; previous generalization-v1 is development data.",
+  "cases": [
+    {
+      "name": "rlc-bridged-chain",
+      "sha256": "9705c2c48e28607336eb1d67ee9e1c5788733ce18f562a36aa58247441c7eb4a"
+    },
+    {
+      "name": "differential-degenerated",
+      "sha256": "efcdfd2cca3ff7795d322c648aad17250be20e59efcf51c543942a7241308b20"
+    },
+    {
+      "name": "passive-two-shunt-ladder",
+      "sha256": "8222882199b7b1447106d9a698cc9b3f1ab14b748e09f6a1624c79196026cfd4"
+    },
+    {
+      "name": "mirror-cascoded-outputs",
+      "sha256": "1805bd0eb41ff1c8c126929739d8498d6a6f2c758fb6bd90b8a6cd5d1a310e2d"
+    }
+  ]
+}

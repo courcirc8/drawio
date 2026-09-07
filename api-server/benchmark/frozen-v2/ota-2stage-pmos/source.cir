@@ -1,0 +1,12 @@
+* OTA Miller a entree PMOS (biblio: ampli/ota)
+M1 a inp s vdd PMOS
+M2 b inm s vdd PMOS
+M3 a a 0 0 NMOS
+M4 b a 0 0 NMOS
+M5 s vb vdd vdd PMOS
+M6 out b 0 0 NMOS
+M7 out vb vdd vdd PMOS
+M8 vb vb vdd vdd PMOS
+I1 vb 0 20u
+CC b out 2p
+.end
