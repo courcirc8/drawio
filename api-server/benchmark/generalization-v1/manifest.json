@@ -1,0 +1,29 @@
+{
+  "purpose": "Synthetic new combinations, frozen before evaluation. Not publication extractions; not proof of generalization to all topologies.",
+  "cases": [
+    {
+      "name": "rc-ladder-loaded",
+      "sha256": "1cf98daf10bb361b0c7c6bfb2188dda9f81141f42b816d6eeae35451d3bd0577"
+    },
+    {
+      "name": "bridged-t",
+      "sha256": "0e23ae8f34801c015a6c7492185e1ccc819978a0b75dec35e4610d4185c3f896"
+    },
+    {
+      "name": "complementary-chain4",
+      "sha256": "b35407b985f3168bb48909a9d34201793006bc2b88649db9965fe3511dec324d"
+    },
+    {
+      "name": "nmos-mirror-three-loads",
+      "sha256": "72895ba9012df1160e0d5f7b9ebb565110f2663d2ff3f494a58c669cba3d0a5f"
+    },
+    {
+      "name": "pmos-mirror-three-loads",
+      "sha256": "e3adba2c8d40723a34530586bc146d4c7e15e677469c22bdc93eb513cfc6c2cc"
+    },
+    {
+      "name": "cascode-feedback-load",
+      "sha256": "b1378727df27104ec9014027f867f023ba1757f3c1f8ac37d09278aed87e5943"
+    }
+  ]
+}

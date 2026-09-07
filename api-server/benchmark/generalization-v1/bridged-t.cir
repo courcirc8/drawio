@@ -1,0 +1,7 @@
+* Synthetic generalization v1
+R1 in mid 1k
+R2 mid out 1k
+C1 in out 2p
+C2 mid 0 4p
+R3 out 0 10k
+.end

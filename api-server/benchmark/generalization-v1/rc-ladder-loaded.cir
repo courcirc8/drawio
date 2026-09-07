@@ -1,0 +1,9 @@
+* Synthetic generalization v1
+R1 in a 1k
+C1 a 0 1p
+R2 a b 2k
+C2 b 0 2p
+R3 b out 3k
+C3 out 0 3p
+R4 out 0 20k
+.end

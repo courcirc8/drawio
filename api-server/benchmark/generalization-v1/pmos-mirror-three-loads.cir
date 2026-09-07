@@ -1,0 +1,11 @@
+* Synthetic generalization v1
+I1 ref 0 100u
+M1 ref ref vdd vdd PMOS
+M2 a ref vdd vdd PMOS
+M3 b ref vdd vdd PMOS
+M4 out ref vdd vdd PMOS
+R1 a 0 10k
+R2 b 0 20k
+R3 out 0 30k
+C1 out 0 1p
+.end

@@ -1,0 +1,9 @@
+* Synthetic generalization v1
+M1 n in 0 0 NMOS
+M2 out vb n 0 NMOS
+R1 vdd out 10k
+R2 out fb 200k
+C1 fb in 2p
+R3 in 0 1meg
+C2 out 0 100f
+.end

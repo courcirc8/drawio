@@ -1,0 +1,12 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {copperMetrics} from '../lib/conservative-cleaning.js';
+const p=(...v)=>v.map(([x,y])=>({x,y}));
+test('visible copper is independent of duplicate and subdivided paths',()=>{const simple=[p([0,0],[100,0],[100,60])],duplicated=[...simple,p([20,0],[80,0]),p([100,60],[100,0])];assert.deepEqual(copperMetrics(duplicated),copperMetrics(simple));assert.deepEqual(copperMetrics(simple),{length:160,bends:1,diagonal:false});});
+test('same-net tee does not become three artificial corners',()=>assert.deepEqual(copperMetrics([p([0,0],[100,0]),p([50,0],[50,30])]),{length:130,bends:0,diagonal:false}));
+test('diagonal geometry is never mistaken for an improvement',()=>assert.equal(copperMetrics([p([0,0],[10,10])]).diagonal,true));
+test('translation and path order do not alter visible complexity',()=>{const paths=[p([0,0],[100,0]),p([100,0],[100,60])];assert.deepEqual(copperMetrics(paths),copperMetrics(paths.reverse().map(path=>path.map(q=>({x:q.x-300,y:q.y+83})))));});
+import {newDocument,getPage,serialize,parseDrawio,addVertex,addWire,updateCell} from '../lib/model.js';
+import {routeProtection,copperDominance} from '../lib/conservative-cleaning.js';
+function fixture(){const d=newDocument(),m=getPage(d);for(const [id,x,y] of [['a',0,0],['b',100,0],['c',0,100],['d',100,100]])addVertex(m,{id,x,y,w:0,h:0,style:'ellipse;drawioApiJunction=1;'});for(const [id,s,t,y] of [['w','a','b',0],['z','c','d',100]])addWire(m,{id,source:s,target:t,sourcePin:{x:0,y:0},targetPin:{x:0,y:0},points:[{x:20,y},{x:20,y:y+20},{x:80,y:y+20},{x:80,y}]});return d;}
+test('an improvement on one net cannot buy a regression on another',()=>{const d=fixture(),before=getPage(d),after=getPage(parseDrawio(serialize(d)));updateCell(after,'w',{points:[]});assert.equal(copperDominance(before,after),true);updateCell(after,'z',{points:[{x:20,y:100},{x:20,y:150},{x:80,y:150},{x:80,y:100}]});assert.equal(copperDominance(before,after),false);assert.equal(copperDominance(before,before),false);});
+test('routing cannot move an approved component or modify a protected bus',()=>{const d=fixture(),before=getPage(d);updateCell(before,'w',{style:{drawioApiGateBus:'1'}});let after=getPage(parseDrawio(serialize(d)));updateCell(after,'a',{x:10});assert.equal(routeProtection(before,after),'placement');after=getPage(parseDrawio(serialize(d)));updateCell(after,'w',{points:[]});assert.equal(routeProtection(before,after),'protected route');});

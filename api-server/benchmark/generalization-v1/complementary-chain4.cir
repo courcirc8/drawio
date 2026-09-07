@@ -1,0 +1,12 @@
+* Synthetic generalization v1
+M1 a in vdd vdd PMOS
+M2 a in 0 0 NMOS
+M3 b a vdd vdd PMOS
+M4 b a 0 0 NMOS
+M5 c b vdd vdd PMOS
+M6 c b 0 0 NMOS
+M7 out c vdd vdd PMOS
+M8 out c 0 0 NMOS
+C1 a 0 100f
+C2 out 0 500f
+.end
