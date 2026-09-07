@@ -36,7 +36,7 @@ try{for(const row of rows){
   const parent=best.id,xml=fs.readFileSync(path.join(dir,parent+'.xml'),'utf8');
   for(const mirror of detectStructures(ref).mirrors.filter(m=>m.refs.length===2))for(const gap of [24,40,64,100]){
    if(Date.now()>=deadline)break;
-   const id=`spaced-${round}-${mirror.refs.join("-")}-${gap}`,p=path.join(dir,id);
+   const id=`${path.basename(output)}-spaced-${round}-${mirror.refs.join("-")}-${gap}`,p=path.join(dir,id);
    try{
     fs.writeFileSync(p+'.xml',await spacedMirrorCandidate(xml,mirror.refs,gap));
     const r={...evaluate(p,ref,id),parent,orientation:{refs:mirror.refs,extraGap:gap}};

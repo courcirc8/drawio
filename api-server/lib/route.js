@@ -1617,3 +1617,32 @@ export function orthogonalSegmentProposals(model) {
  }
  return out;
 }
+
+/** Separate close parallel tracks of different nets by moving only an interior segment. */
+export function separatedTrackProposals(model) {
+ const cells=allCells(model).map(cellInfo),byId=new Map(cells.map(c=>[c.id,c])),groups=netGroups(cells),out=[];
+ const wires=cells.filter(c=>c.kind==='edge'),segs=pl=>{
+  const result=[];for(let i=0;i+1<pl.length;i++){
+   const p=pl[i],q=pl[i+1],axis=Math.abs(p.x-q.x)<.01?'x':Math.abs(p.y-q.y)<.01?'y':null;
+   if(axis){const other=axis==='x'?'y':'x';result.push({i,axis,lane:p[axis],min:Math.min(p[other],q[other]),max:Math.max(p[other],q[other])});}
+  }return result;
+ };
+ for(const a of wires){
+  const pa=polylineOf(a,byId);if(!pa)continue;
+  for(const sa of segs(pa)){
+   if(sa.i<1||sa.i>pa.length-3)continue;
+   for(const b of wires){
+    if(groups.get(a.id)===groups.get(b.id))continue;
+    for(const sb of segs(polylineOf(b,byId)||[])){
+     if(sa.axis!==sb.axis||Math.abs(sa.lane-sb.lane)>12||Math.min(sa.max,sb.max)-Math.max(sa.min,sb.min)<20)continue;
+     for(const gap of [14,20,28])for(const sign of [-1,1]){
+      const lane=sb.lane+gap*sign,points=a.points.map(p=>({...p}));points[sa.i-1][sa.axis]=points[sa.i][sa.axis]=lane;
+      const id=`${a.id}-${sa.i}-${sa.axis}-${lane}`;
+      if(!out.some(p=>p.id===id))out.push({id,edge:a.id,points});
+     }
+    }
+   }
+  }
+ }
+ return out;
+}

@@ -35,7 +35,7 @@ try{for(const row of rows){
   const parent=best.id,xml=fs.readFileSync(path.join(dir,parent+'.xml'),'utf8');
   for(const c of ref.components.filter(c=>c.prefix==='M')){
    if(Date.now()>=deadline)break;
-   const id=`mos-${round}-${c.ref}`,p=path.join(dir,id);
+   const id=`${path.basename(output)}-mos-${round}-${c.ref}`,p=path.join(dir,id);
    try{
     fs.writeFileSync(p+'.xml',await transistorOrientationCandidate(xml,c.ref));
     const r={...evaluate(p,ref,id),parent,orientation:{ref:c.ref,fixedConductionAxis:true}};

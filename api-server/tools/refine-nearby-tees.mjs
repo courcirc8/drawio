@@ -35,7 +35,7 @@ try{for(const row of rows){
   const parent=best.id,xml=fs.readFileSync(path.join(dir,parent+'.xml'),'utf8');
   for(const proposal of nearbyTeeProposals(getPage(parseDrawio(xml))).slice(0,100)){
    if(Date.now()>=deadline)break;
-   const id=`tee-${round}-${proposal.id}`,p=path.join(dir,id);
+   const id=`${path.basename(output)}-tee-${round}-${proposal.id}`,p=path.join(dir,id);
    try{
     const doc=parseDrawio(xml);applyTeeProposal(getPage(doc),proposal);fs.writeFileSync(p+'.xml',serialize(doc));
     const r={...evaluate(p,ref,id),parent,tee:proposal};

@@ -3,15 +3,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
-import {parseDrawio,getPage} from '../lib/model.js';
+import {parseDrawio,getPage,serialize} from '../lib/model.js';
 import {parseSpice,extractNetlist} from '../lib/netlist.js';
 import {compare} from '../lib/lvs.js';
 import {auditVisibleConnectivity} from '../lib/visible-connectivity.js';
 import {directGatePortJogs} from '../lib/signal-alignment.js';
-import {passiveOrientationCandidate,improvesOrientation} from '../lib/passive-orientation.js';
+import {improvesOrientation} from '../lib/passive-orientation.js';
+import {separatedTrackProposals,applyTeeProposal} from '../lib/route.js';
 import {exportDocument,closeBrowser} from '../lib/render.js';
 const [input,output]=process.argv.slice(2);
-if(!input||!output||path.resolve(input)===path.resolve(output))throw new Error('Usage: refine-passive-orientation.mjs INPUT OUTPUT (distinct directories)');
+if(!input||!output||path.resolve(input)===path.resolve(output))throw new Error('Usage: refine-separated-tracks.mjs INPUT OUTPUT (distinct directories)');
 if(fs.existsSync(output))throw new Error('Output already exists; refusing to overwrite an experiment');
 fs.cpSync(input,output,{recursive:true});
 const rows=JSON.parse(fs.readFileSync(path.join(output,'summary.json'))),checker=fileURLToPath(new URL('./check.py',import.meta.url));
@@ -32,12 +33,12 @@ try{for(const row of rows){
  // Every candidate in a round starts from the exact same accepted drawing.
  for(let round=1;round<=2;round++){
   const parent=best.id,xml=fs.readFileSync(path.join(dir,parent+'.xml'),'utf8');
-  for(const c of ref.components.filter(c=>['R','C','L'].includes(c.prefix)))for(const carry of [true,false]){
+  for(const proposal of separatedTrackProposals(getPage(parseDrawio(xml))).slice(0,100)){
    if(Date.now()>=deadline)break;
-   const id=`${path.basename(output)}-orient-${round}-${c.ref}${carry?'-carry':''}`,p=path.join(dir,id);
+   const id=`${path.basename(output)}-track-${round}-${proposal.id}`,p=path.join(dir,id);
    try{
-    fs.writeFileSync(p+'.xml',await passiveOrientationCandidate(xml,c.ref,carry));
-    const r={...evaluate(p,ref,id),parent,orientation:{ref:c.ref,carrySupply:carry}};
+    const doc=parseDrawio(xml);applyTeeProposal(getPage(doc),proposal);fs.writeFileSync(p+'.xml',serialize(doc));
+    const r={...evaluate(p,ref,id),parent,tee:proposal};
     row.results.push(r);fs.writeFileSync(p+'.json',JSON.stringify(r,null,2));
     if(r.eligible&&improvesOrientation(r,best))best=r;
    }catch(e){row.results.push({id,parent,eligible:false,error:e.message});}
@@ -45,7 +46,7 @@ try{for(const row of rows){
   if(best.id===parent)break;
  }
  row.selected=best.id;row.selectedMetrics=[best.check.errors,best.check.crossings,best.check.warnings];
- row.orientationPrevious=before;row.improved=improvesOrientation(best,row.results[0]);
+ row.tracksPrevious=before;row.improved=improvesOrientation(best,row.results[0]);
  fs.writeFileSync(path.join(output,'summary.json'),JSON.stringify(rows,null,2));
  if(best.id!==before){const p=path.join(dir,best.id),doc=parseDrawio(fs.readFileSync(p+'.xml','utf8'));fs.writeFileSync(p+'.png',(await exportDocument(doc,getPage(doc),{scale:1.5})).buffer);}
  console.log(row.name,before,'->',best.id,row.selectedMetrics);
