@@ -18,3 +18,5 @@ test('renaming nets and their port labels preserves signal-branch proposals',asy
  const renamed={...ref,components:ref.components.map(c=>({...c,nodes:c.nodes.map(rename)}))};assert.deepEqual(genericProposals(other,renamed,5).filter(p=>p.kind==='signal-branches'),genericProposals(model,ref,5).filter(p=>p.kind==='signal-branches'));
 });
 test('series branch proposal carries an entire degree-two chain',()=>{const ref=parseSpice('R1 a b 1k\nR2 b c 2k\nC1 c d 1p\nL1 d out 1n'),doc=newDocument();importNetlist2(getPage(doc),ref,{});const p=genericProposals(getPage(doc),ref,4).find(p=>p.kind==='series-branch');assert.ok(p);for(const id of ['R1','R2','C1','L1'])assert.ok(p.moves.some(m=>m.id===id));});
+
+test('subpixel-rounded T branch still receives its same-net junction dot',()=>{const m=junction();updateCell(m,'v',{points:[{x:100,y:50.003}]});rebuildLocalDots(m);assert.ok(cellsOf(m).some(c=>c.style.map.get('contactDot')==='1'&&Math.abs(c.x+c.w/2-100)<.1));});

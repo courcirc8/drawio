@@ -9,7 +9,7 @@ export const cellsOf=m=>allCells(m).map(cellInfo);
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),eps=.05;
 const on=(p,a,b)=>Math.abs((p.x-a.x)*(b.y-a.y)-(p.y-a.y)*(b.x-a.x))<eps&&p.x>=Math.min(a.x,b.x)-eps&&p.x<=Math.max(a.x,b.x)+eps&&p.y>=Math.min(a.y,b.y)-eps&&p.y<=Math.max(a.y,b.y)+eps;
 const direction=(a,b)=>Math.abs(a.x-b.x)>Math.abs(a.y-b.y)?(b.x>a.x?'R':'L'):(b.y>a.y?'D':'U');
-const anchor=(e,c)=>{const pre=e.source===c.id?'exit':'entry';return pinAbs(c,{x:Number(e.style.map.get(pre+'X')??.5),y:Number(e.style.map.get(pre+'Y')??.5)});};
+const anchor=(e,c,which)=>{const pre=which||(e.source===c.id?'exit':'entry');return pinAbs(c,{x:Number(e.style.map.get(pre+'X')??.5),y:Number(e.style.map.get(pre+'Y')??.5)});};
 function clean(points){const out=[];for(const p of points){if(out.length&&dist(out.at(-1),p)<eps)continue;while(out.length>1&&on(out.at(-1),out.at(-2),p))out.pop();out.push(p);}return out;}
 function hits(a,b,r,margin=0){const x=r.x-margin,y=r.y-margin,w=r.w+2*margin,h=r.h+2*margin;
  if(Math.abs(a.y-b.y)<eps)return a.y>y+eps&&a.y<y+h-eps&&Math.max(a.x,b.x)>x+eps&&Math.min(a.x,b.x)<x+w-eps;
@@ -24,7 +24,7 @@ export function rebuildLocalDots(model){
  for(const w of wires)for(const p of w.p)if(!points.some(q=>q.net===w.net&&dist(p,q.p)<eps))points.push({p,net:w.net});
  let seq=0;
  for(const {p,net} of points){const dirs=new Set();let foreign=false;
- for(const w of wires)for(let i=1;i<w.p.length;i++){const a=w.p[i-1],b=w.p[i];if(dist(a,b)<eps||!on(p,a,b))continue;if(w.net!==net){foreign=true;continue;}if(dist(a,p)>eps)dirs.add(direction(p,a));if(dist(b,p)>eps)dirs.add(direction(p,b));}
+ for(const w of wires)for(let i=1;i<w.p.length;i++){const a=w.p[i-1],b=w.p[i];if(dist(a,b)<eps||!(Math.abs((p.x-a.x)*(b.y-a.y)-(p.y-a.y)*(b.x-a.x))/dist(a,b)<eps&&p.x>=Math.min(a.x,b.x)-eps&&p.x<=Math.max(a.x,b.x)+eps&&p.y>=Math.min(a.y,b.y)-eps&&p.y<=Math.max(a.y,b.y)+eps))continue;if(w.net!==net){foreign=true;continue;}if(dist(a,p)>eps)dirs.add(direction(p,a));if(dist(b,p)>eps)dirs.add(direction(p,b));}
  if(foreign)continue;
  for(const w of wires.filter(w=>w.net===net))for(const [id,pt] of [[w.e.source,w.p[0]],[w.e.target,w.p.at(-1)]]){const c=map.get(id);if(dist(p,pt)>eps||classify(c).role!=='component')continue;const n=outward(c,p);dirs.add(direction(p,{x:p.x-n.x,y:p.y-n.y}));}
  if(dirs.size<3)continue;
@@ -34,7 +34,7 @@ export function rebuildLocalDots(model){
 }
 /** Search orthogonal paths with mandatory outward escapes; all symbol bodies remain obstacles. */
 function localPath(e,cs,mode,gap=18){const map=new Map(cs.map(c=>[c.id,c])),s=map.get(e.source),t=map.get(e.target);if(!s||!t)return null;
- const a=anchor(e,s),b=anchor(e,t),na=outward(s,a),nb=outward(t,b),A={x:a.x+gap*na.x,y:a.y+gap*na.y},B={x:b.x+gap*nb.x,y:b.y+gap*nb.y};
+ const a=anchor(e,s,'exit'),b=anchor(e,t,'entry'),na=outward(s,a),nb=outward(t,b),A={x:a.x+gap*na.x,y:a.y+gap*na.y},B={x:b.x+gap*nb.x,y:b.y+gap*nb.y};
  const boxes=cs.filter(c=>c.kind==='vertex'&&['component','port','power','ground'].includes(classify(c).role)).map(c=>({...rotatedAabb(c),id:c.id}));
  const groups=netGroups(cs),my=groups.get(e.id),foreign=cs.filter(c=>c.kind==='edge'&&groups.get(c.id)!==my).map(c=>polylineOf(c,map)).filter(Boolean);
  const xs=[A.x,B.x,(A.x+B.x)/2],ys=[A.y,B.y,(A.y+B.y)/2];
@@ -46,7 +46,7 @@ function localPath(e,cs,mode,gap=18){const map=new Map(cs.map(c=>[c.id,c])),s=ma
  let best=null,cost=Infinity;
  for(const p of candidates){let blocked=false,length=0,cross=0;for(let i=1;i<p.length;i++){const u=p[i-1],v=p[i];length+=dist(u,v);if(boxes.some(r=>hits(u,v,r,-1.5))){blocked=true;break;}
  for(const q of foreign)for(let j=1;j<q.length;j++){const c=q[j-1],d=q[j];if(Math.abs(u.y-v.y)<eps&&Math.abs(c.x-d.x)<eps&&on({x:c.x,y:u.y},u,v)&&on({x:c.x,y:u.y},c,d))cross++;else if(Math.abs(u.x-v.x)<eps&&Math.abs(c.y-d.y)<eps&&on({x:u.x,y:c.y},u,v)&&on({x:u.x,y:c.y},c,d))cross++;}}
- if(blocked)continue;const score=cross*10000+(p.length-2)*(mode==='compact'?15:80)+length;if(score<cost){cost=score;best=p;}}
+ if(blocked)continue;const score=cross*25+(p.length-2)*(mode==='compact'?15:80)+length;if(score<cost){cost=score;best=p;}}
  return best?.slice(1,-1);
 }
 export function localCandidate(xml,proposal){
