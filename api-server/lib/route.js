@@ -425,7 +425,7 @@ async function routePageImpl(model, edgeIds, opts) {
 }
 
 /** Groupes de nets par union-find (jonctions = cellule, pins = cellule+ancre). */
-function netGroups(cells) {
+export function netGroups(cells) {
   const byId2 = new Map(cells.map((c) => [c.id, c]));
   const parent = new Map();
   const find = (k) => { while (parent.get(k) !== k) k = parent.get(k); return k; };
@@ -457,7 +457,7 @@ function netGroups(cells) {
   return edgeNet;
 }
 
-function polylineOf(c, byId2) {
+export function polylineOf(c, byId2) {
   const src = byId2.get(c.source), tgt = byId2.get(c.target);
   if (src == null || tgt == null || src.x == null || tgt.x == null) return null;
   const anchor = (pref, cell) => {
