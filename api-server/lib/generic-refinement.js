@@ -58,7 +58,7 @@ export function localCandidate(xml,proposal){
  const label=cs.find(c=>c.id==='LBL_'+old.id);if(label)updateCell(model,label.id,{x:label.x+next.x-old.x,y:label.y+next.y-old.y});}
  const cs=cellsOf(model),map=new Map(cs.map(c=>[c.id,c])),affected=new Set(proposal.edges||[]);
  for(const e of cs.filter(c=>c.kind==='edge')){if(moved.has(e.source)||moved.has(e.target))affected.add(e.id);else{const p=polylineOf(e,map);if(p&&[...moved].some(id=>{const r=rotatedAabb(map.get(id));return p.slice(1).some((q,i)=>hits(p[i],q,r));}))affected.add(e.id);}}
- for(const id of affected){const e=cellsOf(model).find(c=>c.id===id);if(e.style.map.has('drawioApiFixedRoute'))throw Error('Fixed route affected');const points=localPath(e,cellsOf(model),proposal.mode)||localPath(e,cellsOf(model),proposal.mode,6);if(!points)throw Error('No body-safe local path: '+e.source+' -> '+e.target);updateCell(model,id,{points});}
+ for(const id of affected){const e=cellsOf(model).find(c=>c.id===id);if(e.style.map.has('drawioApiFixedRoute')||e.style.map.has('drawioApiGateBus'))throw Error('Protected route affected');const points=localPath(e,cellsOf(model),proposal.mode)||localPath(e,cellsOf(model),proposal.mode,6);if(!points)throw Error('No body-safe local path: '+e.source+' -> '+e.target);updateCell(model,id,{points});}
  rebuildLocalDots(model);assertGeometryOnly(before,connectivityFingerprint(model),'generic local refinement');
  const final=new Map(cellsOf(model).map(c=>[c.id,c]));for(const e of initial.filter(c=>c.kind==='edge'&&!affected.has(c.id)))if(JSON.stringify(e.points)!==JSON.stringify(final.get(e.id).points))throw Error('Unrelated route changed');
  return serialize(doc);
@@ -67,7 +67,7 @@ export function genericProposals(model,ref,loop){const cs=cellsOf(model),map=new
  if(loop===1||loop===5)for(const c of cs.filter(c=>classify(c).role==='port')){const links=edges.filter(e=>e.source===c.id||e.target===c.id);if(!links.length)continue;const a=anchor(links[0],c),ys=[];
  for(const e of links){const p=polylineOf(e,map);for(let i=1;i<p.length;i++)if(Math.abs(p[i].y-p[i-1].y)<eps&&Math.abs(p[i].x-p[i-1].x)>30)ys.push(p[i].y);const other=map.get(e.source===c.id?e.target:e.source);ys.push(anchor(e,other).y);}
  for(const y of [...new Set(ys)])if(Math.abs(y-a.y)>.5)add('port-track',{moves:[{id:c.id,y:c.y+y-a.y}]});}
- if(loop===2){add('junction-repair',{dots:true});for(const c of cs.filter(c=>classify(c).prefix==='M')){add('axis-mirror',{moves:[{id:c.id,mirror:true}]});
+ if(loop===2){add('junction-repair',{dots:true});for(const c of cs.filter(c=>classify(c).prefix==='M')){const part=ref.components.find(m=>m.ref===c.id);if(part&&ref.components.filter(m=>m.prefix==='M'&&m.nodes[1]===part.nodes[1]).length>1)continue;add('axis-mirror',{moves:[{id:c.id,mirror:true}]});
  const cl=classify(c),gate=pinAbs(c,getPin(cl.shape.key,pinOrderFor(cl)[1]));for(const dy of [-80,80,140])add('mirror-height',{moves:[{id:c.id,mirror:true,dy}]});
  // A gate-facing mirror may carry immediately adjacent passive input branches.
  const gateEdges=edges.filter(e=>(e.source===c.id||e.target===c.id)&&dist(anchor(e,c),gate)<eps);
