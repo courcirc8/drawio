@@ -1646,3 +1646,20 @@ export function separatedTrackProposals(model) {
  }
  return out;
 }
+
+/** Three-bend alternatives with independent escape distances at both ends. */
+export function orthogonalDetourProposals(model) {
+ const cells=allCells(model).map(cellInfo),byId=new Map(cells.map(c=>[c.id,c])),out=[];
+ for(const edge of cells.filter(c=>c.kind==='edge')){
+  const pl=polylineOf(edge,byId);if(!pl)continue;
+  for(let i=0;i+1<pl.length;i++){
+   const a=pl[i],b=pl[i+1];if(Math.abs(a.x-b.x)<.6||Math.abs(a.y-b.y)<.6)continue;
+   for(const dx of [-80,-40,-20,20,40,80])for(const dy of [-80,-40,-20,20,40,80])for(const order of [0,1]){
+    const path=order===0?[{x:a.x+dx,y:a.y},{x:a.x+dx,y:b.y+dy},{x:b.x,y:b.y+dy}]:[{x:a.x,y:a.y+dy},{x:b.x+dx,y:a.y+dy},{x:b.x+dx,y:b.y}];
+    const next=[...pl.slice(0,i+1),...path,...pl.slice(i+1)];
+    out.push({id:`${edge.id}-${i}-${dx}-${dy}-${order}`,edge:edge.id,points:next.slice(1,-1)});
+   }
+  }
+ }
+ return out;
+}
