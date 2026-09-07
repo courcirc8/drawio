@@ -1,7 +1,7 @@
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
 import {newDocument,getPage,serialize,parseDrawio} from '../lib/model.js';
 import {parseSpice,extractNetlist} from '../lib/netlist.js';import {importNetlist2} from '../lib/place2.js';
-import {routePage,nearbyTeeProposals,applyTeeProposal} from '../lib/route.js';import {compare} from '../lib/lvs.js';import {auditVisibleConnectivity} from '../lib/visible-connectivity.js';
+import {routePage,nearbyTeeProposals,applyTeeProposal,orthogonalSegmentProposals} from '../lib/route.js';import {compare} from '../lib/lvs.js';import {auditVisibleConnectivity} from '../lib/visible-connectivity.js';
 test('nearby beta-multiplier tees can share one junction while preserving visible connectivity',async()=>{
  const ref=parseSpice(fs.readFileSync(new URL('../benchmark/netlists30/beta-multiplier.cir',import.meta.url),'utf8')),doc=newDocument(),model=getPage(doc);
  importNetlist2(model,ref);await routePage(model,null,{});const original=serialize(doc),dir=fs.mkdtempSync(path.join(os.tmpdir(),'nearby-tees-'));
@@ -17,4 +17,15 @@ test('nearby beta-multiplier tees can share one junction while preserving visibl
   assert.ok(repaired,'at least one proposal removes the missing contact without electrical regression');
   assert.equal(serialize(doc),original,'candidate generation leaves the original drawing untouched');
  }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test('explicit orthogonal candidates can remove a VCO diagonal without a short',async()=>{
+ const ref=parseSpice(fs.readFileSync(new URL('../benchmark/netlists30/vco-lc.cir',import.meta.url),'utf8')),doc=newDocument(),model=getPage(doc);
+ importNetlist2(model,ref,{reservedChannels:true,signalAlignment:true});await routePage(model,null,{});
+ const original=serialize(doc),proposals=orthogonalSegmentProposals(model);assert.ok(proposals.length>0);
+ let valid=false;
+ for(const proposal of proposals){const candidate=parseDrawio(original);applyTeeProposal(getPage(candidate),proposal);const saved=getPage(parseDrawio(serialize(candidate)));
+  if(compare(extractNetlist(saved),ref).match&&auditVisibleConnectivity(saved).visible_connectivity_match===true&&orthogonalSegmentProposals(saved).length<proposals.length)valid=true;
+ }
+ assert.ok(valid);assert.equal(serialize(doc),original);
 });

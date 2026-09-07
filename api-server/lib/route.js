@@ -1596,3 +1596,24 @@ export function applyTeeProposal(model, proposal) {
   addContactDots(model);hideDegenerateJunctions(model);
   assertGeometryOnly(before,connectivityFingerprint(model),'coalesce nearby tees');
 }
+
+/** Replace one oblique segment with explicit orthogonal alternatives; no global reroute. */
+export function orthogonalSegmentProposals(model) {
+ const cells=allCells(model).map(cellInfo),byId=new Map(cells.map(c=>[c.id,c])),out=[];
+ for(const edge of cells.filter(c=>c.kind==='edge')){
+  const pl=polylineOf(edge,byId);if(!pl)continue;
+  for(let i=0;i+1<pl.length;i++){
+   const a=pl[i],b=pl[i+1];if(Math.abs(a.x-b.x)<.6||Math.abs(a.y-b.y)<.6)continue;
+   const paths=[[{x:a.x,y:b.y}],[{x:b.x,y:a.y}]];
+   for(const offset of [0,-20,20,-40,40,-80,80,-140,140]){
+    const x=(a.x+b.x)/2+offset,y=(a.y+b.y)/2+offset;
+    paths.push([{x,y:a.y},{x,y:b.y}],[{x:a.x,y},{x:b.x,y}]);
+   }
+   for(const [k,path] of paths.entries()){
+    const next=[...pl.slice(0,i+1),...path,...pl.slice(i+1)];
+    out.push({id:`${edge.id}-${i}-${k}`,edge:edge.id,points:next.slice(1,-1)});
+   }
+  }
+ }
+ return out;
+}
