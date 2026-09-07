@@ -1557,3 +1557,42 @@ export function repairPinClearance(model, obstacles) {
     }
   }
 }
+
+/** Propose coalescing nearby same-net elbows; caller must validate each saved candidate. */
+export function nearbyTeeProposals(model, tolerance = 8) {
+  const cells=allCells(model).map(cellInfo), byId=new Map(cells.map(c=>[c.id,c]));
+  const groups=netGroups(cells), wires=cells.filter(c=>c.kind==='edge'), out=[];
+  for(const a of wires){
+    if(a.style.map.has('drawioApiFixedRoute'))continue;
+    const pts=a.points||[];
+    for(let i=0;i+1<pts.length;i++){
+      const p=pts[i],q=pts[i+1];
+      const axis=Math.abs(p.x-q.x)<0.01?'x':Math.abs(p.y-q.y)<0.01?'y':null;
+      if(!axis)continue;
+      const other=axis==='x'?'y':'x';
+      for(const b of wires){
+        if(a.id===b.id||groups.get(a.id)!==groups.get(b.id))continue;
+        const pl=polylineOf(b,byId)||[];
+        for(const target of pl){
+          const d=Math.abs(target[axis]-p[axis]);
+          if(d<0.1||d>tolerance)continue;
+          if(Math.min(Math.abs(target[other]-p[other]),Math.abs(target[other]-q[other]))>0.01)continue;
+          const points=pts.map(v=>({...v}));points[i][axis]=points[i+1][axis]=target[axis];
+          const key=`${a.id}-${i}-${axis}-${target[axis]}`;
+          if(!out.some(v=>v.id===key))out.push({id:key,edge:a.id,points});
+        }
+      }
+    }
+  }
+  return out;
+}
+
+export function applyTeeProposal(model, proposal) {
+  const before=connectivityFingerprint(model);
+  const edge=allCells(model).find(c=>c.getAttribute('id')===proposal.edge);
+  if(!edge)throw new Error('Missing tee edge');
+  setEdgePoints(edge,proposal.points);
+  cleanupDegeneratePoints(model);
+  addContactDots(model);hideDegenerateJunctions(model);
+  assertGeometryOnly(before,connectivityFingerprint(model),'coalesce nearby tees');
+}
