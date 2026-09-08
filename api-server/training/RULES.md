@@ -781,3 +781,26 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     (edgeStyle=none, règle 34) que le juge compte en erreur, cherry 2
     (wrap-around, pin-clearance), beta 30, wilson 28.
 
+
+64. **Session « qualité d'un humain méticuleux » (2026-09-08, dev :
+    11→3 erreurs, beauty 74,2, 40/43 à zéro)** :
+    - **Arbitrage 34 vs 31/08** : les X volontaires (edgeStyle=none) sont
+      exemptés de check_orthogonal — l'exigence visait les obliques
+      PARASITES du routeur (échantillon du 31/08 : zéro oblique mesurée).
+      La conversion des X en Π orthogonaux figés a été MESURÉE pire en
+      trois variantes (couloir central occupé par la cap tank, symétrie de
+      polarité du tank, whack-a-mole 7→13) puis revertée entièrement.
+      Arbitrage à valider par l'utilisateur.
+    - **Gabarit CASCADE deux étages** (Cherry-Hooper) : drains de A =
+      gates de B → paires sur la MÊME rangée, A à gauche, queues dessous,
+      R de feedback en lane AU-DESSUS (prioritaire sur la branche Miller),
+      gates d'entrée à gauche. Les demi-mesures « lane seule » et
+      « alignement seul » échouaient : c'est le gabarit COMPLET qui rend
+      le dessin humain. cherry 2 err→1, pin-clearance éradiqué.
+    - Leçon de lignées : dev (fusion Hermes + AVO) descend de a855c74 —
+      les mécanismes 53-59 ont survécu ; les 9 fails npm restants sont
+      les fixtures « golden matching » de la machine PRO (chemins /eda/…),
+      pas des bugs.
+    Restent 3 : beta 30 (té à 4 px du dot), cherry wrap (R4, placement
+    forcé — le feedback en lane l'a presque résorbé), wilson 28
+    (side-diode instable).
