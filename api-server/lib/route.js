@@ -1056,14 +1056,13 @@ function hideDegenerateJunctions(model) {
   const polys = [];
   for (const e of edges) {
     const pl = polylineOf(e, byId2);
-    if (pl != null && pl.length >= 2) polys.push(pl);
+    if (pl != null && pl.length >= 2) polys.push({ id: e.id, pl });
   }
   const dirOf = (a, b) => {
     const dx = b.x - a.x, dy = b.y - a.y;
     if (Math.abs(dx) < 0.6 && Math.abs(dy) < 0.6) return null;
     return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'E' : 'W') : (dy > 0 ? 'S' : 'N');
   };
-  const opposite = { E: 'W', W: 'E', N: 'S', S: 'N' };
   const distToSeg = (p, a, b) => {
     const vx = b.x - a.x, vy = b.y - a.y;
     const L2 = vx * vx + vy * vy;
@@ -1078,8 +1077,26 @@ function hideDegenerateJunctions(model) {
     const info = byId2.get(el.getAttribute('id'));
     if (info == null || info.x == null) continue;
     const hub = { x: info.x + info.w / 2, y: info.y + info.h / 2 };
-    const dirs = new Set();
-    for (const pl of polys) {
+    // DEFECT (2026-09-07): a `Set` of compass-direction LABELS collapses two
+    // or more DISTINCT wires whenever their final approach into the hub
+    // happens to share a heading -- exactly what a star hub with several
+    // spokes on a shared rail does (measured: J_Bp on matching_2446, four
+    // stubs -- C4/L3/C1/P_Bp -- all arriving horizontally on the same y, so
+    // three of them collapse to the single label 'E'; same mechanism hid
+    // J_M/J_Up on matching_915 and J_n_pi1_out/J_rx_Bn_dcblk on 2446). A real
+    // >=3-way node then read as "2 directions" and got its dot switched off
+    // by the code below -- the opposite of what this function is for.
+    // What actually distinguishes a branch point from a straight
+    // pass-through is the number of DISTINCT WIRES touching the hub, not
+    // the number of distinct compass headings among them. Fix: accumulate
+    // "arms" PER EDGE ID (a Map, not a Set of labels) -- each edge
+    // contributes at most the arms it geometrically has at this hub (2 if
+    // the hub sits INSIDE one of its segments -- an unanchored net crossing
+    // through, the 2026-08-31 case this function must keep recognising -- 1
+    // if the hub is merely one of its endpoints), and a different edge
+    // sharing that same heading still counts as its own, separate arm.
+    const armsByEdge = new Map();
+    for (const { id, pl } of polys) {
       for (let k = 0; k + 1 < pl.length; k++) {
         const a = pl[k], b = pl[k + 1];
         if (distToSeg(hub, a, b) >= 4.5) continue;
@@ -1087,12 +1104,13 @@ function hideDegenerateJunctions(model) {
         const db = Math.hypot(hub.x - b.x, hub.y - b.y);
         const d = dirOf(a, b);
         if (d == null) continue;
-        if (da > 4 && db > 4) { dirs.add(d); dirs.add(opposite[d]); }  // le moyeu est A L INTERIEUR du segment
-        else if (da <= 4) dirs.add(d);
-        else if (db <= 4) dirs.add(opposite[d]);
+        const arms = (da > 4 && db > 4) ? 2 : 1;  // interieur du segment (passe-a-travers) -> 2 ; extremite -> 1
+        if (arms > (armsByEdge.get(id) || 0)) armsByEdge.set(id, arms);
       }
     }
-    if (dirs.size >= 3) continue;
+    let degree = 0;
+    for (const arms of armsByEdge.values()) degree += arms;
+    if (degree >= 3) continue;
     el.setAttribute('style', style.replace(/fillColor=[^;]*;?/, '').replace(/strokeColor=[^;]*;?/, '') +
       'fillColor=none;strokeColor=none;apiJunctionHidden=1;');
   }
@@ -1125,12 +1143,39 @@ function addContactDots(model) {
     if (Math.abs(p.x - q.x) < 0.6) return Math.abs(pt.x - p.x) <= 2.5 && pt.y > Math.min(p.y, q.y) + 4 && pt.y < Math.max(p.y, q.y) - 4;
     return false;
   };
+  // Hub cell id(s) (a `J_*` star-wiring vertex, `isJunctionCell`) an edge
+  // terminates on, if any -- used below to recognise two SPOKES OF THE SAME
+  // STAR as such, rather than as an accidental T between unrelated wires.
+  const hubIdsOf = (c) => {
+    const ids = [];
+    const s = c.source != null ? byId2.get(c.source) : null;
+    const t = c.target != null ? byId2.get(c.target) : null;
+    if (s != null && isJunctionCell(s)) ids.push(c.source);
+    if (t != null && isJunctionCell(t)) ids.push(c.target);
+    return ids;
+  };
   const selfWires0 = cells.filter((c) => c.kind === 'edge' && c.source != null && c.source === c.target);
   for (const A of wires.concat(selfWires0)) {
     const plA = polylineOf(A, byId2);
     if (plA == null) continue;
+    const hubsA = hubIdsOf(A);
     for (const Bv of wires.concat(selfWires0)) {
       if (A === Bv || edgeNet.get(A.id) !== edgeNet.get(Bv.id)) continue;
+      // FALSE POSITIVE (2026-09-07): A and B are both spokes of the SAME
+      // star hub (place3.js wires any >2-terminal net into one `J_<net>`
+      // vertex with N spokes). Their final stubs commonly share a rail on
+      // the way into the hub (measured: matching_2446's J_Bp -- C4, L3, C1,
+      // P_Bp all arrive on y=80), so A's own waypoint routinely lands
+      // "on top of" B's straight run purely as an artefact of that shared
+      // approach, well short of B's actual endpoint. That is not a second,
+      // independent T-junction: the one real branch point here is the hub
+      // itself, already marked (or not) by `hideDegenerateJunctions` above.
+      // Painting a second dot a few px away from the hub is worse than
+      // painting none -- it reads as a DIFFERENT node next to the real one.
+      // Skip the pair outright rather than trying to special-case which of
+      // A's points are "legitimate" corners: any T this loop would find
+      // between two same-hub spokes is this artefact, never a real one.
+      if (hubsA.length > 0 && hubIdsOf(Bv).some((h) => hubsA.includes(h))) continue;
       const plB = polylineOf(Bv, byId2);
       if (plB == null) continue;
       // TOUS les sommets (extrémités ET coins) : un coin posé sur le segment

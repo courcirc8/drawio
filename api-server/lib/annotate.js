@@ -282,6 +282,47 @@ export function applyAnnotations(model, seed, { scale = 1 } = {}) {
     }
   }
 
+  // ---- 1b. propagate the SAME zone colour to a wire (fix, 2026-09-07).
+  //
+  // DEFECT: only component BOXES were ever coloured above; every edge stayed
+  // black regardless of which zone its two ends sat in. Measured on
+  // matching_2446's seeded render: 30 edges, 0 non-black -- the PA/LNA/shared
+  // partition stopped dead at a component's own outline, even though a
+  // partition is something you follow along COPPER, not inside a symbol's
+  // box. Reported by the user 2026-09-07.
+  //
+  // FIX REUSES THE SAME SOURCE OF TRUTH as the vertex pass just above --
+  // `z.refs`/`z.color` from the seed's `annotations.zones` -- rather than
+  // re-deriving a second, parallel classification of what belongs to which
+  // subsystem (that would drift from the vertex colouring the moment either
+  // one changed). An edge is coloured with a zone's colour ONLY when BOTH its
+  // `source` and `target` cell ids are members of that SAME zone; an edge
+  // spanning two different zones, or touching a cell with no zone at all
+  // (a ground, a port, or a `J_*` star-wiring hub -- none of these ever
+  // appear in a zone's `refs`), is left black on purpose. This is a
+  // deliberately narrow, literal rule: "both endpoints in the same group ->
+  // colour; anything else -> don't guess." A star-hub net (`J_<net>`, used
+  // for any net with >2 terminals -- see place3.js) therefore keeps its
+  // spokes black even when every spoke's OTHER end is in the same zone,
+  // because the hub itself carries no zone membership; colouring "through"
+  // the hub would be inventing intent the seed never declared, which is
+  // exactly what this rule is written to avoid.
+  const zoneColorOfRef = new Map();
+  for (const z of ann.zones || []) {
+    for (const ref of z.refs || []) zoneColorOfRef.set(ref, z.color);
+  }
+  if (zoneColorOfRef.size > 0) {
+    for (const el of allCells(model)) {
+      if (el.getAttribute('edge') !== '1') continue;
+      const src = el.getAttribute('source'), tgt = el.getAttribute('target');
+      if (src == null || tgt == null) continue;
+      const srcColor = zoneColorOfRef.get(src), tgtColor = zoneColorOfRef.get(tgt);
+      if (srcColor != null && srcColor === tgtColor) {
+        el.setAttribute('style', mergeStyle(el.getAttribute('style') || '', { strokeColor: srcColor }));
+      }
+    }
+  }
+
   // ---- 2. value-label suffixes: append to the LAST line of the drawn
   //         label only (labelFor() in place3.js emits "REF\nVALUE"); the
   //         object's `spice_value` data attribute (LVS/BOM source of truth)
