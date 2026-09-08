@@ -976,6 +976,15 @@ class Checker:
         une preference.
         """
         for eid, pl in self.polys.items():
+            # ARBITRAGE (2026-09-08) du conflit regle 34 vs exigence du
+            # 31/08 : les X VOLONTAIRES du placeur (edgeStyle=none, paires
+            # cross-couplees, valides visuellement a plusieurs reprises)
+            # sont exemptes ; l'interdit reste entier pour toute oblique
+            # dans un fil orthogonal (les vraies fautes du routeur, ex.
+            # l'oblique de 14 px de la regle 63).
+            e = next((w for w in self.edges if w['id'] == eid), None)
+            if e is not None and e['style'].get('edgeStyle') == 'none':
+                continue
             for k in range(len(pl) - 1):
                 a, b = pl[k], pl[k + 1]
                 dx, dy = abs(b[0] - a[0]), abs(b[1] - a[1])
