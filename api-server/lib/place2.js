@@ -1294,6 +1294,44 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     }
   }
 
+  // ---- CASCADE deux étages (Cherry-Hooper) : les drains de la paire A
+  //      sont les gates de la paire B — les DEUX paires partagent la
+  //      rangée, étage A à GAUCHE de B, queues dessous. (Les tentatives
+  //      « lane seule » et « alignement seul » ont échoué séparément :
+  //      c'est le gabarit complet qui rend le dessin humain.)
+  let cascadeFb = null; // nets de drain de A (pour la lane de feedback)
+  {
+    const quadRefs4 = new Set((structures.quads || []).flatMap((q) => q.refs));
+    const prs4 = structures.diffPairs.filter((p) =>
+      !p.refs.some((r) => latchRefs.has(r) || quadRefs4.has(r)) &&
+      p.refs.every((r) => slots.has(r)));
+    outer4: for (const A of prs4) {
+      for (const B of prs4) {
+        if (A === B) continue;
+        const dA = A.refs.map((r) => (comps.find((k) => k.ref === r) || { nodes: [] }).nodes[0]);
+        if (new Set([...dA, ...B.gates]).size !== 2) continue;
+        const sB = B.refs.map((r) => slots.get(r)).sort((u, v) => u.col - v.col);
+        const sA = A.refs.map((r) => slots.get(r));
+        const lvl = sB[0].level;
+        // A à gauche de B, même rangée
+        const cA = Math.min(sB[0].col, sB[1].col);
+        sA[0].col = cA - 2; sA[0].level = lvl;
+        sA[1].col = cA - 1; sA[1].level = lvl;
+        for (const t of structures.tails) {
+          const st = slots.get(t.ref);
+          if (st == null) continue;
+          if (t.pair.every((r) => A.refs.includes(r)) || t.pair.every((r) => B.refs.includes(r))) {
+            const [pa, pb] = t.pair.map((r) => slots.get(r));
+            st.col = (pa.col + pb.col) / 2;
+            st.level = lvl + 1;
+          }
+        }
+        cascadeFb = { nets: dA, inPair: A.refs };
+        break outer4;
+      }
+    }
+  }
+
   // ---- flips de symétrie, propagés à toute la colonne. Par défaut :
   //      seulement les paires cross-couplées (gain net) ; les paires diff
   //      sont flippées à la demande de l'optimiseur (P.flipPairs).
@@ -1304,6 +1342,9 @@ function importNetlist2Impl(model, parsed, opts = {}) {
   // défaut pour la recherche ; quads gérés à part
   const wantFlip = (pr) => {
     if (pr.refs.some((r) => quadRefs.has(r))) return false;
+    // paire d'ENTRÉE d'une cascade : gates à gauche toutes les deux (le
+    // flip « gates extérieures » envoyait INM entre les deux étages)
+    if (cascadeFb != null && cascadeFb.inPair.every((r) => pr.refs.includes(r))) return false;
     const base = true;
     const toggled = (P.flipPairs || []).includes(pr.refs.join('/'));
     return structures.crossCoupled.includes(pr) ? true : (base !== toggled);
@@ -1750,6 +1791,29 @@ function importNetlist2Impl(model, parsed, opts = {}) {
       }
       return pts.length ? { n: pts.length, x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length } : { n: 0, x: P.x0, y: P.y0 };
     });
+    // gabarit CASCADE : la R de contre-réaction (un net = drain de l'étage
+    // A) se pose dans une LANE au-dessus des deux étages — horizontale,
+    // empilée par index, jamais au barycentre entre les rangées
+    if (cascadeFb != null && 'RCL'.includes(c.prefix) &&
+        anchors[0].n > 0 && anchors[1].n > 0 &&
+        (cascadeFb.nets.includes(ci.top) || cascadeFb.nets.includes(ci.bot))) {
+      const shapeF2 = getShape(ci.shapeKey);
+      const topY2 = Math.min(...[...placed.values()].filter((v) => v.w >= 40 && v.h >= 20).map((v) => v.y));
+      cascadeFb.k = (cascadeFb.k || 0) + 1;
+      const cyF2 = topY2 - 56 - (cascadeFb.k - 1) * 44;
+      const cxF2 = (anchors[0].x + anchors[1].x) / 2;
+      const flipF2 = anchors[0].x > anchors[1].x;
+      const cellF2 = addVertex(model, { id: c.ref, shape: ci.shapeKey,
+        x: cxF2 - shapeF2.w / 2, y: cyF2 - shapeF2.h / 2, w: shapeF2.w, h: shapeF2.h,
+        rotation: 0, value: c.value || '' });
+      if (flipF2) cellF2.setAttribute('style', cellF2.getAttribute('style') + 'flipH=1;');
+      placed.set(c.ref, { id: c.ref, x: cxF2 - shapeF2.w / 2, y: cyF2 - shapeF2.h / 2,
+        w: shapeF2.w, h: shapeF2.h, rotation: 0, flipH: flipF2 });
+      for (let i2 = 0; i2 < ci.po.length; i2++) {
+        term(c.nodes[i2], c.ref, ci.po[i2], getPin(ci.shapeKey, ci.po[i2]));
+      }
+      continue;
+    }
     // cap de CONTRE-RÉACTION (Miller) : ses deux nets touchent la gate et
     // le drain du MÊME transistor -> discrète, VERTICALE, collée à côté du
     // transistor entre les deux niveaux (règle utilisateur : pas de voûtes,
