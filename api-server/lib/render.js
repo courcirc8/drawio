@@ -137,8 +137,24 @@ async function exportDocumentImpl(doc, model, { format = 'png', scale = 2, borde
       w: 0, h: 0,
     };
     if (pageId != null) data.pageId = pageId;
+    // MAPPING HOOK (2026-09-18): export.js positions the view with
+    // graph.view.scaleAndTranslate(s, tx, ty) where tx/ty come from the
+    // graph bounds INCLUDING labels (which contentOrigin() below ignores —
+    // measured 6 x 20 diagram units off on ota-5t). Recording those arguments
+    // gives the exact diagram->pixel transform px = (x + tx) * s - clip.x,
+    // returned as `mapping` for label/box generators (tools/gen-yolo-dataset).
+    await page.evaluate(() => {
+      if (window.__drawioApiXf == null) {
+        const orig = mxGraphView.prototype.scaleAndTranslate;
+        mxGraphView.prototype.scaleAndTranslate = function (s, tx, ty) { window.__drawioApiXf = { s, tx, ty }; return orig.apply(this, arguments); };
+        const origT = mxGraphView.prototype.setTranslate;
+        mxGraphView.prototype.setTranslate = function (tx, ty) { window.__drawioApiXf = { s: this.scale, tx, ty }; return origT.apply(this, arguments); };
+        window.__drawioApiXf = { s: 1, tx: 0, ty: 0 };
+      } else window.__drawioApiXf = { s: 1, tx: 0, ty: 0 };
+    });
     await page.evaluate((d) => { render(d); }, data);
     await page.waitForSelector('#LoadingComplete', { timeout: timeoutMs });
+    const xf = await page.evaluate(() => window.__drawioApiXf);
     const bounds = JSON.parse(await page.$eval('#LoadingComplete', (el) => el.getAttribute('bounds')));
 
     if (format === 'svg') {
@@ -192,6 +208,7 @@ async function exportDocumentImpl(doc, model, { format = 'png', scale = 2, borde
       deviceScaleFactor: 1,
     });
 
+    const mapping = { scale: xf.s, tx: xf.tx, ty: xf.ty, clipX: clip.x, clipY: clip.y, width: clip.width, height: clip.height };
     if (format === 'pdf') {
       const buffer = await page.pdf({
         printBackground: true,
@@ -201,7 +218,7 @@ async function exportDocumentImpl(doc, model, { format = 'png', scale = 2, borde
       return { buffer: Buffer.from(buffer), contentType: 'application/pdf' };
     }
     const buffer = await page.screenshot({ type: 'png', clip });
-    return { buffer: Buffer.from(buffer), contentType: 'image/png' };
+    return { buffer: Buffer.from(buffer), contentType: 'image/png', mapping };
   } catch (e) {
     failed = true;
     throw e;
