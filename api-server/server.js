@@ -266,6 +266,15 @@ app.post('/structures', wrap(async (req, res) => {
   res.json(detectStructures(netlist.parseSpice(spice)));
 }));
 
+// Motif registry (lib/motifs.js): every recognised analogue motif of a
+// netlist, the macro-blocks they induce and the components NO motif covers.
+app.post('/motifs', wrap(async (req, res) => {
+  const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
+  if (spice == null || spice === '') throw model.httpError(400, 'SPICE netlist required');
+  const { detectMotifs, MOTIFS } = await import('./lib/motifs.js');
+  res.json({ registry: MOTIFS, ...detectMotifs(netlist.parseSpice(spice)) });
+}));
+
 // ------------------------------------------------------------- routing
 app.post('/documents/:id/route', wrap(async (req, res) => {
   const { model: m } = pageOf(req);
