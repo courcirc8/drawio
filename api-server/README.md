@@ -103,5 +103,6 @@ feeds the visual comparison.
 ## Tests
 
 ```bash
-npm test        # 14 tests: model round-trip, SPICE, LVS, ERC, routing, e2e HTTP + PNG
+npm test        # ~240 tests (33 files): model round-trip, SPICE, LVS, ERC, routing, e2e HTTP + PNG
+# RF_GOLDEN_DIR=/path/to/golden  -> also runs the 9 tests bound to the two RF golden netlists (skipped otherwise)
 ```

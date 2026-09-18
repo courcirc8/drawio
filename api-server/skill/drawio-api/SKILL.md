@@ -14,7 +14,7 @@ description: >
 ## Démarrage du serveur
 
 ```bash
-cd ~/ClaudeCode/test-delegation/drawio/api-server
+cd ~/ClaudeCode/schematic/drawio/api-server   # chemin du clone du fork (adapter)
 node server.js --port 8770 &   # ou DRAWIO_API_PORT=8770 npm start
 curl -s http://127.0.0.1:8770/health   # {"ok":true}
 ```

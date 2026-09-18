@@ -312,9 +312,15 @@ test('check: fil à travers un corps (through) détecté', async () => {
 // blocks it does not have -- the textual merge interleaved two test bodies.
 // ---------------------------------------------------------------------------
 
-const GOLDEN_DIR = '/eda/dm/home/evandel/CURSOR/PySpectre/Match_BOM_optimizer/multi_agent_opt/rf_schematics/golden/';
+// The two RF "golden matching" netlists live on the PRO workstation only.
+// RF_GOLDEN_DIR points at a directory holding matching_915.cir /
+// matching_2446.cir / matching_2446_app.cir; when absent the tests below are
+// SKIPPED (reported as such), not failed — 9 permanent red tests on every
+// other host hid real failures (RAPPORT-HERMES, rule 64).
+const GOLDEN_DIR = (process.env.RF_GOLDEN_DIR || '/eda/dm/home/evandel/CURSOR/PySpectre/Match_BOM_optimizer/multi_agent_opt/rf_schematics/golden').replace(/\/?$/, '/');
+const NO_GOLDEN = fs.existsSync(GOLDEN_DIR + 'matching_2446.cir') ? false : 'RF golden fixtures absent (set RF_GOLDEN_DIR)';
 
-test('place3: round-trip LVS + ERC-clean on the 915/2446 golden matching netlists', async () => {
+test('place3: round-trip LVS + ERC-clean on the 915/2446 golden matching netlists', { skip: NO_GOLDEN }, async () => {
   const fs = await import('node:fs');
   const { importNetlist3 } = await import('../lib/place3.js');
   for (const f of ['matching_915.cir', 'matching_2446.cir']) {
@@ -331,7 +337,7 @@ test('place3: round-trip LVS + ERC-clean on the 915/2446 golden matching netlist
   }
 });
 
-test('place3: no two placed components overlap (the place2 floating-passifs gap this engine fixes)', async () => {
+test('place3: no two placed components overlap (the place2 floating-passifs gap this engine fixes)', { skip: NO_GOLDEN }, async () => {
   const fs = await import('node:fs');
   const { importNetlist3 } = await import('../lib/place3.js');
   const { rotatedAabb } = await import('../lib/route.js');
@@ -353,7 +359,7 @@ test('place3: no two placed components overlap (the place2 floating-passifs gap 
   }
 });
 
-test('place3: engine=v3 differs from a plain import once optimize runs, and accepts at least one candidate', { timeout: 60000 }, async () => {
+test('place3: engine=v3 differs from a plain import once optimize runs, and accepts at least one candidate', { timeout: 60000, skip: NO_GOLDEN }, async () => {
   const fs = await import('node:fs');
   const { optimizeNetlist } = await import('../lib/optimize.js');
   const { importNetlist3 } = await import('../lib/place3.js');
@@ -564,7 +570,7 @@ test('preplace: seeds load and expose the frozen reference geometry', () => {
   assert.equal(loadSeed('../../etc/passwd'), null, 'seed name must not escape seeds/');
 });
 
-test('preplace: seeding moves cells onto the reference centres, LVS unchanged', async () => {
+test('preplace: seeding moves cells onto the reference centres, LVS unchanged', { skip: NO_GOLDEN }, async () => {
   const fs = await import('node:fs');
   const { importNetlist3 } = await import('../lib/place3.js');
   const parsed = parseSpice(fs.readFileSync(GOLDEN_DIR + 'matching_2446.cir', 'utf8'));
@@ -584,7 +590,7 @@ test('preplace: seeding moves cells onto the reference centres, LVS unchanged', 
 });
 
 // ---- task 3: net label dedup (place3.js, 2026-08-31) -----------------------
-test('place3: a boundary net is named exactly once (port tap OR wire label, never both)', async () => {
+test('place3: a boundary net is named exactly once (port tap OR wire label, never both)', { skip: NO_GOLDEN }, async () => {
   const fs = await import('node:fs');
   const { importNetlist3 } = await import('../lib/place3.js');
   const parsed = parseSpice(fs.readFileSync(GOLDEN_DIR + 'matching_2446.cir', 'utf8'));
@@ -623,7 +629,7 @@ test('place3: a boundary net is named exactly once (port tap OR wire label, neve
 // page and clearing the router's own DRC (tools/check.py's `through` rule,
 // which — unlike connectivity() — inspects every vertex regardless of
 // classify()).
-test('annotate: zone colours, value suffixes and free text/blocks are emitted, LVS unchanged', async () => {
+test('annotate: zone colours, value suffixes and free text/blocks are emitted, LVS unchanged', { skip: NO_GOLDEN }, async () => {
   const fs = await import('node:fs');
   const { importNetlist3 } = await import('../lib/place3.js');
   const parsed = parseSpice(fs.readFileSync(GOLDEN_DIR + 'matching_2446.cir', 'utf8'));
@@ -1013,9 +1019,9 @@ test('rewire: never moves, resizes, or reshapes an existing cell', () => {
 // bind-endpoints repair pass.
 // ---------------------------------------------------------------------------
 
-const APP_2446_PATH = '/eda/dm/home/evandel/CURSOR/PySpectre/Match_BOM_optimizer/multi_agent_opt/rf_schematics/golden/matching_2446_app.cir';
+const APP_2446_PATH = GOLDEN_DIR + 'matching_2446_app.cir';
 
-test('Task A: matching_2446_app.cir has R_ant0 shorted out — 14 components, no n_pi1_out_rf net, C13 lands on ANT', () => {
+test('Task A: matching_2446_app.cir has R_ant0 shorted out — 14 components, no n_pi1_out_rf net, C13 lands on ANT', { skip: fs.existsSync(APP_2446_PATH) ? false : NO_GOLDEN }, () => {
   const text = fs.readFileSync(APP_2446_PATH, 'utf8');
   const { components } = parseSpice(text);
   assert.equal(components.length, 14, 'R_ant0 must be removed, not just left in place');

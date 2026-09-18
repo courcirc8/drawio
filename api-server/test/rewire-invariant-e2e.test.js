@@ -52,13 +52,17 @@ const PORT = 8000 + Math.floor(Math.random() * 1000);
 const BASE = `http://127.0.0.1:${PORT}`;
 
 const FIXTURE_PATH = path.join(HERE, 'fixtures/optimized_2446.drawio');
-const CIR_PATH = '/eda/dm/home/evandel/CURSOR/PySpectre/Match_BOM_optimizer/multi_agent_opt/rf_schematics/golden/matching_2446.cir';
+const CIR_PATH = path.join(process.env.RF_GOLDEN_DIR || '/eda/dm/home/evandel/CURSOR/PySpectre/Match_BOM_optimizer/multi_agent_opt/rf_schematics/golden', 'matching_2446.cir');
 const fixtureXml = fs.readFileSync(FIXTURE_PATH, 'utf8');
-const cir = fs.readFileSync(CIR_PATH, 'utf8');
+// Golden netlist lives on the PRO workstation; elsewhere the whole file is
+// skipped (one skipped test) instead of crashing at import time.
+const NO_GOLDEN = fs.existsSync(CIR_PATH) ? false : 'RF golden fixture absent (set RF_GOLDEN_DIR)';
+const cir = NO_GOLDEN ? '' : fs.readFileSync(CIR_PATH, 'utf8');
 
 let proc;
 
 test.before(async () => {
+  if (NO_GOLDEN) return;
   proc = spawn(process.execPath, [path.join(HERE, '../server.js'), '--port', String(PORT)], { stdio: 'pipe' });
   for (let i = 0; i < 50; i++) {
     try {
@@ -76,7 +80,7 @@ test.after(() => { if (proc) proc.kill('SIGTERM'); });
 // future edit to place3/optimize/netlist.js silently changed what "LVS
 // passing" means for this exact frozen XML, every assertion below would be
 // testing a fiction. Fail loudly here instead.
-test('rewire-invariant e2e: fixture precondition — LVS passes on the frozen optimized_2446.drawio as-is', async () => {
+test('rewire-invariant e2e: fixture precondition — LVS passes on the frozen optimized_2446.drawio as-is', { skip: NO_GOLDEN }, async () => {
   const created = await (await fetch(`${BASE}/documents`, {
     method: 'POST', headers: { 'Content-Type': 'text/xml' }, body: fixtureXml,
   })).json();
@@ -86,8 +90,7 @@ test('rewire-invariant e2e: fixture precondition — LVS passes on the frozen op
   assert.equal(lvs.match, true, `fixture precondition failed -- LVS does not pass on optimized_2446.drawio as frozen: ${JSON.stringify(lvs).slice(0, 300)}`);
 });
 
-test('rewire-invariant e2e: /rewire on the optimize-placed 2446 fixture breaks LVS -> 409, non-empty diff, document rolled back BYTE-IDENTICAL',
-  { timeout: 30000 }, async () => {
+test('rewire-invariant e2e: /rewire on the optimize-placed 2446 fixture breaks LVS -> 409, non-empty diff, document rolled back BYTE-IDENTICAL', { skip: NO_GOLDEN, timeout: 30000 }, async () => {
     const created = await (await fetch(`${BASE}/documents`, {
       method: 'POST', headers: { 'Content-Type': 'text/xml' }, body: fixtureXml,
     })).json();
@@ -121,8 +124,7 @@ test('rewire-invariant e2e: /rewire on the optimize-placed 2446 fixture breaks L
     assert.equal(after, fixtureXml, 'stored document is NOT byte-identical to the pre-call fixture -- rollback left a mutated model');
   });
 
-test('rewire-invariant e2e: mirror case — LVS already false before the call is NOT rolled back, and before/after are both reported',
-  { timeout: 30000 }, async () => {
+test('rewire-invariant e2e: mirror case — LVS already false before the call is NOT rolled back, and before/after are both reported', { skip: NO_GOLDEN, timeout: 30000 }, async () => {
     const created = await (await fetch(`${BASE}/documents`, {
       method: 'POST', headers: { 'Content-Type': 'text/xml' }, body: fixtureXml,
     })).json();
