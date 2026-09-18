@@ -32,6 +32,8 @@ Draw.loadPlugin(function(ui)
 	var rerunRequested = false;   // a run was requested while one was already in flight
 	var goldenSpice = '';         // optional reference netlist for LVS
 	var warnedCells = [];         // cells carrying a warning from the last run, so we can clear them
+	var autoRerouteEnabled = false; // re-route the wires of moved cells (opt-in)
+	var rerouting = false;        // re-entrancy guard for runReroute (its own edits fire CELLS_MOVED? no, but CHANGE)
 
 	// ---------------------------------------------------------------
 	// Warning overlay bookkeeping
@@ -134,6 +136,28 @@ Draw.loadPlugin(function(ui)
 	clearBtn.textContent = 'Clear overlays';
 	clearBtn.onclick = function() { clearWarnings(); statusEl.innerHTML = 'Overlays cleared.'; };
 	div.appendChild(clearBtn);
+
+	// Re-route the wires attached to the selection (or every wire when nothing
+	// is selected) with the server's router (POST /documents/:id/route) —
+	// only edge geometry changes, placement and connectivity are untouched
+	// (route.js asserts geometry-only). Opt-in automatic mode on CELLS_MOVED.
+	var rerouteBtn = document.createElement('button');
+	rerouteBtn.textContent = 'Reroute wires';
+	rerouteBtn.style.marginLeft = '6px';
+	rerouteBtn.onclick = function() { runReroute(graph.getSelectionCells()); };
+	div.appendChild(rerouteBtn);
+
+	var rerouteLabel = document.createElement('label');
+	rerouteLabel.style.display = 'block';
+	rerouteLabel.style.margin = '6px 0';
+	var rerouteBox = document.createElement('input');
+	rerouteBox.type = 'checkbox';
+	rerouteBox.id = 'eda-auto-reroute';
+	rerouteBox.checked = false;
+	rerouteBox.onchange = function() { autoRerouteEnabled = rerouteBox.checked; };
+	rerouteLabel.appendChild(rerouteBox);
+	rerouteLabel.appendChild(document.createTextNode(' auto-reroute the wires of moved components'));
+	div.appendChild(rerouteLabel);
 
 	// Re-wire the CURRENT page from the golden netlist textarea below, using
 	// only the junction dots already drawn on the page as routing nodes
@@ -449,11 +473,128 @@ Draw.loadPlugin(function(ui)
 	}
 
 	// ---------------------------------------------------------------
+	// Reroute (server router, geometry-only)
+	// ---------------------------------------------------------------
+
+	/** Edge cells touching any of `cells` (vertices -> their edges; edges kept). */
+	function wiresOf(cells)
+	{
+		var model = graph.getModel();
+		var out = [], seen = {};
+		function add(e) { if (e != null && model.isEdge(e) && !seen[e.id]) { seen[e.id] = true; out.push(e); } }
+		for (var i = 0; i < cells.length; i++)
+		{
+			var c = cells[i];
+			if (model.isEdge(c)) { add(c); continue; }
+			var n = model.getEdgeCount(c);
+			for (var j = 0; j < n; j++) add(model.getEdgeAt(c, j));
+		}
+		return out;
+	}
+
+	/**
+	 * POST the page to the server, route the selected wires there, and copy
+	 * ONLY the returned edge geometry/style back into the live model inside
+	 * one undoable update. setGraphXml is deliberately not used: it would
+	 * reset selection and undo history for a change that touches edges only.
+	 */
+	function runReroute(cells)
+	{
+		if (rerouting) return;
+		var model = graph.getModel();
+		var edges = (cells != null && cells.length > 0) ? wiresOf(cells) : wiresOf(model.getChildCells(graph.getDefaultParent(), true, true));
+		if (edges.length === 0) { statusEl.innerHTML = 'Reroute: no wire attached to the selection.'; return; }
+		var ids = [];
+		for (var i = 0; i < edges.length; i++) ids.push(String(edges[i].id));
+		var xml = mxUtils.getXml(ui.editor.getGraphXml());
+		var docId = null;
+		rerouting = true;
+		statusEl.style.color = '#000';
+		statusEl.innerHTML = 'Rerouting ' + ids.length + ' wire(s)…';
+		fetchJson(SERVER + '/documents', { method: 'POST', headers: { 'Content-Type': 'text/xml' }, body: xml })
+		.then(function(created)
+		{
+			docId = created.id;
+			return fetchJson(SERVER + '/documents/' + docId + '/route', {
+				method: 'POST', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ wires: ids, options: {} }),
+			});
+		})
+		.then(function(result)
+		{
+			return fetch(SERVER + '/documents/' + docId).then(function(resp) { return resp.text(); })
+				.then(function(routedXml) { return { result: result, xml: routedXml }; });
+		})
+		.then(function(pair)
+		{
+			var doc = mxUtils.parseXml(pair.xml);
+			var byId = {};
+			var nodes = doc.getElementsByTagName('mxCell');
+			for (var k = 0; k < nodes.length; k++)
+			{
+				var n = nodes[k];
+				var id = n.getAttribute('id') || (n.parentNode != null ? n.parentNode.getAttribute('id') : null);
+				if (id != null && n.getAttribute('edge') === '1') byId[id] = n;
+			}
+			var codec = new mxCodec(doc);
+			var changed = 0;
+			model.beginUpdate();
+			try
+			{
+				for (var e = 0; e < edges.length; e++)
+				{
+					var cell = edges[e];
+					var node = byId[String(cell.id)];
+					if (node == null) continue;
+					var geoNode = null;
+					for (var ch = node.firstChild; ch != null; ch = ch.nextSibling)
+						if (ch.nodeName === 'mxGeometry') geoNode = ch;
+					if (geoNode != null)
+					{
+						var geo = codec.decode(geoNode);
+						if (geo != null) { model.setGeometry(cell, geo); changed++; }
+					}
+					var style = node.getAttribute('style');
+					if (style != null && style !== model.getStyle(cell)) model.setStyle(cell, style);
+				}
+			}
+			finally { model.endUpdate(); }
+			var failed = pair.result != null && pair.result.failed != null ? pair.result.failed : null;
+			statusEl.style.color = failed ? '#e65100' : '#2e7d32';
+			statusEl.innerHTML = 'Reroute: ' + changed + '/' + ids.length + ' wire(s) updated' + (failed ? ' &nbsp;|&nbsp; router: ' + esc(String(failed)) : '');
+		})
+		.catch(function(err)
+		{
+			statusEl.style.color = '#b71c1c';
+			statusEl.innerHTML = 'Reroute failed: ' + esc(err.message);
+			console.warn('[eda-validate] reroute failed: ' + err.message);
+		})
+		.then(function()
+		{
+			rerouting = false;
+			if (docId != null) fetch(SERVER + '/documents/' + docId, { method: 'DELETE' }).catch(function() {});
+		});
+	}
+
+	graph.addListener(mxEvent.CELLS_MOVED, function(sender, evt)
+	{
+		if (!autoRerouteEnabled || rerouting) return;
+		var moved = evt.getProperty('cells') || [];
+		if (moved.length > 0) runReroute(moved);
+	});
+
+	// exposed for tests / console: window.edaValidate.reroute(cells)
+	window.edaValidate = window.edaValidate || {};
+	window.edaValidate.reroute = runReroute;
+	window.edaValidate.wiresOf = wiresOf;
+
+	// ---------------------------------------------------------------
 	// Action + menu + toolbar wiring
 	// ---------------------------------------------------------------
 
 	mxResources.parse('edaValidate=Check schematic (LVS/ERC)');
 	mxResources.parse('edaRewire=Rewire from dots');
+	mxResources.parse('edaReroute=Reroute wires (server router)');
 
 	ui.actions.addAction('edaValidate', function()
 	{
@@ -467,6 +608,12 @@ Draw.loadPlugin(function(ui)
 		runRewire();
 	});
 
+	ui.actions.addAction('edaReroute', function()
+	{
+		win.setVisible(true);
+		runReroute(graph.getSelectionCells());
+	});
+
 	if (!ui.editor.isChromelessView())
 	{
 		var menu = ui.menus.get('extras');
@@ -475,7 +622,7 @@ Draw.loadPlugin(function(ui)
 		menu.funct = function(menu, parent)
 		{
 			oldFunct.apply(this, arguments);
-			ui.menus.addMenuItems(menu, ['-', 'edaValidate', 'edaRewire'], parent);
+			ui.menus.addMenuItems(menu, ['-', 'edaValidate', 'edaRewire', 'edaReroute'], parent);
 		};
 
 		// Toolbar button — best-effort: some layouts (chromeless, minimal

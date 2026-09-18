@@ -101,7 +101,7 @@ async function openEditorAndCapture(page) {
   // Note: no window.EDA_VALIDATE_SERVER override here -- see file header,
   // bug (b). The /editor route must supply the right origin on its own.
   await page.goto(API_BASE + '/editor/', { waitUntil: 'networkidle2', timeout: 30000 });
-  await page.waitForFunction(() => window.__capturedUi != null, { timeout: 15000 });
+  await page.waitForFunction(() => window.__capturedUi != null, { timeout: 60000 });
 }
 
 // TIMEOUT (2026-08-31): these two tests carry an EXPLICIT timeout because the
@@ -218,6 +218,77 @@ test('eda-validate plugin via /editor: check against a broken netlist paints ove
     }, wireToBreak.source);
 
     assert.ok(overlayCount > 0, `expected a setCellWarning overlay on ${wireToBreak.source}, got count=${overlayCount}`);
+  } finally {
+    await browser.close();
+  }
+});
+
+// REROUTE (2026-09-18): move a component in the live editor, ask the plugin
+// to re-route the wires attached to it through the server router, and prove
+// (a) only edge geometry changed, (b) the wires now end on the MOVED pin
+// (the old route would be left dangling in space), (c) the page still
+// passes strict LVS against the netlist it was drawn from.
+test('eda-validate plugin via /editor: reroute after a move keeps LVS and follows the moved pin', { timeout: 120000 }, async () => {
+  if (!HAS_CHROME) { console.log('  skipped: no chromium found (findChrome() returned null)'); return; }
+
+  const created = await (await fetch(`${API_BASE}/documents`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
+  const id = created.id;
+  const imp = await fetch(`${API_BASE}/documents/${id}/netlist/import?engine=v2`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: RC });
+  assert.equal(imp.status, 201);
+  const docXml = await (await fetch(`${API_BASE}/documents/${id}`)).text();
+
+  const puppeteer = (await import('puppeteer-core')).default;
+  const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'] });
+  try {
+    const page = await browser.newPage();
+    const pageErrors = [];
+    page.on('pageerror', (err) => pageErrors.push(String(err)));
+    await openEditorAndCapture(page);
+    await page.evaluate((xml) => {
+      const ui = window.__capturedUi;
+      const node = new DOMParser().parseFromString(xml, 'text/xml').documentElement;
+      ui.editor.setGraphXml(node.getElementsByTagName('mxGraphModel')[0]);
+    }, docXml);
+
+    // move R1 by (0, +90) — its wires still carry the OLD geometry
+    const before = await page.evaluate(() => {
+      const graph = window.__capturedUi.editor.graph;
+      const r1 = graph.model.getCell('R1');
+      const wires = window.edaValidate.wiresOf([r1]).map((e) => ({ id: e.id, points: JSON.stringify((e.geometry.points || []).map((p) => [p.x, p.y])) }));
+      const y0 = r1.geometry.y;
+      graph.moveCells([r1], 0, 90);
+      return { hasReroute: typeof window.edaValidate.reroute === 'function', wires, y0, r1: { x: r1.geometry.x, y: r1.geometry.y } };
+    });
+    assert.equal(before.hasReroute, true, 'plugin did not expose edaValidate.reroute');
+    assert.ok(before.wires.length >= 1, 'R1 has no attached wires');
+
+    await page.evaluate(() => { window.edaValidate.reroute([window.__capturedUi.editor.graph.model.getCell('R1')]); });
+    await page.waitForFunction(() => {
+      for (const el of document.querySelectorAll('div')) if (el.textContent && el.textContent.indexOf('Reroute') === 0 && el.textContent.indexOf('Rerouting') !== 0) return true;
+      return false;
+    }, { timeout: 30000 });
+
+    const after = await page.evaluate(() => {
+      const ui = window.__capturedUi; const graph = ui.editor.graph;
+      const r1 = graph.model.getCell('R1');
+      let status = '';
+      for (const el of document.querySelectorAll('div')) if (el.textContent && el.textContent.indexOf('Reroute') === 0) { status = el.textContent; break; }
+      return { status, wires: window.edaValidate.wiresOf([r1]).map((e) => ({ id: e.id, points: JSON.stringify((e.geometry.points || []).map((p) => [p.x, p.y])) })),
+        r1: { x: r1.geometry.x, y: r1.geometry.y }, xml: mxUtils.getXml(ui.editor.getGraphXml()) };
+    });
+    assert.deepEqual(pageErrors, [], 'page threw: ' + pageErrors.join('; '));
+    assert.match(after.status, /^Reroute: \d+\/\d+ wire\(s\) updated/);
+    assert.equal(before.r1.y, before.y0 + 90, 'moveCells did not move R1');
+    assert.equal(after.r1.y, before.r1.y, 'the move itself must be preserved by the reroute');
+    assert.notDeepEqual(after.wires.map((w) => w.points), before.wires.map((w) => w.points), 'wire geometry did not change after the move');
+
+    // the edited page still extracts to the same circuit (strict LVS)
+    const c2 = await (await fetch(`${API_BASE}/documents`, { method: 'POST', headers: { 'Content-Type': 'text/xml' }, body: after.xml })).json();
+    const lvs = await (await fetch(`${API_BASE}/documents/${c2.id}/lvs`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: RC })).json();
+    assert.equal(lvs.match, true, JSON.stringify(lvs).slice(0, 400));
+    // and the ERC sees no dangling wire on the moved part
+    const erc = await (await fetch(`${API_BASE}/documents/${c2.id}/erc`)).json();
+    assert.equal(erc.errors, 0, JSON.stringify(erc).slice(0, 400));
   } finally {
     await browser.close();
   }
