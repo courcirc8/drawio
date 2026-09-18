@@ -27,6 +27,7 @@ import * as render from './lib/render.js';
 import * as beauty from './lib/beauty.js';
 import * as preplace from './lib/preplace.js';
 import * as annotate from './lib/annotate.js';
+import * as critic from './lib/critic.js';
 import { rewire } from './lib/rewire.js';
 
 const argPort = process.argv.indexOf('--port');
@@ -480,6 +481,16 @@ app.post('/documents/:id/beauty', wrap(async (req, res) => {
   const { entry, model: m } = pageOf(req);
   const b = req.body || {};
   res.json(await beauty.scoreDocument(entry.doc, m, { reference: b.reference }));
+}));
+
+// Visual critique by a multimodal model (lib/critic.js): renders the page,
+// asks the model for readability defects the geometry judge cannot see,
+// returns findings bound to existing refdes. OPT-IN, never on the optimizer
+// path. Body: {backend?: 'anthropic'|'openai', model?, netlist?}.
+app.post('/documents/:id/critique', wrap(async (req, res) => {
+  const { entry, model: m } = pageOf(req);
+  const b = req.body || {};
+  res.json(await critic.critique(entry.doc, m, { backend: b.backend, modelName: b.model, netlist: b.netlist || null }));
 }));
 
 // ------------------------------------------------------------- export
