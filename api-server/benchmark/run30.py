@@ -2,7 +2,7 @@
 """Cycle benchmark 30 circuits : genere chaque netlist de benchmark/netlists30/
 via l'API (engine=v2 + optimize), puis mesure LVS, check.py (juge independant),
 beauty. Sortie : <outdir>/<name>.{xml,png} + results.json + tableau.
-Usage: python3 benchmark/run30.py <outdir> [--optimize N] [--only a,b,c] [--nets DIR]
+Usage: python3 benchmark/run30.py <outdir> [--optimize N] [--only a,b,c] [--nets DIR] [--engine v2|v4]
 """
 import json, os, subprocess, sys, time, urllib.request
 
@@ -43,6 +43,10 @@ def main():
     global NETS
     if '--nets' in sys.argv:
         NETS = os.path.abspath(sys.argv[sys.argv.index('--nets') + 1])
+    # --engine v2|v4 : placement engine (v4 = macro-blocs, lib/place4.js)
+    engine = 'v2'
+    if '--engine' in sys.argv:
+        engine = sys.argv[sys.argv.index('--engine') + 1]
     os.makedirs(outdir, exist_ok=True)
     names = sorted(f[:-4] for f in os.listdir(NETS) if f.endswith('.cir'))
     if only:
@@ -55,8 +59,8 @@ def main():
         row = {'name': name}
         try:
             doc = req('POST', '/documents', {})['id']
-            imp = req('POST', f'/documents/{doc}/netlist/import?engine=v2&optimize={optimize}',
-                      cir, 'text/plain')
+            q = f'engine={engine}' + (f'&optimize={optimize}' if optimize > 0 else '')
+            imp = req('POST', f'/documents/{doc}/netlist/import?{q}', cir, 'text/plain')
             row['warnings_import'] = imp.get('warnings', [])
             xml = req('GET', f'/documents/{doc}')
             if isinstance(xml, (dict, list)):

@@ -287,6 +287,15 @@ export function connectivity(model) {
   let n = 0;
   const groundIds = new Set(grounds.map((g) => g.cell.id));
   const tapNetOf = new Map(taps.map((t) => [t.cell.id, t.cls.net]));
+  // Net names are case-insensitive for LVS (compare()); make them so here too,
+  // or a tap labelled `Vcc` and a port labelled `VCC` split one supply into
+  // two nets (measured on the v4 macro-block engine: block A draws the rail
+  // as taps, block B as a port). First spelling seen wins.
+  {
+    const canon = new Map();
+    for (const [id, n] of tapNetOf) { const u = String(n).toUpperCase(); if (!canon.has(u)) canon.set(u, n); tapNetOf.set(id, canon.get(u)); }
+    for (const [k, n] of labelOf) { const u = String(n).toUpperCase(); if (!canon.has(u)) canon.set(u, n); labelOf.set(k, canon.get(u)); }
+  }
   // Synthetic names must never collide with a REAL net name (tap/port
   // label or wire label): a reference netlist whose nets are called n1..nK
   // (LTspice conversions, hand-written decks) made strict LVS compare its

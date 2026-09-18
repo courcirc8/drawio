@@ -44,6 +44,8 @@ DRAWIO_BASE=http://127.0.0.1:8775 python3 benchmark/run30.py /tmp/holdout --opti
 | beauty moyen | 74,2 | 60,7 | 49,4 |
 | durée (optimize 2, 43 : optimize 8) | 78 s | — | 248 s |
 
+Avec `--engine auto` (macro-blocs, règle 66) : banc 43 → 43/43 à zéro, 0 erreur, beauty 75,1 ; holdout 111 → 63/111 à zéro, 284 erreurs, beauty 51,9.
+
 Règles en erreur (111) : through 183, 22 105, 22-contact 82, pin-clearance 63,
 wrap-around 60, comp-overlap 33, 30 9, 29 6, dot-foreign 4. Les 46 circuits
 ajoutés par l'extension SPICE (ampli-op, interrupteurs, sources contrôlées)

@@ -126,6 +126,46 @@ feeds the visual comparison.
 - **Speed**: `?optimize=N` is ~4x faster (warm export page, parallel fast
   candidates); the 43-circuit benchmark runs in ~80 s instead of ~7 min.
 
+## Macro-blocks and hierarchical routing — `engine=v4`, `engine=auto`
+
+`lib/place4.js` places by **macro-block**: `lib/motifs.js` partitions the
+netlist into motif instances (quad, latch, cascade, mirror, pair, BJT stage,
+op-amp stage…) plus one *rest* block; every block is placed **and routed**
+in isolation by place2 (all its templates and rules apply inside a block),
+blocks are arranged by signal flow (BFS rank → columns, ≤ 2 blocks per
+column, channels widened by the nets crossing them), the block drawings are
+transplanted and **only the inter-block nets are wired** (minimum spanning
+tree over the closest member pins / place2 ports turned into junction dots)
+and routed — intra-block routes are frozen. Single-block netlists fall back
+to place2.
+
+`engine=auto` runs place2 and place4 (both optimised when `?optimize=N`) and
+keeps the result with fewer independent-checker errors, then the better
+score. Measured 2026-09-18 (`tools/compare-engines.mjs`, no optimizer):
+
+| | v2 errors | v4 errors | auto errors | auto circuits at 0 |
+|---|---|---|---|---|
+| benchmark 43 | 37 | 25 | 13 | 33 (v2: 27) |
+| holdout 131 | 985 | 652 | 632 | 50 (v2: 44) |
+
+With the optimizer (`run30.py --engine auto`, same judge):
+
+| | v2 + optimize | auto + optimize |
+|---|---|---|
+| benchmark 43 (optimize 8) | 40/43 at 0 errors, 3 errors, beauty 74.2, 81 s | **43/43 at 0 errors, 0 errors, beauty 75.1**, 151 s |
+| holdout 111 (optimize 2) | 56/111 at 0, 545 errors, beauty 49.4, 248 s | **63/111 at 0, 284 errors, beauty 51.9**, 474 s |
+
+`auto` never loses on errors by construction (it keeps v2 when v2 is better);
+the time doubles because both engines are optimised.
+
+Known limits of v4 today: the composition is electrically exact and passes
+the geometry judge better than place2 on multi-stage circuits, but reads as
+*blocks joined by long wires* — the rest block is one lump far from the
+stages it feeds, inter-block wires take the free space libavoid finds rather
+than reserved channels. Next: split the rest block into satellites attached
+next to their block, channel-reserve inter-block nets, let the optimizer
+permute block order.
+
 ## Tests
 
 ```bash

@@ -316,7 +316,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     // or 'v1'/'v2' here reproduces exactly today's behaviour — only
     // engine=v3 changes which placer the hill-climb regenerates candidates
     // with.
-    const { best, history } = await optimize.optimizeNetlist(parsed,
+    const { best, history, engine: usedEngine } = await optimize.optimizeNetlist(parsed,
       { iterations: iters, reference: req.query.reference || null, engine, preseed: seed, preseedScale: seedScale });
     entry.doc = best.doc;
     // ANNOTATION LAYER — applied AFTER optimize/route has already picked and
@@ -331,7 +331,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     }
     const lvsReport = lvs.compare(netlist.extractNetlist(model.getPage(entry.doc)), parsed);
     if (!lvsReport.match) throw model.httpError(422, 'final optimized document failed strict LVS');
-    return res.status(201).json({ engine: (engine === 'v3' ? 'place3+optimize' : 'place2+optimize'), score: best.score,
+    return res.status(201).json({ engine: (usedEngine === 'v3' ? 'place3+optimize' : usedEngine === 'v4' ? 'place4+optimize' : 'place2+optimize') + (engine === 'auto' ? ' (auto)' : ''), score: best.score,
       metrics: best.metrics, params: best.params, history, lvs: lvsReport,
       components: best.placed.components, wires: best.placed.wires,
       ...(annReport ? { annotations: annReport } : {}) });
@@ -346,10 +346,38 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     placed = await importNetlistElk(m, parsed);
   } else if (engine === 'v3') {
     placed = place3.importNetlist3(m, parsed, seed ? { seed, ...(seedScale ? { seedScale } : {}) } : {});
+  } else if (engine === 'auto') {
+    // both engines, judged by the JS checker; fewer errors wins (see optimize.js)
+    const { importNetlist4 } = await import('./lib/place4.js');
+    const { checkDocument } = await import('./lib/check.js');
+    const trial = async (eng) => {
+      const d = model.newDocument(); const mm = model.getPage(d);
+      let p;
+      if (eng === 'v4') p = await importNetlist4(mm, parsed);
+      else { p = place2.importNetlist2(mm, parsed); await route.routePage(mm, p.wires, {}); model.normalizeOrigin(mm); }
+      const errs = checkDocument(mm).violations.filter((v) => v.severity === 'error' && v.rule !== '30').length;
+      return { eng, d, p, errs };
+    };
+    const [t2, t4] = await Promise.all([trial('v2'), trial('v4')]);
+    const win = t4.errs < t2.errs ? t4 : t2;
+    entry.doc = win.d;
+    placed = { ...win.p, engine: win.eng + ' (auto)', auto: { v2: t2.errs, v4: t4.errs } };
+    const extracted = netlist.extractNetlist(model.getPage(entry.doc));
+    const report = lvs.compare(extracted, parsed);
+    const decision = lvs.gate(report, { force });
+    if (!decision.ok) return res.status(decision.status).json({ error: decision.error, report });
+    return res.status(decision.status).json({ ...placed, routed: placed.wires.length, lvs: report });
+  } else if (engine === 'v4') {
+    // macro-blocks + hierarchical routing (lib/place4.js): blocks placed and
+    // routed by place2 in isolation, composed by signal flow, inter-block
+    // nets routed last. Routes its own wires; routePage below re-routes
+    // nothing (empty list) but still runs the page-wide cleanup passes.
+    const { importNetlist4 } = await import('./lib/place4.js');
+    placed = await importNetlist4(m, parsed);
   } else {
     placed = engine === 'v2' ? place2.importNetlist2(m, parsed) : place.importNetlist(m, parsed);
   }
-  const routed = await route.routePage(m, placed.wires, {});
+  const routed = engine === 'v4' ? { ids: placed.wires } : await route.routePage(m, placed.wires, {});
   // After routing, not before: edge waypoints are absolute too (see
   // model.normalizeOrigin -- negative coordinates were being clipped off the
   // exported PNG without any error).

@@ -847,3 +847,40 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
       holdout. Prochaine génération : motif → macro-bloc → placement entre
       blocs (aucun outil open source ne le fait, cf. veille du 2026-09-18).
 
+66. **Macro-blocs et routage hiérarchique — `engine=v4`, `engine=auto`
+    (2026-09-18)** : `lib/place4.js` découpe la netlist par motifs
+    (`lib/motifs.js`) + un bloc « reste », place ET route chaque bloc
+    isolément par place2 (tous ses gabarits s'appliquent dans le bloc),
+    compose les blocs par flux de signal (rang BFS → colonnes, ≤ 2 blocs par
+    colonne, canaux élargis par les nets qui les traversent), transplante
+    les dessins (ids préfixés par bloc) et ne câble QUE les nets inter-blocs
+    (arbre couvrant sur les pins les plus proches ; un port place2 seul dans
+    son bloc devient un point de jonction ; un net qui a un port nommé dans
+    CHAQUE bloc est joint par le nom, sans fil — la convention des étiquettes
+    hors-page). Les routes intra-bloc sont gelées.
+    - Mesuré sans optimiseur (`tools/compare-engines.mjs`) : banc 43, v2 37
+      erreurs → v4 25 (multi-blocs 34 → 22) ; holdout 131, v2 985 → v4 652
+      (multi-blocs 540 → 207, 23 mieux / 8 pire / 10 égal). v4 perd encore sur
+      quelques circuits que les gabarits de place2 couvrent en entier, d'où
+      `engine=auto` : v2 ET v4 optimisés, le résultat final à moins d'erreurs
+      (puis meilleur score) gagne. Choisir sur les GRAINES a été mesuré faux
+      (banc : 3 → 8 erreurs, l'optimiseur aurait réparé v2).
+    - **Avec optimiseur (`--engine auto`)** : banc 43 → **43/43 à zéro
+      erreur, 0 erreur, beauty 75,1** (v2 : 40/43, 3, 74,2), 151 s ; holdout
+      111 → **63/111 à zéro, 284 erreurs, beauty 51,9** (v2 : 56/111, 545,
+      49,4), 474 s. Les trois erreurs résiduelles du banc (beta 30, cherry
+      wrap-around, wilson 28) disparaissent parce que v4 les contourne, pas
+      parce qu'elles sont réparées dans place2.
+    - Pièges trouvés : cellules de calque 0/1 dupliquées à la transplantation
+      (rendu vide) ; rail nommé `n4` par un deck LTspice (pas un rail pour
+      place2 → net de frontière, câblé) ; `Vcc` vs `VCC` entre tap et port
+      (noms de nets rendus insensibles à la casse dans l'extraction) ; port
+      de biais local converti en point → net VB coupé (les ports multiples
+      d'un même bloc restent des ports).
+    - Limites : la composition est électriquement exacte et passe mieux le
+      juge géométrique, mais se lit comme « des blocs reliés par de longs
+      fils » — le bloc reste est un seul paquet loin des étages qu'il
+      alimente ; pas de canaux réservés. Suite : éclater le reste en
+      satellites accrochés à leur bloc, réserver des canaux, laisser
+      l'optimiseur permuter l'ordre des blocs.
+
