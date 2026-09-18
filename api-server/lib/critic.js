@@ -141,8 +141,15 @@ async function openaiBackend({ png, prompt, model }) {
       res.on('end', () => (res.statusCode >= 200 && res.statusCode < 300)
         ? resolve(data) : reject(new Error(`critic backend ${base} -> HTTP ${res.statusCode}: ${data.slice(0, 200)}`)));
     });
-    req.on('timeout', () => { req.destroy(new Error(`critic backend timeout after ${timeoutMs} ms`)); });
-    req.on('error', reject);
+    // `timeout` above is an IDLE timeout; a local model that is queued behind
+    // another job on a saturated GPU keeps the socket open without a byte
+    // for longer than that (measured: >80 min on this host, GPU 99 % busy
+    // with another model). Enforce CRITIC_TIMEOUT_MS as a WALL-CLOCK bound too.
+    const wall = setTimeout(() => { req.destroy(new Error(`critic backend wall-clock timeout after ${timeoutMs} ms`)); }, timeoutMs);
+    req.on('timeout', () => { req.destroy(new Error(`critic backend idle timeout after ${timeoutMs} ms`)); });
+    req.on('error', (e) => { clearTimeout(wall); reject(e); });
+    req.on('response', () => { /* keep wall timer: the body may still take long */ });
+    req.on('close', () => clearTimeout(wall));
     req.end(body);
   });
   const j = JSON.parse(text);
