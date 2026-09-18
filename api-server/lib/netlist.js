@@ -287,6 +287,14 @@ export function connectivity(model) {
   let n = 0;
   const groundIds = new Set(grounds.map((g) => g.cell.id));
   const tapNetOf = new Map(taps.map((t) => [t.cell.id, t.cls.net]));
+  // Synthetic names must never collide with a REAL net name (tap/port
+  // label or wire label): a reference netlist whose nets are called n1..nK
+  // (LTspice conversions, hand-written decks) made strict LVS compare its
+  // real `n3` with our synthetic `n3` on another net (holdout
+  // Boost-converter-1: 500 "named_net_mismatches"). Case-insensitive, as
+  // the comparison is.
+  const reserved = new Set([...tapNetOf.values(), ...labelOf.values()].map((x) => String(x).toUpperCase()));
+  const fresh = () => { let nm; do { nm = 'n' + (++n); } while (reserved.has(nm.toUpperCase())); return nm; };
   for (const [root, keys] of groups) {
     let name = null;
     for (const k of keys) if (groundIds.has(k.split(':')[0])) name = '0';
@@ -295,7 +303,7 @@ export function connectivity(model) {
       if (tn != null) { name = tn; break; }
     }
     if (name == null) for (const [k, lbl] of labelOf) if (uf.find(k) === root) { name = lbl; break; }
-    if (name == null) name = 'n' + (++n);
+    if (name == null) name = fresh();
     for (const k of keys) {
       if (!groundIds.has(k.split(':')[0])) {
         netOf.set(k, name);

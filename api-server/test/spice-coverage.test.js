@@ -159,6 +159,22 @@ test('parseSpice: .param/.step stay warnings (strict LVS must keep rejecting the
   assert.deepEqual(p.directives, ['.param R=1k', '.tran 0 1m']);
 });
 
+test('extraction: synthetic net names never collide with real n1..nK net names (holdout Boost-converter-1)', async () => {
+  // n3/n4 are REAL nets of the reference (switch control, port-labelled in
+  // the drawing); the extractor's own synthetic numbering must skip them
+  const { report, extracted } = await roundTrip(`Vd n1 0 100
+D1 n2 Vo D
+L1 n1 n2 10m
+C1 Vo 0 10u
+R1 Vo 0 100
+S1 0 n2 n3 n4 MOSFET
+V2 n3 n4 PULSE(0 100 0 1n 1n 5u 10u)
+.end`, 'v2');
+  assert.equal(report.match, true, JSON.stringify(report).slice(0, 500));
+  const names = new Set(extracted.components.flatMap((c) => c.fullNodes).map((x) => x.toUpperCase()));
+  assert.ok(names.has('N3') && names.has('N4'));
+});
+
 test('parseSpice: pin-count mismatch on an X instance is a warning, not a crash', () => {
   const p = parseSpice(`.subckt A p q
 R1 p q 1

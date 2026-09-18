@@ -28,6 +28,7 @@ import * as beauty from './lib/beauty.js';
 import * as preplace from './lib/preplace.js';
 import * as annotate from './lib/annotate.js';
 import * as critic from './lib/critic.js';
+import * as exportAsc from './lib/export-asc.js';
 import { rewire } from './lib/rewire.js';
 
 const argPort = process.argv.indexOf('--port');
@@ -498,7 +499,18 @@ app.get('/documents/:id/export', wrap(async (req, res) => {
   const { entry, model: m } = pageOf(req);
   const format = req.query.format || 'png';
   if (format === 'xml') return res.type('application/xml').send(model.serialize(entry.doc));
-  if (!['png', 'svg', 'pdf'].includes(format)) throw model.httpError(400, 'format must be png|svg|pdf|xml');
+  if (format === 'asc') {
+    // LTspice schematic (lib/export-asc.js): symbols at the drawing's
+    // positions, connectivity by named FLAGs, round-trip LVS verified —
+    // a failed round-trip is a 409, never a silently different circuit.
+    const r = exportAsc.exportAsc(m, { title: req.query.title || null, scale: req.query.scale != null ? parseFloat(req.query.scale) : 0.8 });
+    if (!r.verified && req.query.force !== '1') {
+      return res.status(409).json({ error: 'asc round-trip LVS failed', report: r.report, skipped: r.skipped });
+    }
+    res.set('X-Asc-Skipped', String(r.skipped.length));
+    return res.type('text/plain').send(r.asc);
+  }
+  if (!['png', 'svg', 'pdf'].includes(format)) throw model.httpError(400, 'format must be png|svg|pdf|xml|asc');
   let region = null;
   if (req.query.region != null) {
     const [x, y, w, h] = String(req.query.region).split(',').map(Number);
