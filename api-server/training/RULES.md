@@ -804,3 +804,46 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
     Restent 3 : beta 30 (té à 4 px du dot), cherry wrap (R4, placement
     forcé — le feedback en lane l'a presque résorbé), wilson 28
     (side-diode instable).
+
+65. **Session « généralisation, couverture, export » (2026-09-18, banc 43
+    inchangé : 43/43 LVS, 3 erreurs, beauty 74,2 ; holdout LTspice ouvert)** :
+    - **Mesurer hors du banc avant d'ajouter des règles** : 131 circuits
+      LTspice publics (Circuits-LTSpice) convertis par `tools/asc2spice.mjs`
+      (connectivité reconstruite comme le vérificateur de Weave), jamais
+      utilisés pour dériver une règle. Résultat honnête, optimize 2 :
+      65 circuits dessinables → 64/65 générés, 39/65 à zéro erreur, 219
+      erreurs, beauty 60,7 ; après extension de couverture, 111 dessinables
+      → 110/111, 55 à zéro, 545 erreurs, beauty 49,1. Le générateur est bon
+      sur ce qui ressemble au banc (miroirs, suiveurs, RC, redresseurs) et
+      s'effondre sur les **étages BJT discrets à polarisation résistive**
+      (Differential-pair 46 err) et les étages à ampli-op : aucun gabarit
+      ne les revendique (`lib/motifs.js` les nomme, recette « none »).
+    - **Trois défauts de généralisation trouvés au premier contact** :
+      (a) le tap d'alim portait le libellé `VDD` en dur → un net `Vcc`
+      échouait au LVS strict (500 sur Current-mirrors) ; (b) les noms de
+      nets synthétiques `n1..nK` de l'extracteur entraient en collision
+      avec des nets réels du même nom (Boost-converter-1) ; (c) les
+      passifs sans valeur (valides en LTspice) étaient des erreurs
+      d'extraction. Leçon : un banc de 43 circuits écrits par nous ne
+      contient ni supply nommé `Vcc`, ni net nommé `n3`, ni R sans valeur.
+    - **Couverture SPICE** : `.subckt`/`X` aplatis, `E F B S J`, ampli-op
+      `X` avec alimentations cachées (l'idéal 3 pins complété par deux nets
+      cachés privés), `K` enregistré, directives d'analyse silencieuses,
+      `.param/.step` toujours refusés par le LVS strict (contrat
+      RENDER-LVS).
+    - **Vitesse ×4 de `?optimize`** : page d'export Chrome réutilisée
+      (goto 1 000 ms → render 90 ms), candidats rapides en parallèle.
+      Mesuré et REFUSÉ : pool de workers de routage (aucun gain, un solve
+      fait 19 ms) et rendus Chrome parallèles (149 s contre 5 s en série
+      sur Chromium snap). Ne pas « optimiser » ceci sans re-mesurer.
+    - **Juge visuel** (`/critique`) : modèle multimodal sur le RENDU,
+      réponses validées contre les refdes ; juge optionnel, jamais
+      générateur, jamais dans la boucle de l'optimiseur.
+    - **Export LTspice `.asc`** vérifié par aller-retour LVS (43/43 + la
+      netlist de couverture) ; connectivité par FLAG nommés, fils non
+      recopiés (ils finiraient hors des pins des symboles LTspice).
+    - **Registre de motifs** : 17 motifs nommés avec leurs règles et leur
+      recette ; couverture des actifs 0,75 sur le banc, 0,62 sur le
+      holdout. Prochaine génération : motif → macro-bloc → placement entre
+      blocs (aucun outil open source ne le fait, cf. veille du 2026-09-18).
+

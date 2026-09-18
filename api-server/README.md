@@ -29,6 +29,9 @@ On top, an EDA layer that drawio itself does not have:
 | LVS (schematic vs reference netlist, structural net matching) | `POST /documents/:id/lvs` |
 | ERC (floating pins, single-terminal nets, anchor issues) | `GET /documents/:id/erc` |
 | BOM (JSON/CSV) | `GET /documents/:id/bom` |
+| Visual critique by a multimodal model (opt-in judge, never a generator) | `POST /documents/:id/critique` |
+| Motif registry: recognised analogue motifs, macro-blocks, uncovered parts | `POST /motifs` |
+| LTspice `.asc` export, round-trip LVS verified (409 on mismatch) | `GET /documents/:id/export?format=asc` |
 
 ## Run
 
@@ -55,10 +58,14 @@ curl -o rc.png ':8770/documents/doc1/export?format=png&scale=2'
 curl -X POST :8770/documents/doc1/lvs -H 'Content-Type: text/plain' --data-binary @rc.cir
 ```
 
-SPICE support: `R C L D V I Q M` elements, `+` continuations, `*` comments,
-`.directives` skipped with a warning, `0`/`GND`/`GROUND` = ground. BJT pins
-map NE=collector / W=base / SE=emitter; MOSFET NE=drain / W=gate / SE=source
-(bulk node ignored).
+SPICE support: `R C L D V I Q M J E F G B S` elements, `X` instances of
+`.subckt` blocks (flattened: `X1.M1`, internal nets `X1.n`) or of an undefined
+op-amp-like subckt (drawn as an op-amp, supplies as hidden terminals), `K`
+couplings (recorded), `+` continuations, `*` comments; analysis/model
+directives are kept silently, value-changing ones (`.param`, `.step`, `.func`,
+`.ic`) stay warnings so strict LVS keeps rejecting them. `0`/`GND`/`GROUND` =
+ground. BJT pins map NE=collector / W=base / SE=emitter; MOSFET NE=drain /
+W=gate / SE=source (bulk persisted as a hidden terminal).
 
 ## Layout of a generated schematic
 
@@ -99,6 +106,25 @@ naive v1 engine, place2 and place2+optimize on `benchmark/netlists/`.
 `tools/extract-figures.py` (PyMuPDF) crops the figures of a PDF library by
 caption anchoring — used to build the 3900+-figure reference corpus that
 feeds the visual comparison.
+
+## Generalisation, coverage, export — session of 2026-09-18
+
+- **Held-out corpus**: `benchmark/holdout-ltspice/` — 131 public LTspice circuits
+  (mick001/Circuits-LTSpice) converted by `tools/asc2spice.mjs`, never used to
+  derive a rule. `benchmark/run30.py --nets benchmark/holdout-ltspice` measures
+  them with the same judge. See its README for the baseline and the gap.
+- **Motif coverage**: `node tools/motif-coverage.mjs <dir>` lists which motifs
+  (`lib/motifs.js`) a corpus contains and which actives no template covers.
+- **Visual critique**: `node tools/critique.mjs schema.xml --netlist c.cir`
+  (`ANTHROPIC_API_KEY` or `CRITIC_URL`/`CRITIC_MODEL` for a local vision model).
+- **LTspice export**: `node tools/export-asc.mjs schema.xml out.asc` (exit 2 if
+  the round-trip LVS fails).
+- **YOLO dataset for dgx-osr**: `node tools/gen-yolo-dataset.mjs <dir> <out>
+  --debug` — clean vector renders with exact boxes (classes of dgx-osr).
+- **Editor plugin**: « Reroute wires (server router) » and an opt-in
+  auto-reroute of the wires of moved components (`plugin/eda-validate.js`).
+- **Speed**: `?optimize=N` is ~4x faster (warm export page, parallel fast
+  candidates); the 43-circuit benchmark runs in ~80 s instead of ~7 min.
 
 ## Tests
 
