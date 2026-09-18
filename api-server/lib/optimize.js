@@ -13,7 +13,7 @@ import { compare } from './lvs.js';
 import { scoreDocument } from './beauty.js';
 import { compactPage, fastScore } from './compact.js';
 import { checkDocument } from './check.js';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -24,15 +24,28 @@ let chkSeq = 0;
 /** Erreurs du checker Python indépendant (tools/check.py) sur un document.
  * C'est LE juge final : un candidat plus joli mais fautif ne gagne jamais. */
 function checkErrors(doc) {
-  try {
-    const tmp = path.join(os.tmpdir(), `optchk-${process.pid}-${++chkSeq}.xml`);
-    fs.writeFileSync(tmp, serialize(doc));
-    const r = spawnSync('python3', [path.join(HERE2, '../tools/check.py'), tmp, '--json'],
-      { encoding: 'utf8', timeout: 15000 });
-    fs.unlinkSync(tmp);
-    const j = JSON.parse(r.stdout || '{}');
-    return Number.isInteger(j.errors) ? j.errors : 99;
-  } catch { return 99; }
+  // async (2026-09-18) : spawnSync bloquait la boucle d'événements pendant
+  // que les autres finalistes attendaient leur rendu Chrome ; en parallèle
+  // (Promise.all ci-dessous) le juge tourne pendant les rendus.
+  return new Promise((resolve) => {
+    let tmp = null;
+    try {
+      tmp = path.join(os.tmpdir(), `optchk-${process.pid}-${++chkSeq}.xml`);
+      fs.writeFileSync(tmp, serialize(doc));
+      const r = spawn('python3', [path.join(HERE2, '../tools/check.py'), tmp, '--json']);
+      let so = '';
+      r.stdout.on('data', (d) => { so += d; });
+      r.stderr.on('data', () => {});
+      const timer = setTimeout(() => { r.kill(); }, 15000);
+      r.on('close', () => {
+        clearTimeout(timer);
+        try { fs.unlinkSync(tmp); } catch { /* déjà supprimé */ }
+        try { const j = JSON.parse(so || '{}'); resolve(Number.isInteger(j.errors) ? j.errors : 99); }
+        catch { resolve(99); }
+      });
+      r.on('error', () => { clearTimeout(timer); resolve(99); });
+    } catch { if (tmp) { try { fs.unlinkSync(tmp); } catch { /* ignore */ } } resolve(99); }
+  });
 }
 
 function mulberry(seed) {
@@ -160,12 +173,20 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   history.push({ iter: 'g0', score: seed0.score, accepted: true });
   for (let g = 1; g <= generations; g++) {
     const cands = [...beam];
+    // PARALLÈLE (2026-09-18) : les paramètres de TOUS les candidats sont tirés
+    // d'abord, dans l'ordre historique (le générateur `rnd` n'est consommé
+    // que par perturb, la séquence est donc identique à l'ancienne boucle
+    // séquentielle), puis évalués ensemble : routage réparti sur le pool de
+    // (route.js) et scores python se recouvrent. L'ordre de `cands` est
+    // conservé, donc le tri et le faisceau sont byte-identiques au
+    // séquentiel — seul le temps change (mesuré : 8 évaluations rapides
+    // 376 ms → 111 ms ; le gros du temps reste les rendus des finalistes).
+    const paramSets = [];
     for (const parent of beam) {
-      for (let k = 0; k < Math.ceil(8 / beam.length); k++) {
-        const c = await evaluate(parsed, perturb(rnd, parent.params, parent.placed), reference, true, engine);
-        if (c.ok) cands.push(c);
-      }
+      for (let k = 0; k < Math.ceil(8 / beam.length); k++) paramSets.push(perturb(rnd, parent.params, parent.placed));
     }
+    const evals = await Promise.all(paramSets.map((ps) => evaluate(parsed, ps, reference, true, engine)));
+    for (const c of evals) if (c.ok) cands.push(c);
     cands.sort((a, b) => b.score - a.score);
     beam = cands.slice(0, beamW);
     history.push({ iter: 'g' + g, score: beam[0].score, beam: beam.map((b) => b.score) });
@@ -174,11 +195,18 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   let best = null;
   const finReasons = [];
   const finalists = [seed0, ...beam.slice(0, 3).filter((b) => b !== seed0)];
+  // Les finalistes sont rendus EN SÉQUENCE : mesuré le 2026-09-18, quatre
+  // pages Chrome (snap Chromium) en parallèle prennent 149 s contre 5 s en
+  // série — ne pas « optimiser » ceci sans re-mesurer sur l'hôte cible. Le
+  // juge python, lui, est asynchrone et ne bloque plus la boucle.
+  const fulls = [];
   for (const fin of finalists) {
     const full = await evaluate(parsed, fin.params, reference, false, engine);
+    if (full.ok) full.checkErrors = await checkErrors(full.doc);
+    fulls.push(full);
+  }
+  for (const full of fulls) {
     if (!full.ok) { finReasons.push(full.reason); continue; }
-    // gate du checker indépendant : moins d'erreurs d'abord, score ensuite
-    full.checkErrors = checkErrors(full.doc);
     if (best == null || full.checkErrors < best.checkErrors ||
         (full.checkErrors === best.checkErrors && rankValue(full) > rankValue(best))) best = full;
   }
@@ -193,7 +221,7 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
     normalizeOrigin(m); // compaction moves cells; it can push them negative again
     const lvs = compare(extractNetlist(m), parsed);
     const b = lvs.match ? await scoreDocument(best.doc, m, { reference }) : null;
-    const cAfter = b != null ? checkErrors(best.doc) : 99;
+    const cAfter = b != null ? await checkErrors(best.doc) : 99;
     if (b != null && rankValue(b) >= before && cAfter <= (best.checkErrors ?? 99)) {
       best = { ...best, score: b.score, score_raw: b.score_raw, metrics: b.metrics, checkErrors: cAfter };
       history.push({ iter: 'compact', score: b.score, accepted: true });

@@ -67,6 +67,7 @@ function launch() {
 }
 
 export async function closeBrowser() {
+  warmPage = null;
   if (browserPromise != null) {
     const b = await browserPromise;
     browserPromise = null;
@@ -88,12 +89,47 @@ function contentOrigin(model) {
  * Export a document. format: png|pdf|svg. Returns {buffer, contentType}.
  * region: {x,y,w,h} in diagram coordinates (png only).
  */
-export async function exportDocument(doc, model, { format = 'png', scale = 2, border = 10, bg = '#ffffff', pageId, region, timeoutMs = 30000 } = {}) {
+// WARM PAGE (2026-09-18). Measured on this host: `page.goto(export3.html)`
+// costs ~1000 ms (the whole drawio bundle loads) while `render(data)` +
+// screenshot cost ~90 ms. The optimizer renders 4 finalists per circuit, so
+// the page load alone was ~4 s of every ~7.5 s `?optimize=N`. One page is
+// kept loaded and REUSED: `document.body.innerHTML = ''` between renders
+// removes everything render() appended (graph container, #LoadingComplete
+// marker); the PNG produced this way was verified byte-identical to a
+// fresh-page render (same clip, same 61 744 bytes). Renders are serialised
+// through `pageLock` (they already were in practice, and four concurrent
+// pages measured 30x SLOWER on snap Chromium); any error discards the page
+// so the next call starts clean. `RENDER_FRESH_PAGE=1` restores the old
+// new-page-per-render behaviour for A/B checks.
+let warmPage = null;
+let pageLock = Promise.resolve();
+
+async function acquirePage(timeoutMs) {
   const browser = await launch();
-  const page = await browser.newPage();
-  try {
+  if (process.env.RENDER_FRESH_PAGE === '1' || warmPage == null || warmPage.isClosed()) {
+    const page = await browser.newPage();
     await page.setViewport({ width: 1200, height: 800, deviceScaleFactor: 1 });
     await page.goto(EXPORT_PAGE, { waitUntil: 'networkidle0', timeout: timeoutMs });
+    if (process.env.RENDER_FRESH_PAGE === '1') return { page, fresh: true };
+    warmPage = page;
+    return { page, fresh: false };
+  }
+  await warmPage.setViewport({ width: 1200, height: 800, deviceScaleFactor: 1 });
+  await warmPage.evaluate(() => { document.body.innerHTML = ''; });
+  return { page: warmPage, fresh: false };
+}
+
+export async function exportDocument(doc, model, opts = {}) {
+  // serialise: one render at a time on the shared page
+  const run = pageLock.then(() => exportDocumentImpl(doc, model, opts));
+  pageLock = run.catch(() => {});
+  return run;
+}
+
+async function exportDocumentImpl(doc, model, { format = 'png', scale = 2, border = 10, bg = '#ffffff', pageId, region, timeoutMs = 30000 } = {}) {
+  const { page, fresh } = await acquirePage(timeoutMs);
+  let failed = false;
+  try {
     const data = {
       xml: serialize(doc),
       format: format === 'svg' ? 'png' : format, // svg: rendered DOM is captured below
@@ -166,7 +202,13 @@ export async function exportDocument(doc, model, { format = 'png', scale = 2, bo
     }
     const buffer = await page.screenshot({ type: 'png', clip });
     return { buffer: Buffer.from(buffer), contentType: 'image/png' };
+  } catch (e) {
+    failed = true;
+    throw e;
   } finally {
-    await page.close().catch(() => {});
+    if (fresh || failed) {
+      if (page === warmPage) warmPage = null;
+      await page.close().catch(() => {});
+    }
   }
 }
