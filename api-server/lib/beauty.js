@@ -33,11 +33,11 @@ function structuralMetrics(model) {
   const m = {};
   // chaînes série : net partagé par exactement 2 terminaux « haut/bas »
   const ends = (c) => {
-    if (c.prefix === 'M' || c.prefix === 'Q') {
+    if (c.prefix === 'M' || c.prefix === 'Q' || c.prefix === 'J') {
       const p = isPmosLike({ prefix: c.prefix, model: c.value });
       return { top: p ? c.nodes[2] : c.nodes[0], bot: p ? c.nodes[0] : c.nodes[2] };
     }
-    if ('RCLVID'.includes(c.prefix)) return { top: c.nodes[0], bot: c.nodes[1] };
+    if ('RCLVIDSFB'.includes(c.prefix)) return { top: c.nodes[0], bot: c.nodes[1] };
     return null;
   };
   const netDeg = new Map();

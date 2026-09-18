@@ -10,8 +10,8 @@ R3 n8 n7 1k
 D1 Vcc n8 1N4148
 R4 n4 n3 1k
 R5 n2 n9 100
-X_U3 n1 n4 Vcc Vee n9 Comparators\LT1720
+X_U3 n1 n4 Vcc Vee n9 lt1720
 V3 Vee 0 -12
-X_U1 n4 Vrif Vcc Vee n6 Comparators\LT1720
+X_U1 n4 Vrif Vcc Vee n6 lt1720
 V4 Vrif 0 1
 .end

@@ -2,13 +2,13 @@
 V1 Vsignal 0 SINE(0 1 10k 0.5m)
 V2 Vbias 0 -2
 J1 n1 n2 0 2N3819
-X_U1 n1 n3 OUT Opamps\opamp
+X_U1 n1 n3 OUT opamp
 C1 n2 Vsignal 1u
 R1 n2 Vbias 10k
 R2 OUT n1 1k
 V3 n3 0 SINE(0 100m 200k)
 V4 n4 0 SINE(0 500m 2k)
-X_U2 n5 n6 Vcc Vee Audio Opamps\LT1007
+X_U2 n5 n6 Vcc Vee Audio lt1007
 R3 n6 0 10k
 R4 Audio n6 20k
 R5 n5 n4 10k

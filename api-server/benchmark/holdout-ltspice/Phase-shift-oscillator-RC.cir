@@ -6,7 +6,7 @@ C1 n4 n1 1u
 C2 n1 n2 1u
 C3 n2 n3 1u
 R5 n5 n3 1k
-X_U1 0 n5 A B n4 Opamps\LT1002A
+X_U1 0 n5 A B n4 lt1002a
 R6 n4 n5 32k
 V1 A 0 15
 V2 B 0 -15

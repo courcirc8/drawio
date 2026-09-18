@@ -5,10 +5,11 @@
  * placement (place2) et exposé via POST /structures pour inspection.
  */
 
-function isMos(c) { return c.prefix === 'M' || c.prefix === 'Q'; }
+function isMos(c) { return c.prefix === 'M' || c.prefix === 'Q' || c.prefix === 'J'; }
 export function isPmosLike(c) {
   return (c.prefix === 'M' && /pmos|pfet|pch/i.test(c.model || '')) ||
-         (c.prefix === 'Q' && /pnp/i.test(c.model || ''));
+         (c.prefix === 'Q' && /pnp/i.test(c.model || '')) ||
+         (c.prefix === 'J' && /pjf|pch|p-channel/i.test(c.model || ''));
 }
 // nodes: M/Q = [D, G, S]
 const D = (c) => c.nodes[0], G = (c) => c.nodes[1], S = (c) => c.nodes[2];

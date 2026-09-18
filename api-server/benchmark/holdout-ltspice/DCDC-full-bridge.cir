@@ -12,7 +12,7 @@ R1 n1 n7 10
 L1 n7 n5 100m
 V_t n8 0 PULSE(-10 10 0 0.03124m 0.03124m 0.00002m 0.0625m)
 vc n9 0 8
-X_U2 n9 n8 n10 n11 n12 Comparators\LT1721
+X_U2 n9 n8 n10 n11 n12 lt1721
 Vcc n10 0 10
 Vee n11 0 -10
 .end

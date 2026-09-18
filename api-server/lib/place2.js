@@ -32,22 +32,24 @@ const DEF = { colW: 190, rowH: 180, x0: 140, y0: 130, order: [], flip: {} };
 
 function isPmos(c) {
   return (c.prefix === 'M' && /pmos|pfet|pch/i.test(c.model || '')) ||
-         (c.prefix === 'Q' && /pnp/i.test(c.model || ''));
+         (c.prefix === 'Q' && /pnp/i.test(c.model || '')) ||
+         (c.prefix === 'J' && /pjf|pch|p-channel/i.test(c.model || ''));
 }
 
 /** terminaux haut/bas dans le sens de conduction + shape/pins par composant */
 export function condInfo(c) {
   const map = SPICE_MAP[c.prefix];
-  if (c.prefix === 'M' || c.prefix === 'Q') {
+  if (c.prefix === 'M' || c.prefix === 'Q' || c.prefix === 'J') {
     const pmos = isPmos(c);
     const variants = map.variants || {};
-    const shapeKey = pmos ? (variants.PMOS || variants.PNP || map.shape) : map.shape;
+    const shapeKey = pmos ? (variants.PMOS || variants.PNP || variants.PJF || map.shape) : map.shape;
     const po = PIN_ORDER_OVERRIDES[shapeKey] || map.pinOrder;
     // nodes = [D,G,S] ; conduction PMOS: S(top)->D(bas) ; NMOS: D(top)->S(bas)
     return { shapeKey, po, top: pmos ? c.nodes[2] : c.nodes[0], bot: pmos ? c.nodes[0] : c.nodes[2],
       topPin: po[pmos ? 2 : 0], botPin: po[pmos ? 0 : 2], gate: c.nodes[1], gatePin: po[1] };
   }
-  if ('RCLVID'.includes(c.prefix)) {
+  // S/F/B (2026-09-18) : dipôles au sens de la pile de conduction, comme V/I
+  if ('RCLVIDSFB'.includes(c.prefix)) {
     const shapeKey = map.shape;
     return { shapeKey, po: map.pinOrder, top: c.nodes[0], bot: c.nodes[1],
       topPin: map.pinOrder[0], botPin: map.pinOrder[1] };

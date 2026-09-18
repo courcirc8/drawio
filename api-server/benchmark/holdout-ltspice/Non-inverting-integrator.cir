@@ -4,7 +4,7 @@ C2 out n2 10u
 R1 n2 0 10k
 R2 n1 n3 10k
 V1 n3 0 PULSE(1 -1 0 1n 1n 100m 200m)
-X_U2 n1 n2 Vcc Vee out Opamps\LT1007
+X_U2 n1 n2 Vcc Vee out lt1007
 V2 Vcc 0 10
 V3 Vee 0 -10
 .end

@@ -5,8 +5,8 @@ R2 n1 n2 1k
 V1 n2 0 PULSE(0 1 0 1n 1n 0.2s 0.4s)
 V2 Vcc 0 30
 V3 Vee 0 -30
-X_U2 0 n1 Vcc Vee OUT1 Opamps\LT1007
-X_U4 0 n3 Vcc Vee OUT2 Opamps\LT1007
+X_U2 0 n1 Vcc Vee OUT1 lt1007
+X_U4 0 n3 Vcc Vee OUT2 lt1007
 R3 n4 OUT1 1k
 C2 n3 n4 1u
 R4 OUT2 n3 30k

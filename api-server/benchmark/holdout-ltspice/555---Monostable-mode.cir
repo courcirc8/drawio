@@ -1,13 +1,13 @@
 * 555---Monostable-mode — converted from LTspice .asc by tools/asc2spice.mjs
-X_A1 n1 n2 n3 n4 n5 Digital\srflop
+X_A1 n1 n2 n3 n4 n5 srflop
 R1 Vcc n6 5k
 R2 n6 n7 5k
 R3 n7 0 5k
 R4 Vcc n8 10k
 R5 Vcc n9 10k
 C1 n9 0 100n
-X_U1 n9 n6 Vcc 0 n2 Comparators\LT1018
-X_U2 n7 n8 Vcc 0 n1 Comparators\LT1018
+X_U1 n9 n6 Vcc 0 n2 lt1018
+X_U2 n7 n8 Vcc 0 n1 lt1018
 V1 Vcc 0 5
 Q1 n9 n3 0 NPN
 E1 n10 0 n4 0 5

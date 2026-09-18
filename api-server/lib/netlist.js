@@ -9,10 +9,20 @@ import { pinAbs } from './route.js';
 
 /**
  * Parse a SPICE netlist. Returns {title, components:[{ref, prefix, nodes,
- * value, model}], warnings}. Handles * comments, + continuations; skips
- * .directives. Node "0"/"GND" is ground.
+ * fullNodes, value, model}], warnings, subckts, couplings, directives}.
+ * Handles * comments, + continuations, `.subckt … .ends` blocks and
+ * X instances (FLATTENED: `X1 a b NAME` becomes `X1.M1 …` with internal nets
+ * `X1.n`, recursively), `K` couplings (recorded, not drawn), and the usual
+ * simulation directives (.model/.param/.tran/… kept in `directives`, no
+ * warning: they carry no drawing information). Node "0"/"GND" is ground.
+ *
+ * An X whose .subckt is NOT defined but looks like an op-amp (3 or 5 pins,
+ * LTspice `Opamps\*`, `UniversalOpamp2`, `LT10xx`, `opamp`) is drawn as an
+ * op-amp symbol (SPICE_MAP.X): in+ in- [v+ v-] out. A 3-pin ideal op-amp is
+ * padded with two private hidden-only nets (`<ref>.V+`, `<ref>.V-`) so it
+ * extracts back to the same 5-node form as a real one.
  */
-export function parseSpice(text) {
+export function parseSpice(text, opts = {}) {
   const rawLines = String(text).split(/\r?\n/);
   // join continuations
   const lines = [];
@@ -25,37 +35,115 @@ export function parseSpice(text) {
   }
   const components = [];
   const warnings = [];
+  const directives = [];
+  const couplings = [];
+  const subckts = {};
   let title = null;
   let first = true;
-  for (let ln = 0; ln < lines.length; ln++) {
-    const line = lines[ln].trim();
-    if (line === '' || line.startsWith('*')) { if (first && line.startsWith('*')) { title = line.slice(1).trim(); first = false; } continue; }
-    if (line.startsWith('.')) {
-      const d = line.toLowerCase();
-      if (!d.startsWith('.end') && !d.startsWith('.title')) warnings.push('directive ignored: ' + line);
+  // ---- pass 1: lift .subckt blocks out of the main body
+  const body = [];
+  let cur = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    const low = line.toLowerCase();
+    if (low.startsWith('.subckt')) {
+      const t = line.split(/\s+/);
+      const pins = t.slice(2).filter((x) => !x.includes('='));
+      cur = { name: t[1], key: (t[1] || '').toUpperCase(), pins, lines: [] };
+      if (cur.name) subckts[cur.key] = cur; else warnings.push('malformed .subckt skipped: ' + line);
       first = false;
       continue;
     }
-    first = false;
+    if (low.startsWith('.ends')) { cur = null; continue; }
+    if (cur != null) cur.lines.push(raw); else body.push(raw);
+  }
+  // Directives with NO electrical content for a drawing (analyses, model
+  // cards, includes, output control): recorded, never a warning. Directives
+  // that DO change the circuit but cannot live in a schematic (.param/.step
+  // substitute values, .func, .ic/.nodeset) stay warnings so strict LVS keeps
+  // rejecting a reference the drawing cannot faithfully represent
+  // (RENDER-LVS.md; test 'strict LVS rejects directive').
+  const SIM_DIRECTIVES = /^\.(model|include|inc|lib|option|options|tran|ac|dc|op|temp|meas|measure|global|backanno|save|probe|four|noise|tf|control|endc|pz|sens|disto|wave|plot|print|width|end|title)\b/;
+  const ELEC_DIRECTIVES = /^\.(param|params|step|func|ic|nodeset|csparam)\b/;
+
+  const emit = (line, ctx) => {
     const tokens = line.split(/\s+/);
-    const ref = tokens[0];
-    const prefix = ref[0].toUpperCase();
+    const ref0 = tokens[0];
+    const prefix = ref0[0].toUpperCase();
+    const ref = ctx.prefix + ref0;
+    const mapNet = (n) => {
+      const nn = normNode(n);
+      if (nn === '0') return '0';
+      if (ctx.nets.has(nn)) return ctx.nets.get(nn);
+      return ctx.prefix ? ctx.prefix + nn : nn;
+    };
+    if (prefix === 'K') {
+      // K1 L1 L2 k — a coupling has no terminals; recorded for the emitter/BOM
+      couplings.push({ ref, inductors: tokens.slice(1, 3).map((r) => ctx.prefix + r), value: tokens[3] || '' });
+      return;
+    }
+    if (prefix === 'X') {
+      // X<ref> n1 … nN NAME [param=…]
+      const rest = tokens.slice(1).filter((x) => !x.includes('='));
+      const name = rest[rest.length - 1];
+      const nodes0 = rest.slice(0, -1);
+      const def = subckts[(name || '').toUpperCase()];
+      if (def) {
+        if (ctx.depth >= 8) { warnings.push('subckt nesting too deep, instance skipped: ' + line); return; }
+        if (def.pins.length !== nodes0.length) { warnings.push(`X ${ref}: ${nodes0.length} nodes for .subckt ${def.name} with ${def.pins.length} pins, instance skipped`); return; }
+        const nets = new Map();
+        for (let i = 0; i < def.pins.length; i++) nets.set(def.pins[i], mapNet(nodes0[i]));
+        const sub = { prefix: ref + '.', nets, depth: ctx.depth + 1 };
+        for (const l of def.lines) {
+          const t = l.trim();
+          if (t === '' || t.startsWith('*')) continue;
+          if (t.startsWith('.')) { if (!SIM_DIRECTIVES.test(t.toLowerCase())) warnings.push('directive ignored in .subckt ' + def.name + ': ' + t); continue; }
+          emit(t, sub);
+        }
+        return;
+      }
+      // undefined subckt: op-amp heuristic, else unsupported
+      const opampLike = (nodes0.length === 3 || nodes0.length === 5) &&
+        (/opamp|op_amp|universalopamp|^lt[0-9]|^ad[0-9]|^tl0|^lm[0-9]|^ne5|^op[0-9]|^ua7|^lf3|^mcp6|^opa[0-9]|^ada[0-9]/i.test(name || '') || nodes0.length === 3);
+      if (!opampLike) { warnings.push('unsupported element skipped (undefined .subckt ' + name + '): ' + line); return; }
+      const n = nodes0.map(mapNet);
+      const fullNodes = n.length === 5 ? n : [n[0], n[1], ref + '.V+', ref + '.V-', n[2]];
+      const nodes = [fullNodes[0], fullNodes[1], fullNodes[4]];
+      components.push({ ref, prefix: 'X', nodes, fullNodes, value: name || '', model: name || '' });
+      return;
+    }
     const map = SPICE_MAP[prefix];
-    if (map == null) { warnings.push('unsupported element skipped: ' + line); continue; }
+    if (map == null) { warnings.push('unsupported element skipped: ' + line); return; }
     let nNodes = map.pinOrder.length + (map.dropNodes ? map.dropNodes.length : 0);
-    if (tokens.length < 1 + nNodes) { warnings.push('malformed line skipped: ' + line); continue; }
-    let nodes = tokens.slice(1, 1 + nNodes).map(normNode);
+    if (tokens.length < 1 + nNodes) { warnings.push('malformed line skipped: ' + line); return; }
+    let nodes = tokens.slice(1, 1 + nNodes).map(mapNet);
     const fullNodes = [...nodes];
     let rest = tokens.slice(1 + nNodes);
     if (map.dropNodes) nodes = nodes.filter((_, i) => !map.dropNodes.includes(i));
     // V/I may carry "DC 5" style values
     if (!rest.length) warnings.push('missing value or model: ' + line);
     const value = rest.join(' ');
-    components.push({ ref, prefix, nodes, fullNodes, value, model: ['M','Q','D'].includes(prefix) ? (rest[0] || '') : (rest[rest.length - 1] || '') });
+    components.push({ ref, prefix, nodes, fullNodes, value, model: ['M', 'Q', 'D', 'J'].includes(prefix) ? (rest[0] || '') : (rest[rest.length - 1] || '') });
+  };
+
+  const top = { prefix: '', nets: new Map(), depth: 0 };
+  for (let ln = 0; ln < body.length; ln++) {
+    const line = body[ln].trim();
+    if (line === '' || line.startsWith('*')) { if (first && line.startsWith('*')) { title = line.slice(1).trim(); first = false; } continue; }
+    if (line.startsWith('.')) {
+      const d = line.toLowerCase();
+      if (SIM_DIRECTIVES.test(d)) { if (!d.startsWith('.end') && !d.startsWith('.title')) directives.push(line); }
+      else if (ELEC_DIRECTIVES.test(d)) { directives.push(line); warnings.push('directive not representable in a schematic: ' + line); }
+      else warnings.push('directive ignored: ' + line);
+      first = false;
+      continue;
+    }
+    first = false;
+    emit(line, top);
   }
   const dup = components.map((c) => c.ref).filter((r, i, a) => a.findIndex(x => x.toUpperCase() === r.toUpperCase()) !== i);
   if (dup.length) throw httpError(400, 'duplicate refs in netlist: ' + [...new Set(dup)].join(', '));
-  return { title, components, warnings };
+  return { title, components, warnings, subckts, couplings, directives };
 }
 
 function normNode(n) {

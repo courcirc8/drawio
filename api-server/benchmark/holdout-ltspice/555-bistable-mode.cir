@@ -1,5 +1,5 @@
 * 555-bistable-mode — converted from LTspice .asc by tools/asc2spice.mjs
-X_U1 0 n1 output n2 n3 0 n4 power Misc\NE555
+X_U1 0 n1 output n2 n3 0 n4 power ne555
 R1 power n1 10k
 V1 power 0 5
 S1 0 n1 P1 0 SW1

@@ -1,5 +1,5 @@
 * Bang-bang-control — converted from LTspice .asc by tools/asc2spice.mjs
-X_U1 n1 out Vcc 0 n2 Comparators\LT1018
+X_U1 n1 out Vcc 0 n2 lt1018
 V2 Vcc 0 12
 Rx1 n1 Vcc 10k
 Ry1 n1 0 15k

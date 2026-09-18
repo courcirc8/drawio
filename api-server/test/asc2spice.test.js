@@ -67,11 +67,12 @@ test('asc2spice: connectivity is rebuilt by coordinate and named by flags', () =
 });
 
 test('asc2spice: unsupported elements are written but flagged as partial', () => {
-  const asc = ASC + 'SYMBOL sw 600 0 R0\nSYMATTR InstName S1\nSYMATTR Value MYSW\n';
+  // tline (T) has no stencil; sw/e/bv/opamps became drawable on 2026-09-18
+  const asc = ASC + 'SYMBOL tline 600 0 R0\nSYMATTR InstName T1\nSYMATTR Value Td=1n Z0=50\n';
   const { spice, manifest } = ascToSpice(asc, { name: 't' });
   assert.equal(manifest.supported, false);
-  assert.deepEqual(manifest.unsupported, ['S1:sw']);
-  assert.match(spice, /^S1 /m);
+  assert.deepEqual(manifest.unsupported, ['T1:tline']);
+  assert.match(spice, /^T1 /m);
   // parseSpice skips it with a warning rather than failing
   const p = parseSpice(spice);
   assert.ok(p.warnings.some((w) => /unsupported element/.test(w)));

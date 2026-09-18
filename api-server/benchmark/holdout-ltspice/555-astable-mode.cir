@@ -1,5 +1,5 @@
 * 555-astable-mode — converted from LTspice .asc by tools/asc2spice.mjs
-X_U1 0 n1 n2 power n3 n1 n4 power Misc\NE555
+X_U1 0 n1 n2 power n3 n1 n4 power ne555
 R1 power n4 10k
 R2 n4 n1 10k
 C1 n1 0 1u

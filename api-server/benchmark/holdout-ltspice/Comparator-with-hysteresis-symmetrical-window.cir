@@ -4,5 +4,5 @@ V2 Vcc 0 5
 R1 n1 0 5k
 R2 n2 n1 15k
 V3 Vee 0 -5
-X_U2 n1 Vin Vcc Vee n2 Comparators\LT1721
+X_U2 n1 Vin Vcc Vee n2 lt1721
 .end

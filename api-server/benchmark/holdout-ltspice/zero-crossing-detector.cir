@@ -5,7 +5,7 @@ D2 0 n2 1N5819
 D3 n2 n3 1N5819
 D4 0 n1 1N5819
 R1 n4 n3 1k
-X_U1 n4 0 out 0 n5 Optos\4N25
+X_U1 n4 0 out 0 n5 4n25
 R2 out Vcc 1k
 V2 Vcc 0 12
 .end

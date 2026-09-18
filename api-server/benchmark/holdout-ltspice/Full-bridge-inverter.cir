@@ -9,7 +9,7 @@ D1 n4 n1 D
 S2 0 n4 Tm 0 ?
 D2 0 n4 D
 V3 n6 0 SINE(0 8 160)
-X_U1 n6 n7 n8 n9 n10 Comparators\LT1721
+X_U1 n6 n7 n8 n9 n10 lt1721
 V4 n8 0 10
 V5 n9 0 -10
 V2 n7 0 PULSE(-10 10 0 0.03124m 0.03124m 0.00002m 0.0625m)

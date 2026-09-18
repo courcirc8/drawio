@@ -9,7 +9,7 @@ D1 n6 n1 D
 S2 0 n6 Ta_m 0 ?
 D2 0 n6 D
 Vc1 n7 0 SINE(0 8 160)
-X_U1 n7 Vt Vcc Vee n8 Comparators\LT1721
+X_U1 n7 Vt Vcc Vee n8 lt1721
 V4 Vcc 0 10
 V5 Vee 0 -10
 V2 Vt 0 PULSE(-10 10 0 0.03124m 0.03124m 0.00002m 0.0625m)
@@ -24,9 +24,9 @@ D5 n9 n1 D
 S6 0 n9 Tc_m 0 ?
 D6 0 n9 D
 Vc2 n10 0 SINE(0 8 160 0 0 120)
-X_U4 n10 Vt Vcc Vee n11 Comparators\LT1721
+X_U4 n10 Vt Vcc Vee n11 lt1721
 Vc3 n12 0 SINE(0 8 160 0 0 240)
-X_U7 n12 Vt Vcc Vee n13 Comparators\LT1721
+X_U7 n12 Vt Vcc Vee n13 lt1721
 R4 n14 n6 1
 L2 n14 n5 10m
 R5 n15 n9 1

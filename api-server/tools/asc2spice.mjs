@@ -50,7 +50,18 @@ const SYMBOL_PREFIX = [
   [/^e$/, 'E'], [/^g$/, 'G'], [/^f$/, 'F'], [/^h$/, 'H'],
   [/^(tline|ltline)$/, 'T'],
 ];
-const DRAWABLE = new Set(['R', 'C', 'L', 'D', 'V', 'I', 'Q', 'M']);
+// prefixes parseSpice()/SPICE_MAP can draw (2026-09-18: + E F B S J, and X
+// when the undefined subckt looks like an op-amp — same heuristic as netlist.js)
+const DRAWABLE = new Set(['R', 'C', 'L', 'D', 'V', 'I', 'Q', 'M', 'E', 'F', 'B', 'S', 'J']);
+const OPAMP_RE = /opamp|op_amp|universalopamp|^lt[0-9]|^ad[0-9]|^tl0|^lm[0-9]|^ne5|^op[0-9]|^ua7|^lf3|^mcp6|^opa[0-9]|^ada[0-9]/i;
+function drawable(prefix, sym, nPins) {
+  if (DRAWABLE.has(prefix)) return true;
+  if (prefix === 'X') {
+    const name = symKey(sym).replace(/^.*\\/, '');
+    return (nPins === 3 || nPins === 5) && (OPAMP_RE.test(name) || nPins === 3);
+  }
+  return false;
+}
 
 function rot([x, y], code) {
   if (code[0] === 'M') x = -x;
@@ -190,7 +201,8 @@ export function ascToSpice(text, { name = 'ltspice' } = {}) {
     } else if (prefix === 'V' || prefix === 'I') {
       line = `${ref} ${pins[0]} ${pins[1]} ${value || 'DC 0'}`;
     } else if (prefix === 'X') {
-      line = `${ref} ${pins.join(' ')} ${(value || s.sym).replace(/\s+/g, '_')}`;
+      // subckt name = the symbol's Value (LT1007, opamp…) else the symbol file
+      line = `${ref} ${pins.join(' ')} ${(value || symKey(s.sym).replace(/^.*\\/, '')).replace(/\s+/g, '_')}`;
     } else {
       // LTspice tolerates a valueless R/L/C (the schematic is a drawing, not
       // yet a simulation); SPICE does not, and the extractor treats a
@@ -199,12 +211,12 @@ export function ascToSpice(text, { name = 'ltspice' } = {}) {
       line = `${ref} ${pins.join(' ')} ${value || '?'}`;
     }
     lines.push(line);
-    if (!DRAWABLE.has(prefix)) unsupported.push(ref + ':' + s.sym);
+    if (!drawable(prefix, s.sym, pins.length)) unsupported.push(ref + ':' + s.sym);
   }
   lines.push('.end');
-  const drawable = syms.filter((s) => SYMBOLS[s.sym] && DRAWABLE.has(prefixOf(s.sym) || '?')).length;
+  const nDrawable = syms.filter((s) => SYMBOLS[s.sym] && drawable(prefixOf(s.sym) || '?', s.sym, SYMBOLS[s.sym].pins.length)).length;
   const manifest = {
-    name, elements: syms.length, drawable, unsupported, unknown,
+    name, elements: syms.length, drawable: nDrawable, unsupported, unknown,
     supported: unknown.length === 0 && unsupported.length === 0,
     symbols: [...new Set(syms.map((s) => s.sym))],
   };

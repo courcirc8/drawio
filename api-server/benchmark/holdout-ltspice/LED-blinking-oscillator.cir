@@ -9,5 +9,5 @@ Q1 n5 n4 0 2N2222
 R5 n6 n5 487
 D1 Vcc n6 QTLP690C
 V2 Vee 0 -10
-X_U2 n3 n1 Vcc Vee n2 Comparators\LT1720
+X_U2 n3 n1 Vcc Vee n2 lt1720
 .end

@@ -3,5 +3,5 @@ V1 Vin 0 SINE(0 5 1)
 V2 Vcc 0 5
 R1 n1 0 5k
 R2 n2 n1 15k
-X_U2 n1 Vin Vcc 0 n2 Comparators\LT1721
+X_U2 n1 Vin Vcc 0 n2 lt1721
 .end

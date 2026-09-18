@@ -2,14 +2,8 @@
  {
   "name": "DCDC-full-bridge",
   "elements": 19,
-  "drawable": 11,
-  "unsupported": [
-   "S1:sw",
-   "S2:sw",
-   "S3:sw",
-   "S4:sw",
-   "X_U2:Comparators\\LT1721"
-  ],
+  "drawable": 16,
+  "unsupported": [],
   "unknown": [
    "Gain",
    "Gain",
@@ -30,14 +24,8 @@
  {
   "name": "Full-bridge-inverter",
   "elements": 22,
-  "drawable": 15,
-  "unsupported": [
-   "S1:sw",
-   "S2:sw",
-   "X_U1:Comparators\\LT1721",
-   "S3:sw",
-   "S4:sw"
-  ],
+  "drawable": 20,
+  "unsupported": [],
   "unknown": [
    "Gain",
    "Gain"
@@ -73,12 +61,8 @@
  {
   "name": "Half-bridge-inverter",
   "elements": 18,
-  "drawable": 13,
-  "unsupported": [
-   "S1:sw",
-   "S2:sw",
-   "X_U1:Comparators\\LT1721"
-  ],
+  "drawable": 16,
+  "unsupported": [],
   "unknown": [
    "Gain",
    "Gain"
@@ -143,18 +127,8 @@
  {
   "name": "Three-phase-full-bridge-inverter",
   "elements": 44,
-  "drawable": 29,
-  "unsupported": [
-   "S1:sw",
-   "S2:sw",
-   "X_U1:Comparators\\LT1721",
-   "S3:sw",
-   "S4:sw",
-   "S5:sw",
-   "S6:sw",
-   "X_U4:Comparators\\LT1721",
-   "X_U7:Comparators\\LT1721"
-  ],
+  "drawable": 38,
+  "unsupported": [],
   "unknown": [
    "Gain",
    "Gain",
@@ -195,18 +169,10 @@
  {
   "name": "Three-phase-naive-supply-system",
   "elements": 39,
-  "drawable": 32,
-  "unsupported": [
-   "X_U1:Opamps\\opamp",
-   "X_U2:Opamps\\opamp",
-   "X_U3:Opamps\\opamp",
-   "X_U4:Opamps\\opamp",
-   "X_U5:Opamps\\opamp",
-   "X_U6:Opamps\\opamp",
-   "X_U7:Opamps\\opamp"
-  ],
+  "drawable": 39,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "cap",
    "res",
@@ -250,14 +216,10 @@
  {
   "name": "AM-modulator-jfet",
   "elements": 19,
-  "drawable": 16,
-  "unsupported": [
-   "J1:njf",
-   "X_U1:Opamps\\opamp",
-   "X_U2:Opamps\\LT1007"
-  ],
+  "drawable": 19,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "njf",
@@ -271,14 +233,10 @@
  {
   "name": "ASK-modulation",
   "elements": 19,
-  "drawable": 16,
-  "unsupported": [
-   "X_U4:Comparators\\LT1720",
-   "X_U3:Comparators\\LT1720",
-   "X_U5:Opamps\\UniversalOpamp2"
-  ],
+  "drawable": 19,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "res",
@@ -293,17 +251,10 @@
  {
   "name": "ASK-modulation2",
   "elements": 37,
-  "drawable": 31,
-  "unsupported": [
-   "X_U4:Comparators\\LT1720",
-   "X_U3:Comparators\\LT1720",
-   "X_U5:Opamps\\UniversalOpamp2",
-   "X_U1:Opamps\\UniversalOpamp2",
-   "X_U2:Comparators\\LT1720",
-   "X_U6:Opamps\\UniversalOpamp2"
-  ],
+  "drawable": 37,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "res",
@@ -318,15 +269,10 @@
  {
   "name": "ASK-modulation3",
   "elements": 33,
-  "drawable": 29,
-  "unsupported": [
-   "X_U4:Comparators\\LT1720",
-   "X_U3:Comparators\\LT1720",
-   "X_U5:Opamps\\UniversalOpamp2",
-   "X_U2:Comparators\\LT1720"
-  ],
+  "drawable": 33,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "res",
@@ -371,13 +317,10 @@
  {
   "name": "Common-collector-emitter-follower-amplifier",
   "elements": 25,
-  "drawable": 23,
-  "unsupported": [
-   "F1:f",
-   "F2:f"
-  ],
+  "drawable": 25,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "npn",
    "res",
@@ -405,13 +348,10 @@
  {
   "name": "Common-emitter-amplifier-design",
   "elements": 39,
-  "drawable": 37,
-  "unsupported": [
-   "F1:f",
-   "F2:f"
-  ],
+  "drawable": 39,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "res",
@@ -424,12 +364,10 @@
  {
   "name": "Differences-amplifier",
   "elements": 9,
-  "drawable": 8,
-  "unsupported": [
-   "X_U1:Opamps\\LT1007"
-  ],
+  "drawable": 9,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "Opamps\\LT1007",
    "res",
@@ -455,14 +393,10 @@
  {
   "name": "Instrumentation-amplifier",
   "elements": 14,
-  "drawable": 11,
-  "unsupported": [
-   "X_U1:Opamps\\LT1007",
-   "X_U2:Opamps\\LT1007",
-   "X_U3:Opamps\\LT1007"
-  ],
+  "drawable": 14,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "Opamps\\LT1007",
    "res",
@@ -490,13 +424,10 @@
  {
   "name": "Push-pull-amplifier-operational-amplifier",
   "elements": 14,
-  "drawable": 12,
-  "unsupported": [
-   "X_U1:Opamps\\LT1007",
-   "X_U2:Opamps\\LT1007"
-  ],
+  "drawable": 14,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "npn",
@@ -511,13 +442,10 @@
  {
   "name": "Push-pull-amplifier",
   "elements": 14,
-  "drawable": 12,
-  "unsupported": [
-   "X_U1:Opamps\\LT1007",
-   "X_U2:Opamps\\LT1007"
-  ],
+  "drawable": 14,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "npn",
@@ -614,12 +542,10 @@
  {
   "name": "Comparator-with-hysteresis-asymmetrical-window",
   "elements": 5,
-  "drawable": 4,
-  "unsupported": [
-   "X_U2:Comparators\\LT1721"
-  ],
+  "drawable": 5,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "res",
@@ -630,12 +556,10 @@
  {
   "name": "Comparator-with-hysteresis-symmetrical-window",
   "elements": 6,
-  "drawable": 5,
-  "unsupported": [
-   "X_U2:Comparators\\LT1721"
-  ],
+  "drawable": 6,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "res",
@@ -646,12 +570,10 @@
  {
   "name": "Comparator-with-hysteresis-window-shifted-from-origin",
   "elements": 6,
-  "drawable": 5,
-  "unsupported": [
-   "X_U1:Comparators\\LT1018"
-  ],
+  "drawable": 6,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "Comparators\\LT1018",
@@ -662,13 +584,10 @@
  {
   "name": "Window-comparator",
   "elements": 8,
-  "drawable": 6,
-  "unsupported": [
-   "X_U2:Comparators\\LT1018",
-   "X_U1:Comparators\\LT1018"
-  ],
+  "drawable": 8,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "Comparators\\LT1018",
@@ -693,12 +612,10 @@
  {
   "name": "schmitt_trigger_bjts_2",
   "elements": 12,
-  "drawable": 11,
-  "unsupported": [
-   "E1:e"
-  ],
+  "drawable": 12,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "res",
    "npn",
@@ -710,12 +627,10 @@
  {
   "name": "Bang-bang-control",
   "elements": 10,
-  "drawable": 9,
-  "unsupported": [
-   "X_U1:Comparators\\LT1018"
-  ],
+  "drawable": 10,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "Comparators\\LT1018",
    "voltage",
@@ -728,15 +643,10 @@
  {
   "name": "Buck-converter-closed-loop-control",
   "elements": 10,
-  "drawable": 6,
-  "unsupported": [
-   "B_Vb1:bv",
-   "B_PI_regulator:bv",
-   "B_PI_regulator1:bv",
-   "B1:bv"
-  ],
+  "drawable": 10,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "ind",
@@ -827,12 +737,10 @@
  {
   "name": "Boost-converter-1",
   "elements": 7,
-  "drawable": 6,
-  "unsupported": [
-   "S1:sw"
-  ],
+  "drawable": 7,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "diode",
@@ -846,12 +754,10 @@
  {
   "name": "Boost-converter-2",
   "elements": 7,
-  "drawable": 6,
-  "unsupported": [
-   "S1:sw"
-  ],
+  "drawable": 7,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "diode",
@@ -865,12 +771,10 @@
  {
   "name": "Buck-converter",
   "elements": 7,
-  "drawable": 6,
-  "unsupported": [
-   "S1:sw"
-  ],
+  "drawable": 7,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "diode",
@@ -1101,13 +1005,10 @@
  {
   "name": "constant-P-R-I-loads",
   "elements": 9,
-  "drawable": 7,
-  "unsupported": [
-   "B1:bv",
-   "B2:bi"
-  ],
+  "drawable": 9,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "bv",
    "res",
@@ -1240,12 +1141,9 @@
  {
   "name": "555---Astable-mode",
   "elements": 12,
-  "drawable": 8,
+  "drawable": 11,
   "unsupported": [
-   "X_A1:Digital\\srflop",
-   "X_U1:Comparators\\LT1018",
-   "X_U2:Comparators\\LT1018",
-   "E1:e"
+   "X_A1:Digital\\srflop"
   ],
   "unknown": [],
   "supported": false,
@@ -1263,13 +1161,9 @@
  {
   "name": "555---Monostable-mode",
   "elements": 14,
-  "drawable": 9,
+  "drawable": 13,
   "unsupported": [
-   "X_A1:Digital\\srflop",
-   "X_U1:Comparators\\LT1018",
-   "X_U2:Comparators\\LT1018",
-   "E1:e",
-   "S1:sw"
+   "X_A1:Digital\\srflop"
   ],
   "unknown": [],
   "supported": false,
@@ -1305,12 +1199,9 @@
  {
   "name": "555-raw-astable-mode",
   "elements": 12,
-  "drawable": 8,
+  "drawable": 11,
   "unsupported": [
-   "X_A1:Digital\\srflop",
-   "X_U1:Comparators\\LT1018",
-   "X_U2:Comparators\\LT1018",
-   "E1:e"
+   "X_A1:Digital\\srflop"
   ],
   "unknown": [],
   "supported": false,
@@ -1378,12 +1269,10 @@
  {
   "name": "LED-blinking-oscillator",
   "elements": 11,
-  "drawable": 10,
-  "unsupported": [
-   "X_U2:Comparators\\LT1720"
-  ],
+  "drawable": 11,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "cap",
    "res",
@@ -1397,12 +1286,10 @@
  {
   "name": "Phase-shift-oscillator-RC",
   "elements": 11,
-  "drawable": 10,
-  "unsupported": [
-   "X_U1:Opamps\\LT1002A"
-  ],
+  "drawable": 11,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "res",
    "cap",
@@ -1414,15 +1301,10 @@
  {
   "name": "Phase-shift-oscillator",
   "elements": 26,
-  "drawable": 22,
-  "unsupported": [
-   "X_U1:Opamps\\LT1880",
-   "X_U3:Opamps\\LT1880",
-   "X_U4:Opamps\\LT1880",
-   "X_U5:Opamps\\LT1880"
-  ],
+  "drawable": 26,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "cap",
    "res",
@@ -1468,12 +1350,10 @@
  {
   "name": "Variable-duty-cycle-square-wave",
   "elements": 14,
-  "drawable": 13,
-  "unsupported": [
-   "X_U1:Opamps\\opamp"
-  ],
+  "drawable": 14,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "res",
    "cap",
@@ -1487,12 +1367,10 @@
  {
   "name": "Wien-oscillator",
   "elements": 9,
-  "drawable": 8,
-  "unsupported": [
-   "X_U2:Opamps\\LT1001"
-  ],
+  "drawable": 9,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "res",
    "cap",
@@ -1504,14 +1382,10 @@
  {
   "name": "AM-modulator",
   "elements": 19,
-  "drawable": 16,
-  "unsupported": [
-   "J1:njf",
-   "X_U1:Opamps\\opamp",
-   "X_U2:Opamps\\LT1007"
-  ],
+  "drawable": 19,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "njf",
@@ -1539,15 +1413,10 @@
  {
   "name": "Buck-converter-closed-loop-control-2",
   "elements": 10,
-  "drawable": 6,
-  "unsupported": [
-   "B_Vb1:bv",
-   "B_PI_regulator:bv",
-   "B_PI_regulator1:bv",
-   "B1:bv"
-  ],
+  "drawable": 10,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "ind",
@@ -1640,13 +1509,10 @@
  {
   "name": "Power-line-power-transmission",
   "elements": 23,
-  "drawable": 21,
-  "unsupported": [
-   "B1:bv",
-   "B2:bv"
-  ],
+  "drawable": 23,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "ind",
@@ -1658,12 +1524,10 @@
  {
   "name": "PWM-modulation",
   "elements": 11,
-  "drawable": 10,
-  "unsupported": [
-   "X_U1:Comparators\\LT1720"
-  ],
+  "drawable": 11,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "Comparators\\LT1720",
@@ -1676,13 +1540,10 @@
  {
   "name": "AM-FM-signals-sources",
   "elements": 3,
-  "drawable": 1,
-  "unsupported": [
-   "B1:bv",
-   "B2:bv"
-  ],
+  "drawable": 3,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "bv"
@@ -1692,16 +1553,10 @@
  {
   "name": "Analog-multiplier",
   "elements": 20,
-  "drawable": 15,
-  "unsupported": [
-   "X_U1:Opamps\\opamp",
-   "X_U3:Opamps\\opamp",
-   "X_U2:Opamps\\opamp",
-   "X_U4:Opamps\\opamp",
-   "X_U5:Opamps\\opamp"
-  ],
+  "drawable": 20,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "Opamps\\opamp",
    "voltage",
@@ -1713,13 +1568,10 @@
  {
   "name": "Inverting-integrator-and-derivative",
   "elements": 11,
-  "drawable": 9,
-  "unsupported": [
-   "X_U2:Opamps\\LT1007",
-   "X_U4:Opamps\\LT1007"
-  ],
+  "drawable": 11,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "res",
    "cap",
@@ -1731,12 +1583,10 @@
  {
   "name": "Inverting-sum",
   "elements": 10,
-  "drawable": 9,
-  "unsupported": [
-   "X_U1:Opamps\\LT1007"
-  ],
+  "drawable": 10,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "Opamps\\LT1007",
@@ -1747,12 +1597,10 @@
  {
   "name": "Non-inverting-derivative",
   "elements": 8,
-  "drawable": 7,
-  "unsupported": [
-   "X_U2:Opamps\\LT1007"
-  ],
+  "drawable": 8,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "res",
    "cap",
@@ -1764,12 +1612,10 @@
  {
   "name": "Non-inverting-integrator",
   "elements": 8,
-  "drawable": 7,
-  "unsupported": [
-   "X_U2:Opamps\\LT1007"
-  ],
+  "drawable": 8,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "cap",
    "res",
@@ -1781,12 +1627,10 @@
  {
   "name": "Non-inverting-sum",
   "elements": 15,
-  "drawable": 14,
-  "unsupported": [
-   "X_U1:Opamps\\LT1007"
-  ],
+  "drawable": 15,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "Opamps\\LT1007",
    "voltage",
@@ -1797,12 +1641,10 @@
  {
   "name": "soft-starter-12V",
   "elements": 12,
-  "drawable": 11,
-  "unsupported": [
-   "S1:sw"
-  ],
+  "drawable": 12,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "res",
    "cap",
@@ -1817,12 +1659,10 @@
  {
   "name": "Current-source-BJT-2",
   "elements": 6,
-  "drawable": 5,
-  "unsupported": [
-   "X_U1:Opamps\\opamp"
-  ],
+  "drawable": 6,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "res",
@@ -1848,12 +1688,10 @@
  {
   "name": "Voltage-regulator-npn",
   "elements": 8,
-  "drawable": 7,
-  "unsupported": [
-   "X_U1:Opamps\\LT1001"
-  ],
+  "drawable": 8,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "npn",
    "Opamps\\LT1001",
@@ -1955,12 +1793,10 @@
  {
   "name": "Variable-duty-cycle-square-wave-2",
   "elements": 14,
-  "drawable": 13,
-  "unsupported": [
-   "X_U1:Opamps\\opamp"
-  ],
+  "drawable": 14,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "res",
    "cap",
@@ -2030,11 +1866,9 @@
  {
   "name": "555-bistable-mode",
   "elements": 9,
-  "drawable": 6,
+  "drawable": 8,
   "unsupported": [
-   "X_U1:Misc\\NE555",
-   "S1:sw",
-   "S2:sw"
+   "X_U1:Misc\\NE555"
   ],
   "unknown": [],
   "supported": false,
@@ -2067,13 +1901,9 @@
  {
   "name": "555-raw-monostable-mode-temporizzatore",
   "elements": 14,
-  "drawable": 9,
+  "drawable": 13,
   "unsupported": [
-   "X_A1:Digital\\srflop",
-   "X_U1:Comparators\\LT1018",
-   "X_U2:Comparators\\LT1018",
-   "E1:e",
-   "S1:sw"
+   "X_A1:Digital\\srflop"
   ],
   "unknown": [],
   "supported": false,
@@ -2092,12 +1922,10 @@
  {
   "name": "Peak-trigger-circuit",
   "elements": 9,
-  "drawable": 8,
-  "unsupported": [
-   "X_U1:Opamps\\LT1007A"
-  ],
+  "drawable": 9,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "Opamps\\LT1007A",
    "voltage",
@@ -2110,13 +1938,10 @@
  {
   "name": "Sensor-triggered-timer-temporizzatore-1",
   "elements": 15,
-  "drawable": 13,
-  "unsupported": [
-   "X_U3:Comparators\\LT1720",
-   "X_U1:Comparators\\LT1720"
-  ],
+  "drawable": 15,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "npn",
@@ -2130,13 +1955,10 @@
  {
   "name": "Sensor-triggered-timer-temporizzatore-2",
   "elements": 17,
-  "drawable": 15,
-  "unsupported": [
-   "X_U1:Comparators\\LT1018",
-   "X_U2:Comparators\\LT1018"
-  ],
+  "drawable": 17,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "Comparators\\LT1018",
    "voltage",
@@ -2149,13 +1971,10 @@
  {
   "name": "Sensor-triggered-timer",
   "elements": 15,
-  "drawable": 13,
-  "unsupported": [
-   "X_U3:Comparators\\LT1720",
-   "X_U1:Comparators\\LT1720"
-  ],
+  "drawable": 15,
+  "unsupported": [],
   "unknown": [],
-  "supported": false,
+  "supported": true,
   "symbols": [
    "voltage",
    "npn",

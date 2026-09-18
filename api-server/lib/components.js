@@ -21,6 +21,30 @@ export const SPICE_MAP = {
   // SPICE G (VCCS, used for OTA symbols): out+ out- in+ in- gm — the single-ended
   // OTA symbol has no out- pin: node 1 is omitted from placement but persisted for strict extraction.
   G: { shape: 'mxgraph.electrical.abstract.ota_1', pinOrder: ['out', 'in+', 'in-'], dropNodes: [1], label: 'OTA (VCCS)' },
+  // ---- coverage extension (2026-09-18, holdout LTspice: 66/131 circuits were
+  // only partially drawable). Diamonds = dependent sources; the three
+  // dependent_source_* stencils are visually identical, one per prefix so the
+  // shape -> prefix reverse map stays unambiguous.
+  // SPICE E (VCVS): n+ n- nc+ nc- gain — control pins DRAWN (W/E): a VCVS whose
+  // control input is invisible is unreadable, unlike a MOS bulk.
+  E: { shape: 'mxgraph.electrical.signal_sources.dependent_source_1', pinOrder: ['N', 'S', 'W', 'E'], label: 'VCVS' },
+  // SPICE F (CCCS): n+ n- VNAME gain — the control is a source NAME, no pins.
+  F: { shape: 'mxgraph.electrical.signal_sources.dependent_source_2', pinOrder: ['N', 'S'], label: 'CCCS', vertical: true },
+  // SPICE B (behavioural source, LTspice bv/bi): n+ n- V=expr | I=expr
+  B: { shape: 'mxgraph.electrical.signal_sources.dependent_source_3', pinOrder: ['N', 'S'], label: 'behavioural source', vertical: true },
+  // SPICE S (voltage-controlled switch): n+ n- nc+ nc- MODEL — control nodes
+  // persisted as hidden terminals (like the MOS bulk), the contact is drawn.
+  S: { shape: 'mxgraph.electrical.electro-mechanical.simple_switch', pinOrder: ['in', 'out'], dropNodes: [2, 3], label: 'switch (S)' },
+  // SPICE J (JFET): drain gate source MODEL — same pin layout as the MOS stencil
+  J: { shape: 'mxgraph.electrical.transistors.n-channel_jfet_1', pinOrder: ['NE', 'W', 'SE'], label: 'JFET',
+       variants: { PJF: 'mxgraph.electrical.transistors.p-channel_jfet_1' } },
+  // SPICE X on an UNDEFINED .subckt whose name/pin count says "op-amp"
+  // (LTspice Opamps\*, UniversalOpamp2, LT1xxx, 3 or 5 pins): in+ in- [v+ v-] out.
+  // Supplies are hidden terminals (index 2,3); parseSpice() pads a 3-pin
+  // ideal op-amp with two private hidden-only nets so both forms extract
+  // back to exactly 5 SPICE nodes. Shares the OTA stencil with G: classify()
+  // tells them apart by the refdes prefix (see reverseAll below).
+  X: { shape: 'mxgraph.electrical.abstract.ota_1', pinOrder: ['in+', 'in-', 'out'], dropNodes: [2, 3], label: 'op-amp (subckt)' },
 };
 
 /**
@@ -81,11 +105,17 @@ export const PORT_SHAPES = {
   'mxgraph.electrical.signal_sources.equipotential': { pin: 'N' },
 };
 
-/** shape key -> SPICE prefix (reverse map incl. variants). */
+/** shape key -> SPICE prefix (reverse map incl. variants). When two prefixes
+ *  share a stencil (G and X on ota_1) the FIRST declared wins here and
+ *  classify() disambiguates with the refdes prefix via `reverseAll`. */
 const reverse = new Map();
+const reverseAll = new Map();
 for (const [prefix, m] of Object.entries(SPICE_MAP)) {
-  reverse.set(m.shape, prefix);
-  for (const v of Object.values(m.variants || {})) reverse.set(v, prefix);
+  for (const key of [m.shape, ...Object.values(m.variants || {})]) {
+    if (!reverse.has(key)) reverse.set(key, prefix);
+    if (!reverseAll.has(key)) reverseAll.set(key, new Set());
+    reverseAll.get(key).add(prefix);
+  }
 }
 
 /**
@@ -162,7 +192,14 @@ export function classify(cellInfo) {
   // T4: prefer the persisted refdes over the mxCell id for the id-shape
   // fallback (reverse.get(key) from the stencil already wins when it exists;
   // this only matters for an unmapped/custom shape relying on the id prefix).
-  const prefix = reverse.get(key) || inferPrefix(identityOf(cellInfo));
+  let prefix = reverse.get(key) || inferPrefix(identityOf(cellInfo));
+  const shared = reverseAll.get(key);
+  if (shared != null && shared.size > 1) {
+    // first letter of the refdes (XU1 -> X, G1 -> G); inferPrefix() wants a
+    // digit right after the letter, which LTspice-style names (XU1) lack
+    const byId = String(identityOf(cellInfo) || '').charAt(0).toUpperCase();
+    if (shared.has(byId)) prefix = byId;
+  }
   const mapping = prefix != null ? SPICE_MAP[prefix] : null;
   return { role: 'component', prefix, mapping, shape };
 }

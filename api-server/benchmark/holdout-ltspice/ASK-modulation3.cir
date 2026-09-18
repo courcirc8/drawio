@@ -11,12 +11,12 @@ C1 0 n5 100n
 Rx1 n6 Vcc 10k
 Ry1 n6 0 222
 Rh1 n7 n6 2.5k
-X_U4 n6 n5 Vcc 0 n7 Comparators\LT1720
-X_U3 n8 n7 Vcc 0 Vreceived Comparators\LT1720
+X_U4 n6 n5 Vcc 0 n7 lt1720
+X_U3 n8 n7 Vcc 0 Vreceived lt1720
 R4 n8 Vcc 10k
 R5 0 n8 2k
 R6 Vreceived 0 1k
-X_U5 n1 Vant Vcc Vee n9 Opamps\UniversalOpamp2
+X_U5 n1 Vant Vcc Vee n9 universalopamp2
 D1 Vant n5 1N5818
 R7 n1 n2 0.5k
 Q2 n4 n10 0 2N3904
@@ -27,7 +27,7 @@ R13 n11 n12 1k
 Q5 Vcc n9 Vant 2N3904
 Q6 Vant n9 Vee PNP_2N3906
 V2 n12 0 PULSE(0 5 30m 1n 1n 10s)
-X_U2 n5 n13 Vcc 0 n14 Comparators\LT1720
+X_U2 n5 n13 Vcc 0 n14 lt1720
 R11 n13 Vcc 9.2k
 R12 0 n13 0.1k
 R14 n14 0 10k

@@ -11,12 +11,12 @@ C1 0 n5 100n
 Rx1 n6 Vcc 10k
 Ry1 n6 0 222
 Rh1 n7 n6 2.5k
-X_U4 n6 n5 Vcc 0 n7 Comparators\LT1720
-X_U3 n8 n7 Vcc 0 Vreceived Comparators\LT1720
+X_U4 n6 n5 Vcc 0 n7 lt1720
+X_U3 n8 n7 Vcc 0 Vreceived lt1720
 R4 n8 Vcc 10k
 R5 0 n8 2k
 R6 Vreceived 0 1k
-X_U5 n1 Vant Vcc Vee Vant Opamps\UniversalOpamp2
+X_U5 n1 Vant Vcc Vee Vant universalopamp2
 D1 Vant n5 1N5818
 R7 n1 n2 0.5k
 Q2 n4 n9 0 2N3904
@@ -29,11 +29,11 @@ Q4 Vcc n12 n13 2N3904
 R11 n12 n14 100
 R12 n11 n13 100
 R13 n10 n15 1k
-X_U1 Vsignal_send n11 Vcc Vee n14 Opamps\UniversalOpamp2
-X_U2 n16 n17 Vcc Vee n15 Comparators\LT1720
+X_U1 Vsignal_send n11 Vcc Vee n14 universalopamp2
+X_U2 n16 n17 Vcc Vee n15 lt1720
 R14 n17 Vee 6.8k
 R15 0 n17 3.2k
-X_U6 0 n18 Vcc Vee n16 Opamps\UniversalOpamp2
+X_U6 0 n18 Vcc Vee n16 universalopamp2
 R16 n18 n11 100k
 R17 n16 n18 100k
 .end

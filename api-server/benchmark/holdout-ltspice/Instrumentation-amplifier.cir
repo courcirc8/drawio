@@ -1,7 +1,7 @@
 * Instrumentation-amplifier — converted from LTspice .asc by tools/asc2spice.mjs
-X_U1 Vb n1 Vcc Vee n2 Opamps\LT1007
-X_U2 Va n3 Vcc Vee n4 Opamps\LT1007
-X_U3 n5 n6 Vcc Vee OUT Opamps\LT1007
+X_U1 Vb n1 Vcc Vee n2 lt1007
+X_U2 Va n3 Vcc Vee n4 lt1007
+X_U3 n5 n6 Vcc Vee OUT lt1007
 Rg n1 n3 20k
 R2 n3 n4 10k
 R1 n2 n1 10k

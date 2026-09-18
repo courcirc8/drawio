@@ -6,6 +6,6 @@ C1 n2 n3 10n
 C2 0 n4 10n
 R4 n4 0 10k
 V1 A 0 10
-X_U2 n4 n1 A B n2 Opamps\LT1001
+X_U2 n4 n1 A B n2 lt1001
 V2 B 0 -10
 .end

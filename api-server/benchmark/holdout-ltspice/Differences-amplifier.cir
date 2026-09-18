@@ -1,5 +1,5 @@
 * Differences-amplifier — converted from LTspice .asc by tools/asc2spice.mjs
-X_U1 n1 n2 Vcc Vee OUT Opamps\LT1007
+X_U1 n1 n2 Vcc Vee OUT lt1007
 R1 n2 Va 1k
 R3 n1 Vb 1k
 R4 0 n1 1k
