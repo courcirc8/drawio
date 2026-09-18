@@ -812,8 +812,8 @@ les sorties « 0/0 » du checker JS de la veille, toutes résolues).
       (connectivité reconstruite comme le vérificateur de Weave), jamais
       utilisés pour dériver une règle. Résultat honnête, optimize 2 :
       65 circuits dessinables → 64/65 générés, 39/65 à zéro erreur, 219
-      erreurs, beauty 60,7 ; après extension de couverture, 111 dessinables
-      → 110/111, 55 à zéro, 545 erreurs, beauty 49,1. Le générateur est bon
+      erreurs, beauty 60,7 ; après extension de couverture (code final), 111 dessinables
+      → 111/111 générés, LVS 111/111, 56 à zéro, 545 erreurs, beauty 49,4. Le générateur est bon
       sur ce qui ressemble au banc (miroirs, suiveurs, RC, redresseurs) et
       s'effondre sur les **étages BJT discrets à polarisation résistive**
       (Differential-pair 46 err) et les étages à ampli-op : aucun gabarit

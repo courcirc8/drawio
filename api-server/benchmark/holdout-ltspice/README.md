@@ -35,16 +35,19 @@ DRAWIO_BASE=http://127.0.0.1:8775 python3 benchmark/run30.py /tmp/holdout --opti
 
 ## Baseline mesurée — 2026-09-18 (dev + correctif du nom de rail, optimize 2)
 
-| | banc d'entraînement (43) | holdout dessinable (65) |
-|---|---|---|
-| générés | 43/43 | 64/65 (1 rejet LVS : passifs sans valeur, corrigé côté convertisseur) |
-| LVS | 43/43 | 64/64 |
-| circuits à 0 erreur | 40/43 | 39/65 |
-| erreurs checker totales | 3 | 219 |
-| beauty moyen | 74,2 | 60,7 |
+| | banc d'entraînement (43) | holdout dessinable (65, avant extension SPICE) | holdout dessinable (111, code final) |
+|---|---|---|---|
+| générés | 43/43 | 64/65 (1 rejet LVS : passifs sans valeur, corrigé côté convertisseur) | 111/111 |
+| LVS | 43/43 | 64/64 | 111/111 |
+| circuits à 0 erreur | 40/43 | 39/65 | 56/111 |
+| erreurs checker totales | 3 | 219 | 545 |
+| beauty moyen | 74,2 | 60,7 | 49,4 |
+| durée (optimize 2, 43 : optimize 8) | 78 s | — | 248 s |
 
-Règles en erreur sur le holdout : through 65, 22-contact 39, pin-clearance 31,
-22 28, wrap-around 27, comp-overlap 15, 29 5, 30 5, dot-foreign 4.
+Règles en erreur (111) : through 183, 22 105, 22-contact 82, pin-clearance 63,
+wrap-around 60, comp-overlap 33, 30 9, 29 6, dot-foreign 4. Les 46 circuits
+ajoutés par l'extension SPICE (ampli-op, interrupteurs, sources contrôlées)
+sont les plus durs : 16/46 à zéro, beauty 33,7.
 
 Pires circuits : Differential-pair (46 err, beauty 0), Push-pull-amplifier-AB-BJT
 (39), Common-emitter-BJT (13), Three-phase-rectifier (13), zero-crossing-detector-2
