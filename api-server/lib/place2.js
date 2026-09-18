@@ -202,7 +202,12 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         const tClash = () => [...placed.values()].some((v) =>
           abs.x - 20 < v.x + v.w + 6 && abs.x + 20 > v.x - 6 && ty < v.y + v.h + 6 && ty + 26 > v.y - 6);
         for (let k2 = 0; k2 < 5 && tClash(); k2++) ty -= 30;
-        const tapCell = addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: ty, w: 40, h: 26, value: 'VDD' });
+        // HOLDOUT (2026-09-18): the tap label IS the net name the extractor reads
+        // back (components.js classify(): role 'power', net = cell value). A
+        // literal 'VDD' renamed every Vcc/VCC/AVDD supply, and strict LVS then
+        // rejected the initial placement (named_net_mismatches: VDD vs Vcc) —
+        // 500 on the very first held-out LTspice circuit (Current-mirrors).
+        const tapCell = addVertex(model, { id, shape: VDD_TAP, x: abs.x - 20, y: ty, w: 40, h: 26, value: vddNet });
         tapCell.setAttribute('style', tapCell.getAttribute('style')
           .replace('verticalLabelPosition=bottom;verticalAlign=top;', 'verticalLabelPosition=top;verticalAlign=bottom;'));
         wire(null, { source: t.ref, target: id, sourcePin: { x: t.pin.x, y: t.pin.y }, targetPin: { x: 0.5, y: 1 } });

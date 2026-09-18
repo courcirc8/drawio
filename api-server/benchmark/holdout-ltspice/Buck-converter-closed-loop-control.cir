@@ -1,0 +1,12 @@
+* Buck-converter-closed-loop-control — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 20
+L1 Vout n2 47u
+D1 0 n2 1N5819
+C1 Vout 0 100u
+R1 Vout 0 R=IF(time < 5m, 1, 2)
+M1 n1 n3 n2 n2 BSB012N03LX3
+B_Vb1 error 0 V= {y_ref}-V(Vout)
+B_PI_regulator PI_out 0 V= 5*V(error) + 500*idt(V(error))
+B_PI_regulator1 PI_sat 0 V= IF(V(PI_out) > 0, min(V(PI_out), 1), 0)
+B1 n3 n2 V=IF(time - floor(time/Ts)*Ts < V(PI_sat)*Ts, 20, 0)
+.end

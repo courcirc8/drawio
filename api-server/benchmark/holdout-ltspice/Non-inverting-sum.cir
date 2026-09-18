@@ -1,0 +1,17 @@
+* Non-inverting-sum — converted from LTspice .asc by tools/asc2spice.mjs
+X_U1 A n1 Vcc Vee OUT Opamps\LT1007
+V1 Vcc 0 50
+V2 Vee 0 -50
+R1 n1 0 10k
+R2 OUT n1 40k
+R3 A n2 10k
+R4 A n3 10k
+R5 A n4 10k
+V3 n2 0 SINE(0 1 1)
+V4 n4 0 SINE(0 1 1)
+V5 n3 0 SINE(0 10 1)
+R6 A n5 10k
+V6 n5 0 SINE(0 2 1)
+V7 n6 0 SINE(0 1 1)
+R7 A n6 10k
+.end

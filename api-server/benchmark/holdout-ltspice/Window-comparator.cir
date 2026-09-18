@@ -1,0 +1,10 @@
+* Window-comparator — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Vcc 0 12
+Vin n1 0 SINE(0 10 1)
+X_U2 n1 n2 Vcc 0 n3 Comparators\LT1018
+R1 Vcc n4 10k
+R2 n4 n2 10k
+R3 n2 0 10k
+R4 n3 0 10k
+X_U1 n4 n1 Vcc 0 n3 Comparators\LT1018
+.end

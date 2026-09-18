@@ -1,0 +1,6 @@
+* Raw-voltage-regulator-with-zener-diode. — converted from LTspice .asc by tools/asc2spice.mjs
+D1 0 n1 1N750
+R1 n2 n1 242
+V1 n2 0 12
+R2 n1 0 470
+.end

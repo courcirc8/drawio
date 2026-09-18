@@ -1,0 +1,6 @@
+* Transformer-step-down-2-1 — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 SINE(0 10 50Hz)
+L1 n1 0 16u
+L2 0 n2 4u
+R2 0 n2 1
+.end

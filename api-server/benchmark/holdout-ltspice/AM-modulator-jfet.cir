@@ -1,0 +1,21 @@
+* AM-modulator-jfet — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Vsignal 0 SINE(0 1 10k 0.5m)
+V2 Vbias 0 -2
+J1 n1 n2 0 2N3819
+X_U1 n1 n3 OUT Opamps\opamp
+C1 n2 Vsignal 1u
+R1 n2 Vbias 10k
+R2 OUT n1 1k
+V3 n3 0 SINE(0 100m 200k)
+V4 n4 0 SINE(0 500m 2k)
+X_U2 n5 n6 Vcc Vee Audio Opamps\LT1007
+R3 n6 0 10k
+R4 Audio n6 20k
+R5 n5 n4 10k
+V5 n7 0 SINE(0 200m 1k)
+R6 n5 n7 10k
+V6 n8 0 SINE(0 200m 5k)
+R7 n5 n8 10k
+V7 Vcc 0 15
+V8 Vee 0 -15
+.end

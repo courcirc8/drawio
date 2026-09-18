@@ -1,0 +1,5 @@
+* RL-lowpass — converted from LTspice .asc by tools/asc2spice.mjs
+Vin n1 0 SINE(1 1 25000)
+L1 OUT n1 100u
+R1 OUT 0 1
+.end

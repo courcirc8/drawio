@@ -1,0 +1,6 @@
+* Transistor-beta — converted from LTspice .asc by tools/asc2spice.mjs
+I1 0 n1 {A}
+Q1 n2 n1 0 2N3904
+V1 Vcc 0 5
+R1 Vcc n2 1
+.end

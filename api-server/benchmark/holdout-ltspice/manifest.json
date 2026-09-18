@@ -1,0 +1,2244 @@
+[
+ {
+  "name": "DCDC-full-bridge",
+  "elements": 19,
+  "drawable": 11,
+  "unsupported": [
+   "S1:sw",
+   "S2:sw",
+   "S3:sw",
+   "S4:sw",
+   "X_U2:Comparators\\LT1721"
+  ],
+  "unknown": [
+   "Gain",
+   "Gain",
+   "Gain"
+  ],
+  "supported": false,
+  "symbols": [
+   "Gain",
+   "sw",
+   "voltage",
+   "diode",
+   "res",
+   "ind",
+   "Comparators\\LT1721"
+  ],
+  "source": "AC-DC and DC-AC converters/DCDC-full-bridge.asc"
+ },
+ {
+  "name": "Full-bridge-inverter",
+  "elements": 22,
+  "drawable": 15,
+  "unsupported": [
+   "S1:sw",
+   "S2:sw",
+   "X_U1:Comparators\\LT1721",
+   "S3:sw",
+   "S4:sw"
+  ],
+  "unknown": [
+   "Gain",
+   "Gain"
+  ],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "cap",
+   "res",
+   "ind",
+   "sw",
+   "diode",
+   "Comparators\\LT1721",
+   "Gain"
+  ],
+  "source": "AC-DC and DC-AC converters/Full-bridge-inverter.asc"
+ },
+ {
+  "name": "Full-bridge-rectifier",
+  "elements": 7,
+  "drawable": 7,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "diode",
+   "res",
+   "cap"
+  ],
+  "source": "AC-DC and DC-AC converters/Full-bridge-rectifier.asc"
+ },
+ {
+  "name": "Half-bridge-inverter",
+  "elements": 18,
+  "drawable": 13,
+  "unsupported": [
+   "S1:sw",
+   "S2:sw",
+   "X_U1:Comparators\\LT1721"
+  ],
+  "unknown": [
+   "Gain",
+   "Gain"
+  ],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "cap",
+   "res",
+   "ind",
+   "sw",
+   "diode",
+   "Comparators\\LT1721",
+   "Gain"
+  ],
+  "source": "AC-DC and DC-AC converters/Half-bridge-inverter.asc"
+ },
+ {
+  "name": "Single-phase-rectifier-R-load-smoothing-capacitor",
+  "elements": 7,
+  "drawable": 7,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "cap",
+   "diode"
+  ],
+  "source": "AC-DC and DC-AC converters/Single-phase-rectifier-R-load-smoothing-capacitor.asc"
+ },
+ {
+  "name": "Single-phase-rectifier-constant-current-load",
+  "elements": 7,
+  "drawable": 7,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "diode",
+   "voltage",
+   "current",
+   "ind"
+  ],
+  "source": "AC-DC and DC-AC converters/Single-phase-rectifier-constant-current-load.asc"
+ },
+ {
+  "name": "Single-phase-rectifier-constant-voltage-load",
+  "elements": 7,
+  "drawable": 7,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "diode",
+   "voltage",
+   "ind"
+  ],
+  "source": "AC-DC and DC-AC converters/Single-phase-rectifier-constant-voltage-load.asc"
+ },
+ {
+  "name": "Three-phase-full-bridge-inverter",
+  "elements": 44,
+  "drawable": 29,
+  "unsupported": [
+   "S1:sw",
+   "S2:sw",
+   "X_U1:Comparators\\LT1721",
+   "S3:sw",
+   "S4:sw",
+   "S5:sw",
+   "S6:sw",
+   "X_U4:Comparators\\LT1721",
+   "X_U7:Comparators\\LT1721"
+  ],
+  "unknown": [
+   "Gain",
+   "Gain",
+   "Gain",
+   "Gain",
+   "Gain",
+   "Gain"
+  ],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "cap",
+   "res",
+   "ind",
+   "sw",
+   "diode",
+   "Comparators\\LT1721",
+   "Gain"
+  ],
+  "source": "AC-DC and DC-AC converters/Three-phase-full-bridge-inverter.asc"
+ },
+ {
+  "name": "Three-phase-naive-inverter",
+  "elements": 21,
+  "drawable": 21,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "nmos",
+   "cap",
+   "voltage",
+   "res",
+   "ind"
+  ],
+  "source": "AC-DC and DC-AC converters/Three-phase-naive-inverter.asc"
+ },
+ {
+  "name": "Three-phase-naive-supply-system",
+  "elements": 39,
+  "drawable": 32,
+  "unsupported": [
+   "X_U1:Opamps\\opamp",
+   "X_U2:Opamps\\opamp",
+   "X_U3:Opamps\\opamp",
+   "X_U4:Opamps\\opamp",
+   "X_U5:Opamps\\opamp",
+   "X_U6:Opamps\\opamp",
+   "X_U7:Opamps\\opamp"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "cap",
+   "res",
+   "Opamps\\opamp",
+   "ind",
+   "voltage",
+   "npn",
+   "pnp"
+  ],
+  "source": "AC-DC and DC-AC converters/Three-phase-naive-supply-system.asc"
+ },
+ {
+  "name": "Three-phase-rectifier",
+  "elements": 10,
+  "drawable": 10,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "diode",
+   "current"
+  ],
+  "source": "AC-DC and DC-AC converters/Three-phase-rectifier.asc"
+ },
+ {
+  "name": "AM-modulator-bjt",
+  "elements": 12,
+  "drawable": 12,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "cap",
+   "npn"
+  ],
+  "source": "AM-modulator-circuits/AM-modulator-bjt.asc"
+ },
+ {
+  "name": "AM-modulator-jfet",
+  "elements": 19,
+  "drawable": 16,
+  "unsupported": [
+   "J1:njf",
+   "X_U1:Opamps\\opamp",
+   "X_U2:Opamps\\LT1007"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "njf",
+   "Opamps\\opamp",
+   "cap",
+   "res",
+   "Opamps\\LT1007"
+  ],
+  "source": "AM-modulator-circuits/AM-modulator-jfet.asc"
+ },
+ {
+  "name": "ASK-modulation",
+  "elements": 19,
+  "drawable": 16,
+  "unsupported": [
+   "X_U4:Comparators\\LT1720",
+   "X_U3:Comparators\\LT1720",
+   "X_U5:Opamps\\UniversalOpamp2"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "res",
+   "npn",
+   "cap",
+   "Comparators\\LT1720",
+   "Opamps\\UniversalOpamp2",
+   "schottky"
+  ],
+  "source": "ASK-modulator-transceiver/ASK-modulation.asc"
+ },
+ {
+  "name": "ASK-modulation2",
+  "elements": 37,
+  "drawable": 31,
+  "unsupported": [
+   "X_U4:Comparators\\LT1720",
+   "X_U3:Comparators\\LT1720",
+   "X_U5:Opamps\\UniversalOpamp2",
+   "X_U1:Opamps\\UniversalOpamp2",
+   "X_U2:Comparators\\LT1720",
+   "X_U6:Opamps\\UniversalOpamp2"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "res",
+   "npn",
+   "cap",
+   "Comparators\\LT1720",
+   "Opamps\\UniversalOpamp2",
+   "schottky"
+  ],
+  "source": "ASK-modulator-transceiver/ASK-modulation2.asc"
+ },
+ {
+  "name": "ASK-modulation3",
+  "elements": 33,
+  "drawable": 29,
+  "unsupported": [
+   "X_U4:Comparators\\LT1720",
+   "X_U3:Comparators\\LT1720",
+   "X_U5:Opamps\\UniversalOpamp2",
+   "X_U2:Comparators\\LT1720"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "res",
+   "npn",
+   "cap",
+   "Comparators\\LT1720",
+   "Opamps\\UniversalOpamp2",
+   "schottky",
+   "pnp"
+  ],
+  "source": "ASK-modulator-transceiver/ASK-modulation3.asc"
+ },
+ {
+  "name": "A-class-amplifier-bjt",
+  "elements": 8,
+  "drawable": 8,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "voltage",
+   "npn",
+   "cap"
+  ],
+  "source": "Amplifiers/A-class-amplifier-bjt.asc"
+ },
+ {
+  "name": "BJT-emitter-follower-configuration",
+  "elements": 8,
+  "drawable": 8,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "npn",
+   "res",
+   "voltage"
+  ],
+  "source": "Amplifiers/BJT-emitter-follower-configuration.asc"
+ },
+ {
+  "name": "Common-collector-emitter-follower-amplifier",
+  "elements": 25,
+  "drawable": 23,
+  "unsupported": [
+   "F1:f",
+   "F2:f"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "npn",
+   "res",
+   "voltage",
+   "cap",
+   "f"
+  ],
+  "source": "Amplifiers/Common-collector-emitter-follower-amplifier.asc"
+ },
+ {
+  "name": "Common-emitter-BJT",
+  "elements": 19,
+  "drawable": 19,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "npn",
+   "cap"
+  ],
+  "source": "Amplifiers/Common-emitter-BJT.asc"
+ },
+ {
+  "name": "Common-emitter-amplifier-design",
+  "elements": 39,
+  "drawable": 37,
+  "unsupported": [
+   "F1:f",
+   "F2:f"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "res",
+   "npn",
+   "cap",
+   "f"
+  ],
+  "source": "Amplifiers/Common-emitter-amplifier-design.asc"
+ },
+ {
+  "name": "Differences-amplifier",
+  "elements": 9,
+  "drawable": 8,
+  "unsupported": [
+   "X_U1:Opamps\\LT1007"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Opamps\\LT1007",
+   "res",
+   "voltage"
+  ],
+  "source": "Amplifiers/Differences-amplifier.asc"
+ },
+ {
+  "name": "Double-stage-common-emitter-amplifier",
+  "elements": 17,
+  "drawable": 17,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "cap",
+   "res",
+   "npn",
+   "voltage"
+  ],
+  "source": "Amplifiers/Double-stage-common-emitter-amplifier.asc"
+ },
+ {
+  "name": "Instrumentation-amplifier",
+  "elements": 14,
+  "drawable": 11,
+  "unsupported": [
+   "X_U1:Opamps\\LT1007",
+   "X_U2:Opamps\\LT1007",
+   "X_U3:Opamps\\LT1007"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Opamps\\LT1007",
+   "res",
+   "voltage"
+  ],
+  "source": "Amplifiers/Instrumentation-amplifier.asc"
+ },
+ {
+  "name": "Push-pull-amplifier-AB-BJT",
+  "elements": 37,
+  "drawable": 37,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "npn",
+   "pnp",
+   "res",
+   "diode",
+   "cap"
+  ],
+  "source": "Amplifiers/Push-pull-amplifier-AB-BJT.asc"
+ },
+ {
+  "name": "Push-pull-amplifier-operational-amplifier",
+  "elements": 14,
+  "drawable": 12,
+  "unsupported": [
+   "X_U1:Opamps\\LT1007",
+   "X_U2:Opamps\\LT1007"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "npn",
+   "pnp",
+   "res",
+   "Opamps\\LT1007",
+   "nmos",
+   "pmos"
+  ],
+  "source": "Amplifiers/Push-pull-amplifier-operational-amplifier.asc"
+ },
+ {
+  "name": "Push-pull-amplifier",
+  "elements": 14,
+  "drawable": 12,
+  "unsupported": [
+   "X_U1:Opamps\\LT1007",
+   "X_U2:Opamps\\LT1007"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "npn",
+   "pnp",
+   "res",
+   "Opamps\\LT1007",
+   "nmos",
+   "pmos"
+  ],
+  "source": "Amplifiers/Push-pull-amplifier.asc"
+ },
+ {
+  "name": "DC-transfer-function-analysis",
+  "elements": 3,
+  "drawable": 3,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res"
+  ],
+  "source": "Basics/DC-transfer-function-analysis.asc"
+ },
+ {
+  "name": "Example-of-DC-sweep",
+  "elements": 3,
+  "drawable": 3,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "diode"
+  ],
+  "source": "Basics/Example-of-DC-sweep.asc"
+ },
+ {
+  "name": "How-to-set-initial-conditions",
+  "elements": 2,
+  "drawable": 2,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "cap",
+   "res"
+  ],
+  "source": "Basics/How-to-set-initial-conditions.asc"
+ },
+ {
+  "name": "PNP-transistor-biasing",
+  "elements": 4,
+  "drawable": 4,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "pnp",
+   "res",
+   "voltage"
+  ],
+  "source": "Basics/PNP-transistor-biasing.asc"
+ },
+ {
+  "name": "Parallel-resistor-when-negligible",
+  "elements": 4,
+  "drawable": 4,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "voltage"
+  ],
+  "source": "Basics/Parallel-resistor-when-negligible.asc"
+ },
+ {
+  "name": "Transistor-beta",
+  "elements": 4,
+  "drawable": 4,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "current",
+   "npn",
+   "voltage",
+   "res"
+  ],
+  "source": "Basics/Transistor-beta.asc"
+ },
+ {
+  "name": "Comparator-with-hysteresis-asymmetrical-window",
+  "elements": 5,
+  "drawable": 4,
+  "unsupported": [
+   "X_U2:Comparators\\LT1721"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "res",
+   "Comparators\\LT1721"
+  ],
+  "source": "Comparator circuits/Comparator-with-hysteresis-asymmetrical-window.asc"
+ },
+ {
+  "name": "Comparator-with-hysteresis-symmetrical-window",
+  "elements": 6,
+  "drawable": 5,
+  "unsupported": [
+   "X_U2:Comparators\\LT1721"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "res",
+   "Comparators\\LT1721"
+  ],
+  "source": "Comparator circuits/Comparator-with-hysteresis-symmetrical-window.asc"
+ },
+ {
+  "name": "Comparator-with-hysteresis-window-shifted-from-origin",
+  "elements": 6,
+  "drawable": 5,
+  "unsupported": [
+   "X_U1:Comparators\\LT1018"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "Comparators\\LT1018",
+   "res"
+  ],
+  "source": "Comparator circuits/Comparator-with-hysteresis-window-shifted-from-origin.asc"
+ },
+ {
+  "name": "Window-comparator",
+  "elements": 8,
+  "drawable": 6,
+  "unsupported": [
+   "X_U2:Comparators\\LT1018",
+   "X_U1:Comparators\\LT1018"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "Comparators\\LT1018",
+   "res"
+  ],
+  "source": "Comparator circuits/Window-comparator.asc"
+ },
+ {
+  "name": "schmitt_trigger_bjts",
+  "elements": 10,
+  "drawable": 10,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "npn",
+   "voltage"
+  ],
+  "source": "Comparator circuits/other circuits with hysteresis/schmitt_trigger_bjts.asc"
+ },
+ {
+  "name": "schmitt_trigger_bjts_2",
+  "elements": 12,
+  "drawable": 11,
+  "unsupported": [
+   "E1:e"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "res",
+   "npn",
+   "voltage",
+   "e"
+  ],
+  "source": "Comparator circuits/other circuits with hysteresis/schmitt_trigger_bjts_2.asc"
+ },
+ {
+  "name": "Bang-bang-control",
+  "elements": 10,
+  "drawable": 9,
+  "unsupported": [
+   "X_U1:Comparators\\LT1018"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Comparators\\LT1018",
+   "voltage",
+   "res",
+   "npn",
+   "cap"
+  ],
+  "source": "Controller-control-systems/Bang-bang-control.asc"
+ },
+ {
+  "name": "Buck-converter-closed-loop-control",
+  "elements": 10,
+  "drawable": 6,
+  "unsupported": [
+   "B_Vb1:bv",
+   "B_PI_regulator:bv",
+   "B_PI_regulator1:bv",
+   "B1:bv"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "ind",
+   "schottky",
+   "cap",
+   "res",
+   "nmos",
+   "bv"
+  ],
+  "source": "Controller-control-systems/Buck-converter-closed-loop-control.asc"
+ },
+ {
+  "name": "PD-controller",
+  "elements": 17,
+  "drawable": 13,
+  "unsupported": [],
+  "unknown": [
+   "Opamps\\AD823A",
+   "Opamps\\AD823A",
+   "Opamps\\AD823A",
+   "Opamps\\AD823A"
+  ],
+  "supported": false,
+  "symbols": [
+   "Opamps\\AD823A",
+   "res",
+   "cap",
+   "voltage"
+  ],
+  "source": "Controller-control-systems/PD-controller.asc"
+ },
+ {
+  "name": "BJT-for-simple-current-regulation",
+  "elements": 6,
+  "drawable": 6,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "npn"
+  ],
+  "source": "Current limiting circuits/BJT-for-simple-current-regulation.asc"
+ },
+ {
+  "name": "current-limiting-npn",
+  "elements": 6,
+  "drawable": 6,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "npn",
+   "voltage"
+  ],
+  "source": "Current limiting circuits/current-limiting-npn.asc"
+ },
+ {
+  "name": "Current-mirrors",
+  "elements": 10,
+  "drawable": 10,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "npn",
+   "res"
+  ],
+  "source": "Current-mirrors/Current-mirrors.asc"
+ },
+ {
+  "name": "Current-source-BJT",
+  "elements": 6,
+  "drawable": 6,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "voltage",
+   "pnp"
+  ],
+  "source": "Current-mirrors/Current-source-BJT.asc"
+ },
+ {
+  "name": "Boost-converter-1",
+  "elements": 7,
+  "drawable": 6,
+  "unsupported": [
+   "S1:sw"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "diode",
+   "ind",
+   "cap",
+   "res",
+   "sw"
+  ],
+  "source": "DCDC converters/Boost-converter-1.asc"
+ },
+ {
+  "name": "Boost-converter-2",
+  "elements": 7,
+  "drawable": 6,
+  "unsupported": [
+   "S1:sw"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "diode",
+   "ind",
+   "cap",
+   "res",
+   "sw"
+  ],
+  "source": "DCDC converters/Boost-converter-2.asc"
+ },
+ {
+  "name": "Buck-converter",
+  "elements": 7,
+  "drawable": 6,
+  "unsupported": [
+   "S1:sw"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "diode",
+   "ind",
+   "cap",
+   "res",
+   "sw"
+  ],
+  "source": "DCDC converters/Buck-converter.asc"
+ },
+ {
+  "name": "RC-bandpass-filter-frequency-domain",
+  "elements": 5,
+  "drawable": 5,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "cap"
+  ],
+  "source": "Filters/RC/RC-bandpass-filter-frequency-domain.asc"
+ },
+ {
+  "name": "RC-highpass-frequency-domain",
+  "elements": 3,
+  "drawable": 3,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "cap"
+  ],
+  "source": "Filters/RC/RC-highpass-frequency-domain.asc"
+ },
+ {
+  "name": "RC-lowpass--frequency-domain",
+  "elements": 3,
+  "drawable": 3,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "cap"
+  ],
+  "source": "Filters/RC/RC-lowpass- frequency-domain.asc"
+ },
+ {
+  "name": "RC-lowpass-cascaded",
+  "elements": 5,
+  "drawable": 5,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "cap",
+   "voltage"
+  ],
+  "source": "Filters/RC/RC-lowpass-cascaded.asc"
+ },
+ {
+  "name": "RC-lowpass-step-response",
+  "elements": 3,
+  "drawable": 3,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "cap",
+   "res",
+   "voltage"
+  ],
+  "source": "Filters/RC/RC-lowpass-step-response.asc"
+ },
+ {
+  "name": "RC-lowpass",
+  "elements": 3,
+  "drawable": 3,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "cap"
+  ],
+  "source": "Filters/RC/RC-lowpass.asc"
+ },
+ {
+  "name": "RC-sawtooth-response",
+  "elements": 3,
+  "drawable": 3,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "cap",
+   "voltage"
+  ],
+  "source": "Filters/RC/RC-sawtooth-response.asc"
+ },
+ {
+  "name": "RC-square-wave-response",
+  "elements": 4,
+  "drawable": 4,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "cap"
+  ],
+  "source": "Filters/RC/RC-square-wave-response.asc"
+ },
+ {
+  "name": "RL-highpass",
+  "elements": 3,
+  "drawable": 3,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "ind",
+   "res"
+  ],
+  "source": "Filters/RL/RL-highpass.asc"
+ },
+ {
+  "name": "RL-lowpass",
+  "elements": 3,
+  "drawable": 3,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "ind",
+   "res"
+  ],
+  "source": "Filters/RL/RL-lowpass.asc"
+ },
+ {
+  "name": "LC-and-RC-series--bandpass-filter",
+  "elements": 9,
+  "drawable": 9,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "ind",
+   "cap",
+   "res",
+   "voltage"
+  ],
+  "source": "Filters/RLC/LC-and-RC-series- bandpass-filter.asc"
+ },
+ {
+  "name": "Notch-and-band-suppress-filters",
+  "elements": 13,
+  "drawable": 13,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "ind",
+   "cap",
+   "res",
+   "voltage"
+  ],
+  "source": "Filters/RLC/Notch-and-band-suppress-filters.asc"
+ },
+ {
+  "name": "RLC-step-response-example",
+  "elements": 4,
+  "drawable": 4,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "ind",
+   "res",
+   "cap"
+  ],
+  "source": "Filters/RLC/RLC-step-response-example.asc"
+ },
+ {
+  "name": "RLC-step-response-resonance-frequency-series-parallel",
+  "elements": 32,
+  "drawable": 32,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "ind",
+   "res",
+   "cap",
+   "current"
+  ],
+  "source": "Filters/RLC/RLC-step-response-resonance-frequency-series-parallel.asc"
+ },
+ {
+  "name": "professional-input-stage",
+  "elements": 15,
+  "drawable": 15,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "diode",
+   "cap",
+   "ind2",
+   "voltage"
+  ],
+  "source": "Input stages/professional-input-stage.asc"
+ },
+ {
+  "name": "constant-P-R-I-loads",
+  "elements": 9,
+  "drawable": 7,
+  "unsupported": [
+   "B1:bv",
+   "B2:bi"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "bv",
+   "res",
+   "voltage",
+   "bi"
+  ],
+  "source": "Loads/constant-P-R-I-loads.asc"
+ },
+ {
+  "name": "Logic-gates-diodes-transistors",
+  "elements": 20,
+  "drawable": 20,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "diode",
+   "res",
+   "voltage",
+   "npn"
+  ],
+  "source": "Logic-circuits/Logic-gates-diodes-transistors.asc"
+ },
+ {
+  "name": "Logic-gates-transistors-BJTs",
+  "elements": 22,
+  "drawable": 22,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "npn",
+   "res"
+  ],
+  "source": "Logic-circuits/Logic-gates-transistors-BJTs.asc"
+ },
+ {
+  "name": "Lossless-transmission-line-DC-transient",
+  "elements": 4,
+  "drawable": 3,
+  "unsupported": [
+   "T1:tline"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "tline",
+   "voltage",
+   "res"
+  ],
+  "source": "Lossless-transmission-line/Lossless-transmission-line-DC-transient.asc"
+ },
+ {
+  "name": "Lossless-transmission-line-pulse",
+  "elements": 4,
+  "drawable": 3,
+  "unsupported": [
+   "T1:tline"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "tline",
+   "voltage",
+   "res"
+  ],
+  "source": "Lossless-transmission-line/Lossless-transmission-line-pulse.asc"
+ },
+ {
+  "name": "Differential-pair",
+  "elements": 16,
+  "drawable": 16,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "npn",
+   "res",
+   "voltage",
+   "cap"
+  ],
+  "source": "Miscellaneous/Differential-pair.asc"
+ },
+ {
+  "name": "diode-ring-mixer",
+  "elements": 13,
+  "drawable": 13,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "ind2",
+   "voltage",
+   "res",
+   "schottky"
+  ],
+  "source": "Mixer-circuits/diode-ring-mixer.asc"
+ },
+ {
+  "name": "Monte-Carlo-Simulation-LTSpice",
+  "elements": 5,
+  "drawable": 5,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "cap",
+   "res"
+  ],
+  "source": "Monte-Carlo-simulations/Monte-Carlo-Simulation-LTSpice.asc"
+ },
+ {
+  "name": "Noise-simulation-example",
+  "elements": 6,
+  "drawable": 5,
+  "unsupported": [
+   "X_U1:Opamps\\LT6200"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Opamps\\LT6200",
+   "voltage",
+   "res"
+  ],
+  "source": "Monte-Carlo-simulations/Noise-simulation-example.asc"
+ },
+ {
+  "name": "555---Astable-mode",
+  "elements": 12,
+  "drawable": 8,
+  "unsupported": [
+   "X_A1:Digital\\srflop",
+   "X_U1:Comparators\\LT1018",
+   "X_U2:Comparators\\LT1018",
+   "E1:e"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Digital\\srflop",
+   "res",
+   "cap",
+   "Comparators\\LT1018",
+   "voltage",
+   "npn",
+   "e"
+  ],
+  "source": "Oscillators/555 - Astable mode.asc"
+ },
+ {
+  "name": "555---Monostable-mode",
+  "elements": 14,
+  "drawable": 9,
+  "unsupported": [
+   "X_A1:Digital\\srflop",
+   "X_U1:Comparators\\LT1018",
+   "X_U2:Comparators\\LT1018",
+   "E1:e",
+   "S1:sw"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Digital\\srflop",
+   "res",
+   "cap",
+   "Comparators\\LT1018",
+   "voltage",
+   "npn",
+   "e",
+   "sw"
+  ],
+  "source": "Oscillators/555 - Monostable mode.asc"
+ },
+ {
+  "name": "555-astable-mode",
+  "elements": 5,
+  "drawable": 4,
+  "unsupported": [
+   "X_U1:Misc\\NE555"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Misc\\NE555",
+   "res",
+   "cap",
+   "voltage"
+  ],
+  "source": "Oscillators/555-astable-mode.asc"
+ },
+ {
+  "name": "555-raw-astable-mode",
+  "elements": 12,
+  "drawable": 8,
+  "unsupported": [
+   "X_A1:Digital\\srflop",
+   "X_U1:Comparators\\LT1018",
+   "X_U2:Comparators\\LT1018",
+   "E1:e"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Digital\\srflop",
+   "res",
+   "cap",
+   "Comparators\\LT1018",
+   "voltage",
+   "npn",
+   "e"
+  ],
+  "source": "Oscillators/555-raw-astable-mode.asc"
+ },
+ {
+  "name": "555-timer",
+  "elements": 5,
+  "drawable": 4,
+  "unsupported": [
+   "X_U1:Misc\\NE555"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Misc\\NE555",
+   "res",
+   "cap",
+   "voltage"
+  ],
+  "source": "Oscillators/555-timer.asc"
+ },
+ {
+  "name": "Adjustable-duty-cycle-555-square-wave-oscillator",
+  "elements": 12,
+  "drawable": 11,
+  "unsupported": [
+   "X_U1:Misc\\NE555"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Misc\\NE555",
+   "voltage",
+   "res",
+   "cap",
+   "diode"
+  ],
+  "source": "Oscillators/Adjustable-duty-cycle-555-square-wave-oscillator.asc"
+ },
+ {
+  "name": "Astable-multivibrator",
+  "elements": 9,
+  "drawable": 9,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "npn",
+   "voltage",
+   "polcap"
+  ],
+  "source": "Oscillators/Astable-multivibrator.asc"
+ },
+ {
+  "name": "LED-blinking-oscillator",
+  "elements": 11,
+  "drawable": 10,
+  "unsupported": [
+   "X_U2:Comparators\\LT1720"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "cap",
+   "res",
+   "voltage",
+   "npn",
+   "LED",
+   "Comparators\\LT1720"
+  ],
+  "source": "Oscillators/LED-blinking-oscillator.asc"
+ },
+ {
+  "name": "Phase-shift-oscillator-RC",
+  "elements": 11,
+  "drawable": 10,
+  "unsupported": [
+   "X_U1:Opamps\\LT1002A"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "res",
+   "cap",
+   "Opamps\\LT1002A",
+   "voltage"
+  ],
+  "source": "Oscillators/Phase-shift-oscillator-RC.asc"
+ },
+ {
+  "name": "Phase-shift-oscillator",
+  "elements": 26,
+  "drawable": 22,
+  "unsupported": [
+   "X_U1:Opamps\\LT1880",
+   "X_U3:Opamps\\LT1880",
+   "X_U4:Opamps\\LT1880",
+   "X_U5:Opamps\\LT1880"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "cap",
+   "res",
+   "voltage",
+   "Opamps\\LT1880"
+  ],
+  "source": "Oscillators/Phase-shift-oscillator.asc"
+ },
+ {
+  "name": "Royer-zvs",
+  "elements": 12,
+  "drawable": 12,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "ind2",
+   "ind",
+   "cap",
+   "diode",
+   "nmos",
+   "voltage"
+  ],
+  "source": "Oscillators/Royer-zvs.asc"
+ },
+ {
+  "name": "Sawtooth-oscillator",
+  "elements": 10,
+  "drawable": 10,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "cap",
+   "pnp",
+   "voltage",
+   "npn"
+  ],
+  "source": "Oscillators/Sawtooth-oscillator.asc"
+ },
+ {
+  "name": "Variable-duty-cycle-square-wave",
+  "elements": 14,
+  "drawable": 13,
+  "unsupported": [
+   "X_U1:Opamps\\opamp"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "res",
+   "cap",
+   "pnp",
+   "voltage",
+   "npn",
+   "Opamps\\opamp"
+  ],
+  "source": "Oscillators/Variable-duty-cycle-square-wave.asc"
+ },
+ {
+  "name": "Wien-oscillator",
+  "elements": 9,
+  "drawable": 8,
+  "unsupported": [
+   "X_U2:Opamps\\LT1001"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "res",
+   "cap",
+   "voltage",
+   "Opamps\\LT1001"
+  ],
+  "source": "Oscillators/Wien-oscillator.asc"
+ },
+ {
+  "name": "AM-modulator",
+  "elements": 19,
+  "drawable": 16,
+  "unsupported": [
+   "J1:njf",
+   "X_U1:Opamps\\opamp",
+   "X_U2:Opamps\\LT1007"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "njf",
+   "Opamps\\opamp",
+   "cap",
+   "res",
+   "Opamps\\LT1007"
+  ],
+  "source": "Others/AM-modulator.asc"
+ },
+ {
+  "name": "BJT-for-simple-current-regulation-2",
+  "elements": 6,
+  "drawable": 6,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "npn"
+  ],
+  "source": "Others/BJT-for-simple-current-regulation.asc"
+ },
+ {
+  "name": "Buck-converter-closed-loop-control-2",
+  "elements": 10,
+  "drawable": 6,
+  "unsupported": [
+   "B_Vb1:bv",
+   "B_PI_regulator:bv",
+   "B_PI_regulator1:bv",
+   "B1:bv"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "ind",
+   "schottky",
+   "cap",
+   "res",
+   "nmos",
+   "bv"
+  ],
+  "source": "Others/Buck-converter-closed-loop-control.asc"
+ },
+ {
+  "name": "Cockcroft-walton-multiplier",
+  "elements": 13,
+  "drawable": 13,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "diode",
+   "cap"
+  ],
+  "source": "Others/Cockcroft-walton-multiplier.asc"
+ },
+ {
+  "name": "Differential-pair-2",
+  "elements": 16,
+  "drawable": 16,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "npn",
+   "res",
+   "voltage",
+   "cap"
+  ],
+  "source": "Others/Differential-pair.asc"
+ },
+ {
+  "name": "PD-controller-2",
+  "elements": 17,
+  "drawable": 13,
+  "unsupported": [],
+  "unknown": [
+   "Opamps\\AD823A",
+   "Opamps\\AD823A",
+   "Opamps\\AD823A",
+   "Opamps\\AD823A"
+  ],
+  "supported": false,
+  "symbols": [
+   "Opamps\\AD823A",
+   "res",
+   "cap",
+   "voltage"
+  ],
+  "source": "Others/PD-controller.asc"
+ },
+ {
+  "name": "overvoltage-protection-zener-diodes",
+  "elements": 10,
+  "drawable": 10,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "zener",
+   "res"
+  ],
+  "source": "Overvoltage protection circuits/overvoltage-protection-zener-diodes.asc"
+ },
+ {
+  "name": "Ferranti-effect-lines",
+  "elements": 14,
+  "drawable": 14,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "ind",
+   "cap"
+  ],
+  "source": "Power-lines/Ferranti-effect-lines.asc"
+ },
+ {
+  "name": "Power-line-power-transmission",
+  "elements": 23,
+  "drawable": 21,
+  "unsupported": [
+   "B1:bv",
+   "B2:bv"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "ind",
+   "res",
+   "bv"
+  ],
+  "source": "Power-lines/Power-line-power-transmission.asc"
+ },
+ {
+  "name": "PWM-modulation",
+  "elements": 11,
+  "drawable": 10,
+  "unsupported": [
+   "X_U1:Comparators\\LT1720"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "Comparators\\LT1720",
+   "ind",
+   "cap",
+   "res"
+  ],
+  "source": "Pwm/PWM-modulation.asc"
+ },
+ {
+  "name": "AM-FM-signals-sources",
+  "elements": 3,
+  "drawable": 1,
+  "unsupported": [
+   "B1:bv",
+   "B2:bv"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "bv"
+  ],
+  "source": "RF-generators/AM-FM-signals-sources.asc"
+ },
+ {
+  "name": "Analog-multiplier",
+  "elements": 20,
+  "drawable": 15,
+  "unsupported": [
+   "X_U1:Opamps\\opamp",
+   "X_U3:Opamps\\opamp",
+   "X_U2:Opamps\\opamp",
+   "X_U4:Opamps\\opamp",
+   "X_U5:Opamps\\opamp"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Opamps\\opamp",
+   "voltage",
+   "res",
+   "diode"
+  ],
+  "source": "Signal processing/Analog-multiplier.asc"
+ },
+ {
+  "name": "Inverting-integrator-and-derivative",
+  "elements": 11,
+  "drawable": 9,
+  "unsupported": [
+   "X_U2:Opamps\\LT1007",
+   "X_U4:Opamps\\LT1007"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "res",
+   "cap",
+   "voltage",
+   "Opamps\\LT1007"
+  ],
+  "source": "Signal processing/Inverting-integrator-and-derivative.asc"
+ },
+ {
+  "name": "Inverting-sum",
+  "elements": 10,
+  "drawable": 9,
+  "unsupported": [
+   "X_U1:Opamps\\LT1007"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "Opamps\\LT1007",
+   "res"
+  ],
+  "source": "Signal processing/Inverting-sum.asc"
+ },
+ {
+  "name": "Non-inverting-derivative",
+  "elements": 8,
+  "drawable": 7,
+  "unsupported": [
+   "X_U2:Opamps\\LT1007"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "res",
+   "cap",
+   "voltage",
+   "Opamps\\LT1007"
+  ],
+  "source": "Signal processing/Non-inverting-derivative.asc"
+ },
+ {
+  "name": "Non-inverting-integrator",
+  "elements": 8,
+  "drawable": 7,
+  "unsupported": [
+   "X_U2:Opamps\\LT1007"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "cap",
+   "res",
+   "voltage",
+   "Opamps\\LT1007"
+  ],
+  "source": "Signal processing/Non-inverting-integrator.asc"
+ },
+ {
+  "name": "Non-inverting-sum",
+  "elements": 15,
+  "drawable": 14,
+  "unsupported": [
+   "X_U1:Opamps\\LT1007"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Opamps\\LT1007",
+   "voltage",
+   "res"
+  ],
+  "source": "Signal processing/Non-inverting-sum.asc"
+ },
+ {
+  "name": "soft-starter-12V",
+  "elements": 12,
+  "drawable": 11,
+  "unsupported": [
+   "S1:sw"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "res",
+   "cap",
+   "nmos",
+   "ind",
+   "diode",
+   "voltage",
+   "sw"
+  ],
+  "source": "Soft-starters/soft-starter-12V.asc"
+ },
+ {
+  "name": "Current-source-BJT-2",
+  "elements": 6,
+  "drawable": 5,
+  "unsupported": [
+   "X_U1:Opamps\\opamp"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "res",
+   "npn",
+   "Opamps\\opamp"
+  ],
+  "source": "Sources and regulators/Current-source-BJT.asc"
+ },
+ {
+  "name": "Raw-voltage-regulator-with-zener-diode.",
+  "elements": 4,
+  "drawable": 4,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "zener",
+   "res",
+   "voltage"
+  ],
+  "source": "Sources and regulators/Raw-voltage-regulator-with-zener-diode..asc"
+ },
+ {
+  "name": "Voltage-regulator-npn",
+  "elements": 8,
+  "drawable": 7,
+  "unsupported": [
+   "X_U1:Opamps\\LT1001"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "npn",
+   "Opamps\\LT1001",
+   "voltage",
+   "res"
+  ],
+  "source": "Sources and regulators/Voltage-regulator-npn.asc"
+ },
+ {
+  "name": "Temperature-Variation-LTSpice",
+  "elements": 3,
+  "drawable": 3,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "zener"
+  ],
+  "source": "Temperature-variation-simulation/Temperature-Variation-LTSpice.asc"
+ },
+ {
+  "name": "Temperature-Variation-and-Worst-case-LTSpice",
+  "elements": 3,
+  "drawable": 3,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "zener"
+  ],
+  "source": "Temperature-variation-simulation/Temperature-Variation-and-Worst-case-LTSpice.asc"
+ },
+ {
+  "name": "Temperature-sweep-simulation",
+  "elements": 6,
+  "drawable": 6,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "res",
+   "npn"
+  ],
+  "source": "Temperature-variation-simulation/Temperature-sweep-simulation.asc"
+ },
+ {
+  "name": "Adjustable-duty-cycle-555-square-wave-oscillator-2",
+  "elements": 12,
+  "drawable": 11,
+  "unsupported": [
+   "X_U1:Misc\\NE555"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Misc\\NE555",
+   "voltage",
+   "res",
+   "cap",
+   "diode"
+  ],
+  "source": "Tested-circuits/Adjustable-duty-cycle-555-square-wave-oscillator.asc"
+ },
+ {
+  "name": "Current-source-BJT-2-2",
+  "elements": 6,
+  "drawable": 6,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "voltage",
+   "pnp"
+  ],
+  "source": "Tested-circuits/Current-source-BJT.asc"
+ },
+ {
+  "name": "Sawtooth-oscillator-2",
+  "elements": 10,
+  "drawable": 10,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "res",
+   "cap",
+   "pnp",
+   "voltage",
+   "npn"
+  ],
+  "source": "Tested-circuits/Sawtooth-oscillator.asc"
+ },
+ {
+  "name": "Variable-duty-cycle-square-wave-2",
+  "elements": 14,
+  "drawable": 13,
+  "unsupported": [
+   "X_U1:Opamps\\opamp"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "res",
+   "cap",
+   "pnp",
+   "voltage",
+   "npn",
+   "Opamps\\opamp"
+  ],
+  "source": "Tested-circuits/Variable-duty-cycle-square-wave.asc"
+ },
+ {
+  "name": "Example-of-mutually-coupled-inductors",
+  "elements": 7,
+  "drawable": 7,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "ind2",
+   "res",
+   "current"
+  ],
+  "source": "Transformer/Example-of-mutually-coupled-inductors.asc"
+ },
+ {
+  "name": "Transformer-step-down-2-1",
+  "elements": 4,
+  "drawable": 4,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "ind2",
+   "res"
+  ],
+  "source": "Transformer/Transformer-step-down-2-1.asc"
+ },
+ {
+  "name": "Transformer-step-down-5-1",
+  "elements": 4,
+  "drawable": 4,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "ind2",
+   "voltage",
+   "res"
+  ],
+  "source": "Transformer/Transformer-step-down-5-1.asc"
+ },
+ {
+  "name": "Transformer-step-down-up",
+  "elements": 16,
+  "drawable": 16,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "ind2",
+   "res"
+  ],
+  "source": "Transformer/Transformer-step-down-up.asc"
+ },
+ {
+  "name": "555-bistable-mode",
+  "elements": 9,
+  "drawable": 6,
+  "unsupported": [
+   "X_U1:Misc\\NE555",
+   "S1:sw",
+   "S2:sw"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Misc\\NE555",
+   "res",
+   "voltage",
+   "sw"
+  ],
+  "source": "Trigger circuits/555-bistable-mode.asc"
+ },
+ {
+  "name": "555-monostable-mode",
+  "elements": 9,
+  "drawable": 8,
+  "unsupported": [
+   "X_U1:Misc\\NE555"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Misc\\NE555",
+   "voltage",
+   "res",
+   "cap",
+   "npn"
+  ],
+  "source": "Trigger circuits/555-monostable-mode.asc"
+ },
+ {
+  "name": "555-raw-monostable-mode-temporizzatore",
+  "elements": 14,
+  "drawable": 9,
+  "unsupported": [
+   "X_A1:Digital\\srflop",
+   "X_U1:Comparators\\LT1018",
+   "X_U2:Comparators\\LT1018",
+   "E1:e",
+   "S1:sw"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Digital\\srflop",
+   "res",
+   "cap",
+   "Comparators\\LT1018",
+   "voltage",
+   "npn",
+   "e",
+   "sw"
+  ],
+  "source": "Trigger circuits/555-raw-monostable-mode-temporizzatore.asc"
+ },
+ {
+  "name": "Peak-trigger-circuit",
+  "elements": 9,
+  "drawable": 8,
+  "unsupported": [
+   "X_U1:Opamps\\LT1007A"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Opamps\\LT1007A",
+   "voltage",
+   "res",
+   "cap",
+   "diode"
+  ],
+  "source": "Trigger circuits/Peak-trigger-circuit.asc"
+ },
+ {
+  "name": "Sensor-triggered-timer-temporizzatore-1",
+  "elements": 15,
+  "drawable": 13,
+  "unsupported": [
+   "X_U3:Comparators\\LT1720",
+   "X_U1:Comparators\\LT1720"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "npn",
+   "res",
+   "cap",
+   "diode",
+   "Comparators\\LT1720"
+  ],
+  "source": "Trigger circuits/Sensor-triggered-timer-temporizzatore-1.asc"
+ },
+ {
+  "name": "Sensor-triggered-timer-temporizzatore-2",
+  "elements": 17,
+  "drawable": 15,
+  "unsupported": [
+   "X_U1:Comparators\\LT1018",
+   "X_U2:Comparators\\LT1018"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "Comparators\\LT1018",
+   "voltage",
+   "res",
+   "cap",
+   "npn"
+  ],
+  "source": "Trigger circuits/Sensor-triggered-timer-temporizzatore-2.asc"
+ },
+ {
+  "name": "Sensor-triggered-timer",
+  "elements": 15,
+  "drawable": 13,
+  "unsupported": [
+   "X_U3:Comparators\\LT1720",
+   "X_U1:Comparators\\LT1720"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "npn",
+   "res",
+   "cap",
+   "diode",
+   "Comparators\\LT1720"
+  ],
+  "source": "Trigger circuits/Sensor-triggered-timer.asc"
+ },
+ {
+  "name": "Cockcroft-walton-multiplier-2",
+  "elements": 13,
+  "drawable": 13,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "diode",
+   "cap"
+  ],
+  "source": "Voltage-elevator-circuits/Cockcroft-walton-multiplier.asc"
+ },
+ {
+  "name": "Worst-Case-Scenario-2-Simulation-LTSpice",
+  "elements": 5,
+  "drawable": 5,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "cap",
+   "res"
+  ],
+  "source": "Worst-case-scenario-simulation/Worst-Case-Scenario-2-Simulation-LTSpice.asc"
+ },
+ {
+  "name": "Worst-Case-Scenario-Simulation-LTSpice",
+  "elements": 5,
+  "drawable": 5,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "cap",
+   "res"
+  ],
+  "source": "Worst-case-scenario-simulation/Worst-Case-Scenario-Simulation-LTSpice.asc"
+ },
+ {
+  "name": "zero-crossing-detector-2",
+  "elements": 11,
+  "drawable": 11,
+  "unsupported": [],
+  "unknown": [],
+  "supported": true,
+  "symbols": [
+   "voltage",
+   "schottky",
+   "res",
+   "npn",
+   "cap"
+  ],
+  "source": "Zero-crossing-detectors/zero-crossing-detector-2.asc"
+ },
+ {
+  "name": "zero-crossing-detector",
+  "elements": 9,
+  "drawable": 8,
+  "unsupported": [
+   "X_U1:Optos\\4N25"
+  ],
+  "unknown": [],
+  "supported": false,
+  "symbols": [
+   "voltage",
+   "schottky",
+   "res",
+   "Optos\\4N25"
+  ],
+  "source": "Zero-crossing-detectors/zero-crossing-detector.asc"
+ }
+]

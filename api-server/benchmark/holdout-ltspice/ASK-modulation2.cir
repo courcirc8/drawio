@@ -1,0 +1,39 @@
+* ASK-modulation2 — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Vcc 0 5
+V_Carrier Vcarrier 0 SINE(0 1 1k 0 0 0)
+R1 n1 Vcarrier 1k
+Q1 n2 n3 0 2N3904
+Vsignal Vsignal_send 0 PULSE(0 5 5m 1n 1n 5m 10m 3)
+V4 Vee 0 -5
+R2 n3 n4 1k
+R3 0 n5 20k
+C1 0 n5 100n
+Rx1 n6 Vcc 10k
+Ry1 n6 0 222
+Rh1 n7 n6 2.5k
+X_U4 n6 n5 Vcc 0 n7 Comparators\LT1720
+X_U3 n8 n7 Vcc 0 Vreceived Comparators\LT1720
+R4 n8 Vcc 10k
+R5 0 n8 2k
+R6 Vreceived 0 1k
+X_U5 n1 Vant Vcc Vee Vant Opamps\UniversalOpamp2
+D1 Vant n5 1N5818
+R7 n1 n2 0.5k
+Q2 n4 n9 0 2N3904
+R8 n9 Vsignal_send 1k
+R9 n4 Vcc 1k
+Q3 n1 n10 0 2N3904
+R10 0 n11 100k
+C2 0 n11 100n
+Q4 Vcc n12 n13 2N3904
+R11 n12 n14 100
+R12 n11 n13 100
+R13 n10 n15 1k
+X_U1 Vsignal_send n11 Vcc Vee n14 Opamps\UniversalOpamp2
+X_U2 n16 n17 Vcc Vee n15 Comparators\LT1720
+R14 n17 Vee 6.8k
+R15 0 n17 3.2k
+X_U6 0 n18 Vcc Vee n16 Opamps\UniversalOpamp2
+R16 n18 n11 100k
+R17 n16 n18 100k
+.end

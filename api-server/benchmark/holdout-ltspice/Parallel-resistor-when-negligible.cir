@@ -1,0 +1,6 @@
+* Parallel-resistor-when-negligible — converted from LTspice .asc by tools/asc2spice.mjs
+R1 n1 n2 50
+R2 n2 0 50
+R3 n2 0 {R}
+V1 n1 0 10
+.end

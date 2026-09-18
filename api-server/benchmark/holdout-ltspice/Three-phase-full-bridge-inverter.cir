@@ -1,0 +1,40 @@
+* Three-phase-full-bridge-inverter — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 380
+C1 n1 n2 1m
+C2 n2 0 1m
+R1 n3 n4 1
+L1 n3 n5 10m
+S1 n6 n1 Ta_p 0 ?
+D1 n6 n1 D
+S2 0 n6 Ta_m 0 ?
+D2 0 n6 D
+Vc1 n7 0 SINE(0 8 160)
+X_U1 n7 Vt Vcc Vee n8 Comparators\LT1721
+V4 Vcc 0 10
+V5 Vee 0 -10
+V2 Vt 0 PULSE(-10 10 0 0.03124m 0.03124m 0.00002m 0.0625m)
+R2 n2 0 1
+R3 n1 n2 1
+S3 n4 n1 Tb_p 0 ?
+D3 n4 n1 D
+S4 0 n4 Tb_m 0 ?
+D4 0 n4 D
+S5 n9 n1 Tc_p 0 ?
+D5 n9 n1 D
+S6 0 n9 Tc_m 0 ?
+D6 0 n9 D
+Vc2 n10 0 SINE(0 8 160 0 0 120)
+X_U4 n10 Vt Vcc Vee n11 Comparators\LT1721
+Vc3 n12 0 SINE(0 8 160 0 0 240)
+X_U7 n12 Vt Vcc Vee n13 Comparators\LT1721
+R4 n14 n6 1
+L2 n14 n5 10m
+R5 n15 n9 1
+L3 n15 n5 10m
+R6 n16 n6 1
+L4 n16 n4 10m
+R7 n17 n4 1
+L5 n17 n9 10m
+R8 n18 n9 1
+L6 n18 n6 10m
+.end

@@ -1,0 +1,6 @@
+* Lossless-transmission-line-pulse — converted from LTspice .asc by tools/asc2spice.mjs
+T1 n1 0 n2 0 ?
+V1 n3 0 PULSE(0 1 1p 1p 1p 5n)
+RS n1 n3 1k
+RL n2 0 1k
+.end

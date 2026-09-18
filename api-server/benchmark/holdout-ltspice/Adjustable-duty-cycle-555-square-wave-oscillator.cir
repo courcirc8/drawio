@@ -1,0 +1,14 @@
+* Adjustable-duty-cycle-555-square-wave-oscillator — converted from LTspice .asc by tools/asc2spice.mjs
+X_U1 0 n1 n2 Vcc n3 n1 n4 Vcc Misc\NE555
+V1 Vcc 0 12
+R1 n2 0 10k
+C1 n3 0 100n
+D1 n4 n5 1N4148
+D2 n6 n4 1N4148
+R2 n1 n6 POT
+R3 n5 n1 POT
+C2 n1 0 100n
+R4 Vcc n4 1k
+C3 Vcc 0 100u
+C4 Vcc 0 100u
+.end

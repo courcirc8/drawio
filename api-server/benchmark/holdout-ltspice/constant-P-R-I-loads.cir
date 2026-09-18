@@ -1,0 +1,11 @@
+* constant-P-R-I-loads — converted from LTspice .asc by tools/asc2spice.mjs
+B1 n1 0 P=1
+R1 n2 n1 100m
+V1 n2 0 PULSE(11 12 0 1 1 1 3)
+R2 n3 n4 100m
+V2 n3 0 PULSE(11 12 0 1 1 1 3)
+R3 n5 n6 100m
+V3 n5 0 PULSE(11 12 0 1 1 1 3)
+R4 n4 0 1
+B2 n6 0 I=1
+.end

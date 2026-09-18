@@ -1,0 +1,12 @@
+* Inverting-sum — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Va 0 PULSE(0 1 0 1n 1n 100ms 200ms)
+V2 Vb 0 PULSE(0 1 0 1n 1n 100ms 200ms)
+V3 Vc 0 PULSE(0 1 0 1n 1n 100ms 200ms)
+V4 Vcc 0 15
+V5 Vee 0 -15
+X_U1 0 n1 Vcc Vee Out Opamps\LT1007
+R1 n1 Va 1k
+R2 n1 Vb 1k
+R3 n1 Vc 1k
+R4 Out n1 1k
+.end

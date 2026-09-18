@@ -1,0 +1,41 @@
+* Common-emitter-amplifier-design — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Vcc 0 12
+V2 V_signal 0 SINE(0 10m 10k)
+R1 Vcc n1 33k
+R2 n1 0 3.3k
+R3 n2 0 1.2k
+R4 Vcc n3 4.7k
+Q1 n3 n1 n2 2N3904
+C2 n1 V_signal 2.2u
+R5 Vcc n4 33k
+R6 n4 0 3.3k
+R7 n5 0 1.2k
+R8 Vcc n6 4.7k
+Q2 n6 n4 n5 2N3904
+C1 n4 V_signal 1u
+Cb n5 0 47u
+C4 Vout_2 n6 39u
+R9 Vout_2 0 100k
+C5 Vout_1 n3 39u
+R10 Vout_1 0 100k
+R11 Vcc n7 33k
+R12 n7 0 2.0k
+R14 Vcc n8 4.7k
+Q3 n8 n7 0 2N3904
+C3 n7 V_signal 2.2u
+C6 Vout_3 n8 39u
+R15 Vout_3 0 100k
+R13 V_signal n9 2.99k
+V3 n9 0 0
+F1 n10 0 V3 229
+R16 n10 0 4.7k
+R17 V_signal n11 15.7k
+V4 n11 n12 0
+F2 n13 n12 V4 229
+R18 n13 0 4.7k
+R19 n12 0 1.2k
+R20 V_signal 0 2.0k
+R21 V_signal 0 33k
+R22 V_signal 0 33k
+R23 V_signal 0 3.3k
+.end

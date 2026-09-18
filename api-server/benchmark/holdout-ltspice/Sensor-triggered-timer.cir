@@ -1,0 +1,17 @@
+* Sensor-triggered-timer — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 PULSE(0 5 1 1n 1n 100m 2)
+Q1 Vcc n2 n3 2N3904
+R1 n4 0 100k
+C1 n4 0 10u
+V2 Vcc 0 12
+R2 n5 n6 10k
+Q2 n7 n5 0 2N3904
+R3 n8 n7 1k
+D1 Vcc n8 1N4148
+R4 n4 n3 1k
+R5 n2 n9 100
+X_U3 n1 n4 Vcc Vee n9 Comparators\LT1720
+V3 Vee 0 -12
+X_U1 n4 Vrif Vcc Vee n6 Comparators\LT1720
+V4 Vrif 0 1
+.end

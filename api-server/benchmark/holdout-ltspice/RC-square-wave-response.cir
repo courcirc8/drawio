@@ -1,0 +1,6 @@
+* RC-square-wave-response — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 PULSE(0 80 0 0.001u 0.001u 10ms 20ms 20)
+R1 n2 n1 20
+R2 0 n2 60
+C1 n2 0 0.4m
+.end

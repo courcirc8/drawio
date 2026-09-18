@@ -1,0 +1,7 @@
+* Monte-Carlo-Simulation-LTSpice — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 ""
+C1 n2 n1 {mc(10u, tolb)}
+R1 n2 Vout {mc(10k, tola)}
+R2 Vout 0 {mc(10k, tola)}
+C2 Vout 0 {mc(1u, tolb)}
+.end

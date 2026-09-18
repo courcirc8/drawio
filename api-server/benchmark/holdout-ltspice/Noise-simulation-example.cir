@@ -1,0 +1,8 @@
+* Noise-simulation-example — converted from LTspice .asc by tools/asc2spice.mjs
+X_U1 n1 n2 Vout Vcc Vee n3 Opamps\LT6200
+V1 Vcc 0 2.5
+V2 Vee 0 -2.5
+R1 Vout n2 900
+R2 n2 0 100
+V3 n1 0 ""
+.end

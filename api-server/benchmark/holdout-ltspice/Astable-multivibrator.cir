@@ -1,0 +1,11 @@
+* Astable-multivibrator — converted from LTspice .asc by tools/asc2spice.mjs
+R1 n1 n2 1k
+R2 n1 n3 100k
+R3 n1 n4 100k
+R4 n1 n5 1k
+Q1 n5 n3 0 BC547B
+Q2 n2 n4 0 BC547B
+V1 n1 0 9
+C1 n2 n3 1u
+C2 n5 n4 1u
+.end

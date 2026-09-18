@@ -1,0 +1,14 @@
+* AM-modulator-bjt — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Vcc 0 30
+V2 Vcarrier 0 SINE(0 30m 600k)
+V3 Vmodulating 0 SINE(0 3.5 1k)
+R1 Vcc n1 56k
+R2 n1 0 15k
+C1 n1 Vcarrier 100n
+Q1 n2 n1 n3 2N3904
+R3 Vcc n2 10k
+R4 n3 Vmodulating 4.7k
+C2 n3 0 100n
+C3 n4 n2 470p
+R5 n4 0 1k
+.end

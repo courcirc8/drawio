@@ -1,0 +1,22 @@
+* Logic-gates-diodes-transistors — converted from LTspice .asc by tools/asc2spice.mjs
+D1 Signal_1 OR_out 1N4148
+D2 Signal_2 OR_out 1N4148
+R1 OR_out 0 10k
+D3 AND_out Signal_1 1N4148
+D4 AND_out Signal_2 1N4148
+R2 Vcc AND_out 10k
+V1 Vcc 0 12
+V2 Signal_1 0 PULSE(0 12 0 1n 1n 1 2 1)
+V3 Signal_2 0 PULSE(0 12 0.5 1n 1n 1 2 1)
+R3 Vcc NOT_out 10k
+Q1 NOT_out n1 0 2N3904
+R4 n1 Signal_1 1k
+R12 Vcc XOR_out 10k
+Q6 XOR_out n2 0 2N3904
+R13 n2 n3 1k
+Q7 n3 n4 Signal_2 2N3904
+Q8 n3 n5 Signal_1 2N3904
+R14 n5 Signal_2 10k
+R15 n4 Signal_1 10k
+R16 Vcc n3 10k
+.end

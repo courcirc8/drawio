@@ -1,0 +1,27 @@
+* Common-collector-emitter-follower-amplifier — converted from LTspice .asc by tools/asc2spice.mjs
+Q1 Vcc n1 Vout_1 2N3904
+R1 Vout_1 0 3.5k
+V1 V_signal 0 SINE(0 100m 100k)
+V2 Vcc 0 12
+R2 Vcc n1 620k
+C1 n1 V_signal 159u
+Q2 Vcc n2 Vout_2 2N3904
+R3 Vout_2 0 3.5k
+C2 n2 V_signal 159u
+R4 Vcc n2 50.6k
+R5 n2 0 86.15k
+R6 n3 V_signal 10m
+R7 n4 n3 2.99k
+R8 0 n5 3.5k
+R10 n6 n7 2.99k
+R11 0 n6 3.5k
+F1 0 n5 V3 230
+V3 n4 n5 0
+V4 n8 n7 0
+F2 0 n6 V4 230
+C3 n9 Vout_1 159u
+R9 n9 0 100k
+R12 n8 V_signal 10m
+R13 n8 0 50.6k
+R14 n8 0 86.15k
+.end

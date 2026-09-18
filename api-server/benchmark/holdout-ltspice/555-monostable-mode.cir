@@ -1,0 +1,11 @@
+* 555-monostable-mode — converted from LTspice .asc by tools/asc2spice.mjs
+X_U1 0 n1 n2 n3 n4 n5 n5 power Misc\NE555
+V1 power 0 12
+R1 power n5 1k
+C1 n5 0 10u
+R2 power n1 10k
+Q1 n1 n6 0 2N3904
+V2 n7 0 PULSE(0 12 10m 1n 1n 1m 1m 1)
+R3 n6 n7 10k
+R4 n2 0 10k
+.end

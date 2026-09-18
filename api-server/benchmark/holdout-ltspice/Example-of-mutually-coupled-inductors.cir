@@ -1,0 +1,9 @@
+* Example-of-mutually-coupled-inductors — converted from LTspice .asc by tools/asc2spice.mjs
+L1 0 n1 4m
+L2 0 n2 1m
+R1 n3 n1 5
+R2 n4 n3 2
+I1 0 n4 SINE(0 10 159.15)
+I2 0 n3 2
+R3 n2 0 1
+.end

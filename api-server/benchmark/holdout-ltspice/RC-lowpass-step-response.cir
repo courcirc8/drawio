@@ -1,0 +1,5 @@
+* RC-lowpass-step-response — converted from LTspice .asc by tools/asc2spice.mjs
+C1 OUT 0 100u
+R1 OUT n1 2k
+V1 n1 0 5
+.end

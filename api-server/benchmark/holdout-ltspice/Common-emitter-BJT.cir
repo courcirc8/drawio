@@ -1,0 +1,21 @@
+* Common-emitter-BJT — converted from LTspice .asc by tools/asc2spice.mjs
+V_IN_E_BIAS n1 0 SINE(1 10m 1000)
+R1 n2 n1 2.4k
+R2 n3 Vcc 240
+Q1 n3 n2 0 2N2222
+V2 Vcc 0 12
+C1 OUT n3 1u
+R4 OUT 0 10k
+C2 n4 n5 1u
+R6 IN 0 10k
+R9 n6 n7 2.4k
+R7 n8 Vcc 240
+Q2 n8 n6 n9 2N2222
+C3 OUT2 n8 1u
+R11 OUT2 0 10k
+C4 n10 n11 1u
+R10 IN2 0 10k
+V_Signal n7 0 SINE(1 10m 1000)
+Re n9 0 120
+Cb n9 0 1000u
+.end

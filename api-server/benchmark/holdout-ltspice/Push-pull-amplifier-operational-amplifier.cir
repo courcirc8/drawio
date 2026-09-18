@@ -1,0 +1,16 @@
+* Push-pull-amplifier-operational-amplifier — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Vcc 0 15
+V2 Vee 0 -15
+V3 n1 0 SINE(0 1 5 0 0 0 0)
+Q1 V+ n2 n3 2N3904
+Q2 V- n2 n3 PNP_2N3906
+R1 n3 0 2.5
+X_U1 n1 n3 Vcc Vee n2 Opamps\LT1007
+V4 V+ 0 1.5
+V5 V- 0 -1.5
+M1 Vcc n4 n5 n5 AO6408
+M2 n5 n4 Vee Vee PMOS_AO6407
+R2 n5 0 10k
+V8 n6 0 SINE(0 1 5)
+X_U2 n6 n5 Vcc Vee n4 Opamps\LT1007
+.end

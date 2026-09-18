@@ -1,0 +1,13 @@
+* LED-blinking-oscillator — converted from LTspice .asc by tools/asc2spice.mjs
+C1 n1 0 10u
+R1 n2 n1 144.8k
+R2 n2 n3 2k
+R3 0 n3 1k
+V1 Vcc 0 10
+R4 n4 n2 115k
+Q1 n5 n4 0 2N2222
+R5 n6 n5 487
+D1 Vcc n6 QTLP690C
+V2 Vee 0 -10
+X_U2 n3 n1 Vcc Vee n2 Comparators\LT1720
+.end

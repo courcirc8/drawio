@@ -1,0 +1,5 @@
+* Temperature-Variation-and-Worst-case-LTSpice — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 12
+R1 n2 0 {wc(10k, tol)}
+D1 n2 n1 BZX84C6V2L
+.end

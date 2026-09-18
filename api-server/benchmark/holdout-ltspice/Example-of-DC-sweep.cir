@@ -1,0 +1,5 @@
+* Example-of-DC-sweep — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 ""
+R1 n2 n1 1k
+D1 n2 0 1N4148
+.end

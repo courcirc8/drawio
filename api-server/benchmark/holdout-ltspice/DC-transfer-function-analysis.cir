@@ -1,0 +1,5 @@
+* DC-transfer-function-analysis — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 12
+R1 out n1 1k
+R2 out 0 1k
+.end

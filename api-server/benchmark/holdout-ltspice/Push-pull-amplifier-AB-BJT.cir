@@ -1,0 +1,39 @@
+* Push-pull-amplifier-AB-BJT — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Vcc 0 12
+V2 Vee 0 -12
+Q1 n1 n2 n3 2N3904
+Q2 n4 n5 n3 PNP_2N3906
+R1 Vcc n2 11.3k
+D1 n2 n6 1N4148
+D2 n6 n5 1N4148
+R2 n5 Vee 11.3k
+V3 V_signal 0 SINE(0 1 100k)
+R3 Vout_1 0 1k
+C1 n6 V_signal 22u
+C2 Vout_1 n3 22u
+R5 n4 Vee 1k
+Q3 n7 n8 n9 2N3904
+Q4 n10 n11 n9 PNP_2N3906
+R6 Vcc n8 5.35k
+D3 n8 n12 1N4148
+D4 n12 n11 1N4148
+R7 n11 0 5.35k
+R8 Vout_2 0 1k
+C3 Vout_2 n9 22u
+R10 n10 0 1k
+C4 n12 V_signal 22u
+Q5 n13 n14 n15 2N3904
+Q6 n16 n17 n15 PNP_2N3906
+R11 Vcc n14 5.35k
+D5 n14 n18 1N4148
+D6 n18 n17 1N4148
+R12 n17 0 5.35k
+R13 Vout_3 0 1k
+C5 Vout_3 n15 22u
+R14 Vcc n13 1k
+R15 n16 0 1k
+C6 n14 V_signal 22u
+C7 n17 V_signal 22u
+R4 Vcc n1 1k
+R9 Vcc n7 1k
+.end

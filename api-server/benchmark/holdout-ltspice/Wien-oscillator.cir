@@ -1,0 +1,11 @@
+* Wien-oscillator — converted from LTspice .asc by tools/asc2spice.mjs
+R1 0 n1 10k
+R2 n2 n1 20k
+R3 n3 n4 10k
+C1 n2 n3 10n
+C2 0 n4 10n
+R4 n4 0 10k
+V1 A 0 10
+X_U2 n4 n1 A B n2 Opamps\LT1001
+V2 B 0 -10
+.end

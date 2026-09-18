@@ -1,0 +1,6 @@
+* RLC-step-response-example — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 10
+L1 n2 0 0.03
+R1 n1 n3 10
+C1 n3 n2 100u
+.end

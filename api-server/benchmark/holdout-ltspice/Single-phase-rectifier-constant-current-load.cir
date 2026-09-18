@@ -1,0 +1,9 @@
+* Single-phase-rectifier-constant-current-load — converted from LTspice .asc by tools/asc2spice.mjs
+D1 n1 n2 D
+D2 0 n3 D
+D3 n3 n2 D
+D4 0 n1 D
+V1 n4 n3 SINE(0 325 50)
+I1 n2 0 10
+L1 n4 n1 100u
+.end

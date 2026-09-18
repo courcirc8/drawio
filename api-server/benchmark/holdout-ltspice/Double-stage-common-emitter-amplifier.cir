@@ -1,0 +1,19 @@
+* Double-stage-common-emitter-amplifier — converted from LTspice .asc by tools/asc2spice.mjs
+C1 n1 n2 1u
+R1 Vcc n1 4.7k
+R2 n1 0 1k
+R3 Vcc Vout_stage1 4.7k
+R4 n3 0 1k
+C2 n3 0 20u
+Q1 Vout_stage1 n1 n3 2N3904
+V_signal n2 0 ""
+V2 Vcc 0 9
+C3 n4 Vout_stage1 1u
+R5 Vcc n4 4.7k
+R6 n4 0 1k
+R7 Vcc Vout 4.7k
+Q2 Vout n4 n5 2N3904
+R8 n5 0 1k
+R9 n6 0 50
+C4 n5 n6 20u
+.end

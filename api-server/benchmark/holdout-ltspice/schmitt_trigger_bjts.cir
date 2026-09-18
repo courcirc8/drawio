@@ -1,0 +1,12 @@
+* schmitt_trigger_bjts — converted from LTspice .asc by tools/asc2spice.mjs
+R1 Vcc n1 1k
+R2 n1 n2 18k
+R3 n2 0 910
+R4 n2 Vin 10k
+R5 Vcc n3 1k
+R6 n3 n4 18k
+Q1 n3 n2 0 2N3904
+Q2 n1 n4 0 2N3904
+V1 Vcc 0 12
+V2 Vin 0 SINE(0 10 1)
+.end

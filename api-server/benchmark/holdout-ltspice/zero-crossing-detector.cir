@@ -1,0 +1,11 @@
+* zero-crossing-detector — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 n2 SINE(0 230 50)
+D1 n1 n3 1N5819
+D2 0 n2 1N5819
+D3 n2 n3 1N5819
+D4 0 n1 1N5819
+R1 n4 n3 1k
+X_U1 n4 0 out 0 n5 Optos\4N25
+R2 out Vcc 1k
+V2 Vcc 0 12
+.end

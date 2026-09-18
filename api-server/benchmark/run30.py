@@ -2,7 +2,7 @@
 """Cycle benchmark 30 circuits : genere chaque netlist de benchmark/netlists30/
 via l'API (engine=v2 + optimize), puis mesure LVS, check.py (juge independant),
 beauty. Sortie : <outdir>/<name>.{xml,png} + results.json + tableau.
-Usage: python3 benchmark/run30.py <outdir> [--optimize N] [--only a,b,c]
+Usage: python3 benchmark/run30.py <outdir> [--optimize N] [--only a,b,c] [--nets DIR]
 """
 import json, os, subprocess, sys, time, urllib.request
 
@@ -37,6 +37,12 @@ def main():
         optimize = int(sys.argv[sys.argv.index('--optimize') + 1])
     if '--only' in sys.argv:
         only = set(sys.argv[sys.argv.index('--only') + 1].split(','))
+    # --nets DIR : another corpus of .cir (e.g. benchmark/holdout-ltspice, the
+    # held-out LTspice conversions) instead of netlists30. Same judge, same
+    # server, same output format, so the two runs are directly comparable.
+    global NETS
+    if '--nets' in sys.argv:
+        NETS = os.path.abspath(sys.argv[sys.argv.index('--nets') + 1])
     os.makedirs(outdir, exist_ok=True)
     names = sorted(f[:-4] for f in os.listdir(NETS) if f.endswith('.cir'))
     if only:

@@ -1,0 +1,5 @@
+* AM-FM-signals-sources — converted from LTspice .asc by tools/asc2spice.mjs
+V1 modulating_signal 0 SINE(10 10 1)
+B1 FM_modulated_output 0 V=sin(V(modulating_signal)*3.14158*2*time)
+B2 AM_modulated_output 0 V=V(modulating_signal)*sin(50*3.14158*2*time)
+.end

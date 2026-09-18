@@ -1,0 +1,15 @@
+* diode-ring-mixer — converted from LTspice .asc by tools/asc2spice.mjs
+L1 0 n1 1m
+L2 n2 0 1m
+L3 output n3 1m
+L4 n4 output 1m
+L5 0 n5 1m
+L6 0 n6 1m
+V_LO n5 0 SINE(0 10 7Meg)
+Vrf n6 0 SINE(0 10 10Meg)
+R1 output 0 5k
+D2 n3 n1 1N5819
+D3 n2 n3 1N5819
+D1 n4 n2 1N5819
+D4 n1 n4 1N5819
+.end

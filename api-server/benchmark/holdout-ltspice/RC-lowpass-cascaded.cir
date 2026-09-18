@@ -1,0 +1,7 @@
+* RC-lowpass-cascaded — converted from LTspice .asc by tools/asc2spice.mjs
+R1 n1 Output_low_pass_1 1
+C1 Output_low_pass_1 0 100u
+V1 n1 0 SINE(0 1)
+R3 Output_low_pass_1 Output_low_pass_2 1
+C2 Output_low_pass_2 0 100u
+.end

@@ -1,0 +1,24 @@
+* Logic-gates-transistors-BJTs — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Vcc 0 12
+V2 Signal_1 0 PULSE(0 12 0 1n 1n 1 2 1)
+V3 Signal_2 0 PULSE(0 12 0.5 1n 1n 1 2 1)
+Q1 Vcc n1 n2 2N3904
+Q2 n2 n3 AND_out 2N3904
+R1 AND_out 0 4.7k
+R2 n1 Signal_1 10k
+R3 n3 Signal_2 10k
+Q3 Vcc n4 OR_out 2N3904
+Q4 Vcc n5 OR_out 2N3904
+R4 OR_out 0 4.7k
+R5 n4 Signal_1 10k
+R6 n5 Signal_2 10k
+Q5 NAND_out n6 n7 2N3904
+Q6 n7 n8 0 2N3904
+R7 Vcc NAND_out 4.7k
+R8 n6 Signal_1 10k
+R9 n8 Signal_2 10k
+R10 n9 Signal_1 10k
+R11 n9 Signal_2 10k
+Q7 NOR_out n9 0 2N3904
+R12 Vcc NOR_out 4.7k
+.end

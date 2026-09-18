@@ -1,0 +1,6 @@
+* Transformer-step-down-5-1 — converted from LTspice .asc by tools/asc2spice.mjs
+Lp n1 0 100u
+Ls 0 n2 4u
+Vs n1 0 SINE(0 100 60)
+RL n2 0 1kOhms
+.end

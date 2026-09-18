@@ -1,0 +1,16 @@
+* Ferranti-effect-lines — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 SINE(0 100 50)
+R1 n2 n1 7.54
+L1 n3 n2 48m
+C1 n3 0 120u
+V2 n4 0 SINE(0 100 50)
+R2 n5 n4 7.54
+L2 n6 n5 48m
+C2 n6 0 12u
+V3 n7 0 SINE(0 100 50)
+R3 n8 n9 7.54
+L3 n10 n8 48m
+C3 n10 0 60u
+L4 n9 n7 3m
+C4 n9 0 60u
+.end

@@ -1,0 +1,25 @@
+* Power-line-power-transmission — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Va 0 SINE(0 324.3 50 0 0 {phi_pos})
+L1 E n1 100m
+V2 E 0 SINE(0 300 50 0)
+R1 n1 Va 1
+V3 n2 0 PULSE(-509 509 {phi_pos/(3.1415*2*50)} 1n 1n 10m 20m)
+L2 n3 n4 100m
+V4 n3 0 SINE(0 300 50 0)
+R2 n4 n2 1
+V5 Vsw 0 PULSE(-1 1 0 1m 1m 0 2m)
+V6 Vcarrier 0 SINE(0 0.8 50 {phi_pos/(3.1415*2*50)})
+B1 n5 0 V=if(V(Vsw) < V(Vcarrier), 509, -509)
+L3 n6 n7 100m
+V7 n6 0 SINE(0 300 50 0)
+R3 n7 n5 1
+V8 n8 0 SINE(0 324.3 50 0 0 {phi_neg})
+L4 n9 n10 100m
+V9 n9 0 SINE(0 300 50 0)
+R4 n10 n8 1
+B2 n11 0 V=if(V(Vsw) < V(Vcarrier2), 509, -509)
+L5 n12 n13 100m
+V10 n12 0 SINE(0 300 50 0)
+R5 n13 n11 1
+V11 Vcarrier2 0 SINE(0 0.8 50 {phi_neg/(3.1415*2*50)})
+.end

@@ -1,0 +1,4 @@
+* How-to-set-initial-conditions — converted from LTspice .asc by tools/asc2spice.mjs
+C1 OUT 0 1
+R1 OUT 0 1
+.end

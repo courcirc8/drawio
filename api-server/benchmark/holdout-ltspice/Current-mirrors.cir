@@ -1,0 +1,12 @@
+* Current-mirrors — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Vcc 0 12
+V2 VL 0 1
+Q1 VL n1 0 2N3904
+Q2 n1 n1 0 2N3904
+R1 Vcc n1 11.4k
+Q3 VL n2 n3 2N3904
+Q4 n2 n2 n4 2N3904
+R2 Vcc n2 10.4k
+R3 n4 0 1k
+R4 n3 0 500
+.end

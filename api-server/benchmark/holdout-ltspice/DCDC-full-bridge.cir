@@ -1,0 +1,18 @@
+* DCDC-full-bridge — converted from LTspice .asc by tools/asc2spice.mjs
+S1 n1 n2 n3 0 ?
+Vd n2 0 380
+D1 n1 n2 D
+D2 0 n1 D
+S2 0 n1 n4 0 ?
+D3 n5 n2 D
+S3 n5 n2 n6 0 ?
+D4 0 n5 D
+S4 0 n5 n3 0 ?
+R1 n1 n7 10
+L1 n7 n5 100m
+V_t n8 0 PULSE(-10 10 0 0.03124m 0.03124m 0.00002m 0.0625m)
+vc n9 0 8
+X_U2 n9 n8 n10 n11 n12 Comparators\LT1721
+Vcc n10 0 10
+Vee n11 0 -10
+.end

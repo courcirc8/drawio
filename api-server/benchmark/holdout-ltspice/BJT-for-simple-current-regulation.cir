@@ -1,0 +1,8 @@
+* BJT-for-simple-current-regulation — converted from LTspice .asc by tools/asc2spice.mjs
+V1 Vin 0 5
+R1 Vin n1 47
+R2 n2 n3 4.2k
+R_Potenziometro n3 0 {10k*(1-x)}
+Q1 n1 n2 0 2N3904
+R_Pot Vin n3 {10k*x}
+.end

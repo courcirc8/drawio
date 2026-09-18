@@ -1,0 +1,11 @@
+* Peak-trigger-circuit — converted from LTspice .asc by tools/asc2spice.mjs
+X_U1 n1 n2 Vcc Vee n3 Opamps\LT1007A
+V_Signal n2 0 SINE(0 1 10)
+Vref n1 0 0.8
+V3 Vcc 0 10
+V4 Vee 0 -10
+R2 n4 0 100k
+C1 n4 n3 1u
+D1 n4 n5 D
+R1 n5 0 10k
+.end

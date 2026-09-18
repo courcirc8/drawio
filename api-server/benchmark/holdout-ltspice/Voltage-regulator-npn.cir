@@ -1,0 +1,10 @@
+* Voltage-regulator-npn — converted from LTspice .asc by tools/asc2spice.mjs
+Q1 Vin n1 OUT 2N3904
+Q2 Vin n2 n1 2N3904
+X_U1 Vref OUT Vcc Vee n2 Opamps\LT1001
+V1 Vee 0 -15
+V2 Vcc 0 15
+V3 Vin 0 5
+R1 OUT 0 500
+V4 Vref 0 {VV}
+.end

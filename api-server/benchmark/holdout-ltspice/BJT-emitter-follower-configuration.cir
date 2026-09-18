@@ -1,0 +1,10 @@
+* BJT-emitter-follower-configuration — converted from LTspice .asc by tools/asc2spice.mjs
+Q1 n1 Vin Vout 2N3904
+R1 Vout 0 5k
+V1 Vin 0 SINE(5 .2 1Meg)
+V2 n1 0 5
+Q2 n2 n3 n4 2N3904
+R2 n4 0 5k
+V3 n3 0 ""
+V4 n2 0 5
+.end

@@ -1,0 +1,18 @@
+* Differential-pair — converted from LTspice .asc by tools/asc2spice.mjs
+Q1 B n1 n2 2N3904
+Q2 A n3 n2 2N3904
+R1 n4 B 180
+R2 n4 A 180
+V1 n4 0 12
+R3 n4 n5 20k
+R4 n5 0 10k
+R5 n1 n5 9.9k
+R6 n3 n5 9.9k
+C1 n5 0 .1u
+C2 Vin n3 .1u
+R7 Vin 0 50
+V2 Vin 0 SINE(0 10m 100k)
+Q3 n2 n6 n7 2N3904
+R8 n7 0 100
+V3 n6 0 3
+.end

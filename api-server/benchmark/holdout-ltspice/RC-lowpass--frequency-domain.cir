@@ -1,0 +1,5 @@
+* RC-lowpass--frequency-domain — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 SINE(1 1 25000)
+R1 OUT n1 1
+C1 OUT 0 100u
+.end

@@ -1,0 +1,12 @@
+* overvoltage-protection-zener-diodes — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 PULSE(12 40 0.5 1u 1u 0.1 1 2)
+D1 n2 n3 BZX84C12VL
+R1 n3 0 10k
+D2 n2 0 BZX84C12VL
+R2 n1 n3 10
+V2 0 n4 PULSE(-12 40 0.5 1u 1u 0.1 1 2)
+D3 n5 n6 BZX84C12VL
+R3 n6 0 10k
+D4 n5 0 BZX84C12VL
+R4 n4 n6 10
+.end

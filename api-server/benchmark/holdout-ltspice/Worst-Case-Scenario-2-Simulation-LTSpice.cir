@@ -1,0 +1,7 @@
+* Worst-Case-Scenario-2-Simulation-LTSpice — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 ""
+C1 n2 n1 {wc(10u, tolb,0)}
+R1 n2 Vout {wc(10k, tola,1)}
+R2 Vout 0 {wc(10k, tola,2)}
+C2 Vout 0 {wc(1u, tolb,3)}
+.end

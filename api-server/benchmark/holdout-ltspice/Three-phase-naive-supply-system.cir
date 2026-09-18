@@ -1,0 +1,41 @@
+* Three-phase-naive-supply-system — converted from LTspice .asc by tools/asc2spice.mjs
+C1 n1 n2 1u
+R1 n1 0 5k
+X_U1 n3 n1 n4 Opamps\opamp
+R2 0 n3 1k
+R3 n4 n3 1k
+C2 n5 n4 1u
+R4 n5 0 5k
+X_U2 n6 n5 Phase3 Opamps\opamp
+R5 0 n6 1k
+R6 Phase3 n6 1k
+X_U3 n7 0 Phase2 Opamps\opamp
+C4 n8 n2 1u
+R10 n8 0 5k
+X_U4 n9 n8 n10 Opamps\opamp
+R11 0 n9 1k
+R12 n10 n9 1k
+R7 n7 n10 1k
+R8 Phase2 n7 1k
+R9 n11 n12 1m
+L1 n12 0 120.5u
+R13 n13 n14 1m
+L2 n14 0 120.5u
+V3 n2 0 SINE(0 1 18.37)
+R14 n15 n16 1m
+L3 n16 0 120.5u
+R15 n17 n11 2.5
+R16 n18 n13 2.5
+R17 n19 n15 2.5
+V5 Vcc 0 3
+Q1 Vcc n20 n17 2N3904
+X_U5 n17 Phase3 n20 Opamps\opamp
+V4 Vee 0 -3
+Q2 Vee n20 n17 PNP_2N2907
+Q3 Vcc n21 n18 2N3904
+X_U6 n18 Phase2 n21 Opamps\opamp
+Q4 Vee n21 n18 PNP_2N2907
+Q5 Vcc n22 n19 2N3904
+X_U7 n19 n2 n22 Opamps\opamp
+Q6 Vee n22 n19 PNP_2N2907
+.end

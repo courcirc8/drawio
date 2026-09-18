@@ -1,0 +1,19 @@
+* Sensor-triggered-timer-temporizzatore-2 — converted from LTspice .asc by tools/asc2spice.mjs
+X_U1 n1 n2 Vcc 0 n3 Comparators\LT1018
+V1 Vcc 0 12
+Rx1 n1 Vcc 10k
+Ry1 n1 0 10k
+Rh1 n3 n1 10k
+R1 n4 n3 50k
+C1 out 0 100u
+R3 out 0 10k
+V2 n2 0 PULSE(0 12 0.1 1n 1n 0.1 0.2 1)
+Q1 n5 n4 0 2N3904
+R4 Vcc n5 10k
+R2 n6 n2 5k
+Q2 n7 n6 out 2N3904
+R5 Vcc n7 100
+X_U2 out n8 Vcc 0 Vout Comparators\LT1018
+R6 n8 0 5k
+R7 Vcc n8 5k
+.end

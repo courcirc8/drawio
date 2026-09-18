@@ -1,0 +1,10 @@
+* A-class-amplifier-bjt — converted from LTspice .asc by tools/asc2spice.mjs
+R2 n1 n2 0.56Meg
+V1 n3 0 SINE(0 1m 10k)
+V2 n1 0 5
+Q1 n4 n2 0 2N3904
+C1 n2 n3 1u
+R3 n1 n4 1k
+C2 n5 n4 1u
+R4 n5 0 10k
+.end

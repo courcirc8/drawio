@@ -1,0 +1,28 @@
+* Phase-shift-oscillator — converted from LTspice .asc by tools/asc2spice.mjs
+C1 n1 0 100n
+R1 n1 n2 1k
+C2 n3 0 100n
+R2 n3 n1 1k
+C3 n4 0 100n
+R3 n4 n3 1k
+V1 n5 0 2.5
+V2 Vcc 0 5
+R4 n6 n4 55.2k
+R5 n2 n6 1.5Meg
+X_U1 n5 n6 Vcc 0 n2 Opamps\LT1880
+C4 n7 0 100n
+R6 n7 n8 1k
+C5 n9 0 100n
+R7 n9 n10 1k
+X_U3 n7 n10 Vcc 0 n10 Opamps\LT1880
+C6 n11 0 100n
+R8 n11 n12 1k
+X_U4 n9 n12 Vcc 0 n12 Opamps\LT1880
+V3 n13 0 2.5
+R9 n14 n11 180k
+R10 n8 n14 1.5Meg
+X_U5 n13 n14 Vcc 0 n8 Opamps\LT1880
+R11 n15 n16 1k
+C7 n15 0 100n
+V4 n16 0 ""
+.end

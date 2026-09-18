@@ -1,0 +1,8 @@
+* Temperature-sweep-simulation — converted from LTspice .asc by tools/asc2spice.mjs
+V1 n1 0 10
+V2 n2 0 3.3
+R1 n2 n3 10k
+R2 n4 0 100
+Q1 n3 n4 0 2N3904
+Q2 n1 n3 n4 2N3904
+.end

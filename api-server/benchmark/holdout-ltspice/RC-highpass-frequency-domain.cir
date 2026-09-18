@@ -1,0 +1,5 @@
+* RC-highpass-frequency-domain — converted from LTspice .asc by tools/asc2spice.mjs
+Vin n1 0 SINE(1 1 25000)
+R1 Output_high_pass 0 1
+C1 n1 Output_high_pass 100u
+.end

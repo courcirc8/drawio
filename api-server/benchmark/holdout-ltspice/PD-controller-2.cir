@@ -1,0 +1,15 @@
+* PD-controller-2 — converted from LTspice .asc by tools/asc2spice.mjs
+R8 n1 n2 10k
+R2 n3 n4 250k
+R3 n2 n5 3.8k
+R4 n5 n6 10k
+R5 n4 n6 10k
+R6 n6 Vout1 10k
+C1 n3 n7 2u
+V1 Vcc 0 24
+V2 Vee 0 -24
+V_e n1 0 ""
+R1 n1 n7 10k
+R7 Vout1 n8 10k
+R9 n8 Vout 10k
+.end
