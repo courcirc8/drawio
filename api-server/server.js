@@ -266,6 +266,11 @@ app.post('/structures', wrap(async (req, res) => {
   res.json(detectStructures(netlist.parseSpice(spice)));
 }));
 
+// Netlist-correction page (lib/correct.js): one figure at a time, the
+// vision netlist to confirm, fix or reject; batches by tools/dvd-rf-batch.mjs
+const { mountCorrect } = await import('./lib/correct.js');
+mountCorrect(app, wrap);
+
 // Motif registry (lib/motifs.js): every recognised analogue motif of a
 // netlist, the macro-blocks they induce and the components NO motif covers.
 app.post('/motifs', wrap(async (req, res) => {
