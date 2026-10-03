@@ -23,6 +23,9 @@ ap = argparse.ArgumentParser()
 ap.add_argument('step', choices=['search', 'fetch', 'convert', 'all'])
 ap.add_argument('--root', default='/AI/datasets/netlists')
 ap.add_argument('--max-pages', type=int, default=10)
+# the GitHub API quota (5 000 / h) is SHARED with the other sessions of the
+# account: fetch at most ~2 400 requests / h by default
+ap.add_argument('--pace', type=float, default=1.5, help='seconds between fetch requests')
 a = ap.parse_args()
 ROOT = os.path.join(a.root, 'openpdk')
 os.makedirs(ROOT, exist_ok=True)
@@ -46,6 +49,10 @@ def gh(args, retries=4):
         if r.returncode == 0:
             return json.loads(r.stdout) if r.stdout.strip() else None
         if 'rate limit' in r.stderr.lower() or 'secondary' in r.stderr.lower():
+            if k == retries - 1:
+                # never record "no licence" / skip a blob because the shared
+                # quota ran out: stop, the next run resumes where this one ended
+                sys.exit('GitHub API quota exhausted: stopped, rerun later to resume')
             time.sleep(60 * (k + 1)); continue
         if '404' in r.stderr or '422' in r.stderr:
             return None
@@ -83,6 +90,7 @@ def fetch():
     by_sha = set()
     for h in hits:
         if h['repo'] not in lic:
+            time.sleep(a.pace)
             j = gh([f'repos/{h["repo"]}/license'])
             lic[h['repo']] = (j or {}).get('license', {}).get('spdx_id') if j else None
             json.dump(lic, open(lic_path, 'w'))
@@ -92,6 +100,7 @@ def fetch():
         dst = os.path.join(ROOT, 'raw', h['repo'].replace('/', '__'), h['path'])
         if os.path.exists(dst):
             continue
+        time.sleep(a.pace)
         j = gh([f'repos/{h["repo"]}/git/blobs/{h["sha"]}'])
         if not j or j.get('size', 0) > 2_000_000:
             continue
