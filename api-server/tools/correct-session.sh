@@ -6,11 +6,18 @@
 # One-time setup by a human (root needed; nothing is exposed to the Internet):
 #   sudo tailscale serve --bg --https=8443 http://127.0.0.1:8770
 # Undo: sudo tailscale serve --https=8443 off
-# Stop the session server: kill the PID printed below.
+# End of session: tools/correct-session.sh --stop (stops the server, prints the serve-off command).
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-BATCH=${1:-rf-1}
 export PATH="$HOME/.local/node/bin:$PATH"
+if [ "${1:-}" = "--stop" ]; then
+  # end of session: stop the server (by its exact PID) and remove the mapping
+  PID=$(ss -ltnp 2>/dev/null | grep '127.0.0.1:8770' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
+  [ -n "$PID" ] && kill "$PID" && echo "drawio server stopped (pid $PID)"
+  echo "now, as root:  sudo tailscale serve --https=8443 off   (serve survives reboots otherwise)"
+  exit 0
+fi
+BATCH=${1:-rf-1}
 if ! curl -sf -o /dev/null http://127.0.0.1:8770/health; then
   (cd "$HERE" && nohup node server.js --port 8770 > /tmp/drawio-correct-session.log 2>&1 &)
   for _ in $(seq 40); do curl -sf -o /dev/null http://127.0.0.1:8770/health && break; sleep 0.5; done
