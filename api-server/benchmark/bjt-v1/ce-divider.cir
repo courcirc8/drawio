@@ -1,0 +1,13 @@
+* common-emitter stage, divider bias, emitter bypass
+Vcc vcc 0 10
+Vs s 0 SIN(0 5m 1k)
+Cin s b 10u
+R1 vcc b 47k
+R2 b 0 10k
+Rc vcc c 3.3k
+Q1 c b e NPN
+Re e 0 1k
+Ce e 0 100u
+Cout c out 10u
+Rl out 0 10k
+.end

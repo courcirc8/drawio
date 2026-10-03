@@ -1,0 +1,19 @@
+{
+  "_doc": "Hand-made function labels of TUNING circuits (file name -> circuit type), 2026-10-03. Types = the IEEE archive types of data/ieee-motifs.json plus rectifier/inverter for power-v1. Ambiguous circuits (a lone diff pair, a mirror without context) are left out on purpose. Never add holdout-ltspice here.",
+  "bandgap-core": "reference", "beta-multiplier": "reference", "wilson-mirror": "reference",
+  "biquad-gmc": "filter", "bridged-t": "filter", "rc-filter": "filter", "rc-ladder-loaded": "filter",
+  "passive-two-shunt-ladder": "filter", "rlc-bridged-chain": "filter", "sallen-key-gmc": "filter",
+  "charge-pump": "PLL", "cherry-hooper": "SerDes", "cml-buffer": "SerDes",
+  "colpitts-osc": "VCO", "delay-cell-cc": "VCO", "pierce-xtal": "VCO", "ring-vco3": "VCO",
+  "vco-lc": "VCO", "vco-lc-pmos": "VCO", "vco-lc-tail-filter": "VCO",
+  "folded-cascode": "opamp", "ota-2stage-pmos": "opamp", "ota-5t": "opamp", "ota-cmos": "opamp",
+  "ota-miller-nulling": "opamp", "ota-symmetrical": "opamp", "telescopic-ota": "opamp", "class-ab-out": "opamp",
+  "gilbert-mixer": "mixer", "mixer-passive-ring": "mixer", "mixer-single-balanced": "mixer",
+  "lna-common-gate": "LNA", "lna-cs-cascode": "LNA", "lna-diff-cascode": "LNA", "lna-shaeffer-lee": "LNA", "lna-shunt-fb": "LNA",
+  "pa-class-a": "PA", "strongarm-latch": "ADC",
+  "graetz-rc": "rectifier", "graetz-series-r": "rectifier", "half-wave": "rectifier", "greinacher-doubler": "rectifier",
+  "cw-two-stage": "rectifier", "three-phase-bridge": "rectifier",
+  "hbridge-switches": "inverter", "half-bridge-caps": "inverter", "three-phase-inverter": "inverter", "buck": "DC-DC",
+  "mirror-simple": "reference", "mirror-widlar": "reference", "mirror-wilson": "reference",
+  "zener-shunt": "reference", "zener-pass": "reference"
+}

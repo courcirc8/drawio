@@ -162,7 +162,7 @@ function perturb(rnd, base, placedInfo) {
  */
 const rankValue = (r) => (r == null ? -Infinity : (r.score_raw != null ? r.score_raw : r.score));
 
-export async function optimizeNetlist(parsed, { iterations = 10, reference = null, seed = 42, engine = 'v2', preseed = null, preseedScale = null } = {}) {
+export async function optimizeNetlist(parsed, { iterations = 10, reference = null, seed = 42, engine = 'v2', preseed = null, preseedScale = null, restMode = null } = {}) {
   const rnd = mulberry(seed);
   const history = [];
   // ---- recherche à FAISCEAU sur score rapide (géométrie seule)
@@ -172,7 +172,7 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   // EVERY candidate: it is a starting geometry, not a post-hoc filter, so the
   // beam must explore perturbations OF the reference layout, not of a layout
   // the reference then overwrites.
-  const base = preseed ? { seed: preseed, ...(preseedScale ? { seedScale: preseedScale } : {}) } : {};
+  const base = { ...(preseed ? { seed: preseed, ...(preseedScale ? { seedScale: preseedScale } : {}) } : {}), ...(restMode ? { restMode } : {}) };
   // engine=auto (2026-09-18): the macro-block engine (v4) wins on multi-stage
   // netlists the templates of place2 do not cover and loses on the
   // single-structure circuits place2 was tuned for. Choosing on the SEEDS
@@ -181,16 +181,22 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   // better FINAL result wins: fewer checker errors, then rank value — the
   // same ordering the finalists already use.
   if (engine === 'auto') {
+    // every candidate of AUTO_CANDIDATES (place4.js), labelled v4:<mode>
+    const { AUTO_CANDIDATES } = await import('./place4.js');
     const runs = [];
-    for (const eng of ['v2', 'v4']) {
-      try { runs.push({ eng, ...(await optimizeNetlist(parsed, { iterations, reference, seed, engine: eng, preseed, preseedScale })) }); }
-      catch (e) { runs.push({ eng, error: String(e.message || e).slice(0, 120) }); }
+    for (const [eng, mode] of AUTO_CANDIDATES) {
+      const label = mode ? `v4:${mode}` : eng;
+      try { runs.push({ eng: label, ...(await optimizeNetlist(parsed, { iterations, reference, seed, engine: eng, preseed, preseedScale, restMode: mode })) }); }
+      catch (e) { runs.push({ eng: label, error: String(e.message || e).slice(0, 120) }); }
     }
     const ok = runs.filter((r) => r.best != null);
     if (!ok.length) throw new Error('auto: both engines failed: ' + runs.map((r) => r.eng + ':' + r.error).join(' | '));
-    ok.sort((a, b) => (a.best.checkErrors - b.best.checkErrors) || (rankValue(b.best) - rankValue(a.best)));
+    // fewest errors, then closest to published conventions, then rank value
+    const { conventionReport } = await import('./conventions.js');
+    for (const r of ok) { try { r.conv = conventionReport(getPage(r.best.doc), parsed).score ?? 0; } catch { r.conv = 0; } }
+    ok.sort((a, b) => (a.best.checkErrors - b.best.checkErrors) || (b.conv - a.conv) || (rankValue(b.best) - rankValue(a.best)));
     const win = ok[0];
-    return { best: win.best, engine: win.eng, history: [{ iter: 'auto', chosen: win.eng, candidates: runs.map((r) => ({ engine: r.eng, errors: r.best?.checkErrors, score: r.best?.score, error: r.error })) }, ...win.history] };
+    return { best: win.best, engine: win.eng, history: [{ iter: 'auto', chosen: win.eng, candidates: runs.map((r) => ({ engine: r.eng, errors: r.best?.checkErrors, conventions: r.conv, score: r.best?.score, error: r.error })) }, ...win.history] };
   }
   const seed0 = await evaluate(parsed, base, reference, true, engine);
   // Message d'erreur du fork conservé: `reason` nomme QUELLE porte a rejeté le

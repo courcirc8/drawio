@@ -1,0 +1,11 @@
+* BJT differential pair, resistive loads, resistive tail
+Vcc vcc 0 12
+Vee vee 0 -12
+V1 inp 0 SIN(0 10m 1k)
+V2 inn 0 0
+Rc1 vcc c1 5k
+Rc2 vcc c2 5k
+Q1 c1 inp e NPN
+Q2 c2 inn e NPN
+Rt e vee 5.6k
+.end

@@ -1,0 +1,335 @@
+{
+ "doc": "The 50 circuits of the final human rating, sealed before any tuning on the bank. Files live outside the repository (SEALED_DIR, 0700); here only hashes. Tools must refuse them and their near variants (lib/sealed.js).",
+ "created": "2026-10-03",
+ "seed": 20261003,
+ "variantRule": {
+  "localSimilarity": 0.5,
+  "sameFamilyMotifsSizeTol": 0.3
+ },
+ "sealedDir": "/AI/datasets/netlists/sealed",
+ "holdoutFamilies": [
+  "regulator",
+  "sampler-sc",
+  "data-converter"
+ ],
+ "quota": {
+  "amplifier": 3,
+  "comparator": 2,
+  "data-converter": 2,
+  "filter": 2,
+  "lna": 2,
+  "mirror-bias": 2,
+  "mixer": 2,
+  "opamp": 5,
+  "oscillator": 3,
+  "output-stage": 2,
+  "pa": 2,
+  "pll": 2,
+  "power": 5,
+  "reference": 5,
+  "regulator": 5,
+  "sampler-sc": 6
+ },
+ "circuits": [
+  {
+   "slot": 1,
+   "family": "amplifier",
+   "sha256": "f6f7351465f06b0d45bb71487be04955e92160a5ec31977345b2fc9bcaef293a",
+   "wl": "956f9dc1e41b"
+  },
+  {
+   "slot": 2,
+   "family": "amplifier",
+   "sha256": "21dfd6d4da45a4c28d044c59503c19de0970668b338c96529e673a4773709d6e",
+   "wl": "47eed8a4d115"
+  },
+  {
+   "slot": 3,
+   "family": "amplifier",
+   "sha256": "f1fbcb7153516f6f9213b51e9e3f713942c095ed2951c65b41d263bc9071585d",
+   "wl": "0bbd0904661e"
+  },
+  {
+   "slot": 4,
+   "family": "comparator",
+   "sha256": "d0bc74b428fae95c2580765b7c348ee1dc8fbd7bf4892070a242fd094b7223d4",
+   "wl": "855b1275f6c4"
+  },
+  {
+   "slot": 5,
+   "family": "comparator",
+   "sha256": "da6101acc94fdcbe8e629af979c1cfc6f521b07ba161eb9a2debd8b6301ba5ae",
+   "wl": "e4cbdffb63c9"
+  },
+  {
+   "slot": 6,
+   "family": "data-converter",
+   "sha256": "f9fed50e2a2d9ca076df892a16b205944d14201ca38f4a17c35fd444c654bd93",
+   "wl": "f16955b028e5"
+  },
+  {
+   "slot": 7,
+   "family": "data-converter",
+   "sha256": "7a41204e3bfcacaf4635f17cd655fb5e7d7ddbe079e480bf6a11d1255a1ad85a",
+   "wl": "8ae7d49c22f1"
+  },
+  {
+   "slot": 8,
+   "family": "filter",
+   "sha256": "37dbb86e5fd00b00e0366cc471cbb59b561a0f5b76e1f16dfdb1d60b85b851d9",
+   "wl": "94a59efe1169"
+  },
+  {
+   "slot": 9,
+   "family": "filter",
+   "sha256": "979f46f56965b5808dc70a65d90ac646f87b06f6dec880e4ee7455b6264f9f3f",
+   "wl": "a3439925617f"
+  },
+  {
+   "slot": 10,
+   "family": "lna",
+   "sha256": "b6173accd9a30d4a45e28b0bc5360617cd7ddf772482fe2b1abb8ab816ef55c7",
+   "wl": "cec957f968cf"
+  },
+  {
+   "slot": 11,
+   "family": "lna",
+   "sha256": "07fb0a6a101694637215f0e1a1eccf68fc1ea6f25dc35e450682cb6c293d5759",
+   "wl": "715ff0991b83"
+  },
+  {
+   "slot": 12,
+   "family": "mirror-bias",
+   "sha256": "d8150a2701f064318fe8c28849b6aec4208d1220efbeb3c2aa2ed9ee838b02f0",
+   "wl": "5c8715fd5565"
+  },
+  {
+   "slot": 13,
+   "family": "mirror-bias",
+   "sha256": "c32536873b71d24b0982bc84dec46d988d575fafc6fef30399201898d635f439",
+   "wl": "e5e075c3b0d8"
+  },
+  {
+   "slot": 14,
+   "family": "mixer",
+   "sha256": "812b515130bd9cdaee825d6be84d3484b99f4b27fa2eda3053cf5e10a1f1d8fe",
+   "wl": "9340c98c296e"
+  },
+  {
+   "slot": 15,
+   "family": "mixer",
+   "sha256": "6e183f820472029869ef44801ea9f3e613309be39ceab1537f01e32d82032fec",
+   "wl": "5f906d676e58"
+  },
+  {
+   "slot": 16,
+   "family": "opamp",
+   "sha256": "be011ffcf835a958890be0c3b8ff289fc6c4cf8de2c8fc956ea68d017d5108b1",
+   "wl": "4b033cb31f73"
+  },
+  {
+   "slot": 17,
+   "family": "opamp",
+   "sha256": "0bf605c486d50a962be82b60ea3adb22180c5e7ebd89fb96a278a96f0c0c25c6",
+   "wl": "aad3b46cdfbc"
+  },
+  {
+   "slot": 18,
+   "family": "opamp",
+   "sha256": "d9f6e586b9c99a85f73061d6c19fc32a625f67bb29042493423c478165a4fb0f",
+   "wl": "2f7905199e90"
+  },
+  {
+   "slot": 19,
+   "family": "opamp",
+   "sha256": "9e94251be3abfa4d217828320c04dd56130c9b5e768b6c46fb7dee22fdc0b70b",
+   "wl": "2e3ab4399084"
+  },
+  {
+   "slot": 20,
+   "family": "opamp",
+   "sha256": "81739f5af1545ebe9b91c186a7d25a8a8e15e2607ba323727350de40f0504e91",
+   "wl": "95ef819df28c"
+  },
+  {
+   "slot": 21,
+   "family": "oscillator",
+   "sha256": "3e3583132bcd16a20c679fcccf88efa61d0b5b7d61ccdf610227b348e58ec361",
+   "wl": "a7a8a1a5a632"
+  },
+  {
+   "slot": 22,
+   "family": "oscillator",
+   "sha256": "ad33af33ed106a963e2d5241f64c2fcdcee58913cfbcf362c95bc0a1477a5d3a",
+   "wl": "b121469eb236"
+  },
+  {
+   "slot": 23,
+   "family": "oscillator",
+   "sha256": "f20958cd077cb3aeea17d90a9579f384b43bcc0e6d7cd2960199c9bd511ebcc6",
+   "wl": "621031a0506c"
+  },
+  {
+   "slot": 24,
+   "family": "output-stage",
+   "sha256": "a5e68ab5dcf46e3470029c10775cc2ac94173196fb213f3ad5810ab57cb5c3b1",
+   "wl": "5d4b5a17fd7d"
+  },
+  {
+   "slot": 25,
+   "family": "output-stage",
+   "sha256": "ba336355f0c5cb68f2ea11e5430cbcabab66d43c52d2ed18344881c7585fe680",
+   "wl": "f726c37838c3"
+  },
+  {
+   "slot": 26,
+   "family": "pa",
+   "sha256": "a1f06a7d97b1bbe57c12f992a4a624ea0536486bb618785e1e30cab2d02b8c49",
+   "wl": "b87e545fe71b"
+  },
+  {
+   "slot": 27,
+   "family": "pa",
+   "sha256": "381ab77a7955700b150a326b9bd1668e980bdb13722e9877f22b5197a85e0e39",
+   "wl": "ba65d8aaa424"
+  },
+  {
+   "slot": 28,
+   "family": "pll",
+   "sha256": "548d4fff4bc3d806d7a94e0f88d79faec7bce37a5e5af54e9c31f7ed7881db40",
+   "wl": "b8d5a78ba67d"
+  },
+  {
+   "slot": 29,
+   "family": "pll",
+   "sha256": "9e8e69d9f9a40fd899219c84b7f2b514bdd83b3680b524feae38a0ac773e9926",
+   "wl": "8b12c787e167"
+  },
+  {
+   "slot": 30,
+   "family": "power",
+   "sha256": "93b0bbc5b4aa0628d06513ebbc40e8006762bcb2fedc8eabc1eaf3f0443d879d",
+   "wl": "cc4de19c6b1d"
+  },
+  {
+   "slot": 31,
+   "family": "power",
+   "sha256": "12871ccf3496f7f819c0144f721eb34935579bbdb093a153480be1bb13a098bf",
+   "wl": "49bd1d11f89e"
+  },
+  {
+   "slot": 32,
+   "family": "power",
+   "sha256": "6c6e49d41772922062b69e4940133f5bc991c9e819592f7c8be577367f60a836",
+   "wl": "0e92ccfb7d1f"
+  },
+  {
+   "slot": 33,
+   "family": "power",
+   "sha256": "a89c7e26f737978f0c4b0ebdadf28ca33b74b31d8b9c2395c1444da94018fb87",
+   "wl": "2cc08f26f7a6"
+  },
+  {
+   "slot": 34,
+   "family": "power",
+   "sha256": "f3689049e1ab1f38e0716ffd3d8c2504d8d483cc1899f6e0798ae00167f2d24c",
+   "wl": "9ba872553aea"
+  },
+  {
+   "slot": 35,
+   "family": "reference",
+   "sha256": "8a489efb6fc7c0b9fee7dcc05ded1f8663131958cc59c8992c7f0b2e8591fc29",
+   "wl": "f83d739b1b00"
+  },
+  {
+   "slot": 36,
+   "family": "reference",
+   "sha256": "928d66ce13a57ffb9709b310cddb47e18662681d33e8e8fe69129eb46f70d16f",
+   "wl": "9cbfca3aec00"
+  },
+  {
+   "slot": 37,
+   "family": "reference",
+   "sha256": "b736d25ca29a64222a57f2594973ff60dffd65d3aa70cab13ddfab064fe9b69b",
+   "wl": "345b260c6e96"
+  },
+  {
+   "slot": 38,
+   "family": "reference",
+   "sha256": "2556193e5e8f6193f9f6b791765c106840693ad5c9f6a6e32c56e3258fd03cf1",
+   "wl": "100b9bf46634"
+  },
+  {
+   "slot": 39,
+   "family": "reference",
+   "sha256": "2f9df938db874a161882179d7ca70b7e3b04b645fb6bd3cadbb8d718f310466b",
+   "wl": "5a23be578206"
+  },
+  {
+   "slot": 40,
+   "family": "regulator",
+   "sha256": "a2c1245237d4e921f939078bc5ae9e0e85b844e2d70c29ffe2c15cd64f744ac9",
+   "wl": "a6e4b96a94b1"
+  },
+  {
+   "slot": 41,
+   "family": "regulator",
+   "sha256": "b0a75f8a1cd0df7ce64e5a2539a17f85d665e6701397bbf1603512540d9b9bea",
+   "wl": "b9cef75c8187"
+  },
+  {
+   "slot": 42,
+   "family": "regulator",
+   "sha256": "322e1dd231a0e8ade5e75de7760a5039c7c1f3131bd6722ab62017ef6beb8fb4",
+   "wl": "09a2c40e1342"
+  },
+  {
+   "slot": 43,
+   "family": "regulator",
+   "sha256": "38a21cb4cedfd86509b22470657ff3b337db31b91a015491f0943ef080c3f840",
+   "wl": "35e8ce15347c"
+  },
+  {
+   "slot": 44,
+   "family": "regulator",
+   "sha256": "4df6b4acac48b3f30311e0e50d9bc91fd4374e82bd7aef3ced0298048844e793",
+   "wl": "6c9e2217c183"
+  },
+  {
+   "slot": 45,
+   "family": "sampler-sc",
+   "sha256": "5a3db61b3dd0504b60b292d26a7cd2b4946bdd4c6c5d8b8acd869721aa9e066e",
+   "wl": "949b791dcfa5"
+  },
+  {
+   "slot": 46,
+   "family": "sampler-sc",
+   "sha256": "f19a805d29976a1c6f9f0a42af2d83c4b689d666f0c07ecda76a5eb4712624bd",
+   "wl": "d4dca06e51e3"
+  },
+  {
+   "slot": 47,
+   "family": "sampler-sc",
+   "sha256": "5319201224ccc8cf666ab2954f2e63463be4891c4e3d06a30b72165ee4c44b77",
+   "wl": "9cb477bf6e57"
+  },
+  {
+   "slot": 48,
+   "family": "sampler-sc",
+   "sha256": "4fb215229bfbd1d8075723dd383a17592262d98aa3fe001d6e694a9ea9cf6daa",
+   "wl": "bc968bf9f958"
+  },
+  {
+   "slot": 49,
+   "family": "sampler-sc",
+   "sha256": "c63de95de06d3696dde8e667d707f927dae348aa2c282fbc1a08d297578e3664",
+   "wl": "214557bd9ef7"
+  },
+  {
+   "slot": 50,
+   "family": "sampler-sc",
+   "sha256": "e3ad183c70c3e5e4ab5f43392a80eb657544a437ce9b13f7be7a7b6f52c32fcc",
+   "wl": "db61470c54fe"
+  }
+ ]
+}

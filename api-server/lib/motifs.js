@@ -80,6 +80,10 @@ export const MOTIFS = [
     describe: 'Resistor from the drain of stage B back to the gate of stage A when B is driven by A (two-stage shunt feedback) [0.10].' },
   { name: 'matching-network', rules: [], recipe: 'none — IEEE gap (2026-10-03); decoration',
     describe: 'Series inductor or capacitor on the gate/base of an active (input match, Lg of an LNA); drawn on the signal axis before the device [0.02, LNA 0.3].' },
+  { name: 'diode-bridge', rules: [], recipe: 'place2:bridge legs (one column per leg, cathodes up, load P-N beside)',
+    describe: 'Rectifier legs (diode mid->P + diode N->mid) sharing P and N: Graetz, three-phase bridge; one leg = doubler/multiplier stage (benchmark/power-v1).' },
+  { name: 'switch-bridge', rules: [], recipe: 'place2:switch legs (one column per leg, freewheel diode beside its switch)',
+    describe: 'Two switches in series through a mid node (half/full/three-phase bridge, chopper leg), with their antiparallel freewheel diodes (benchmark/power-v1).' },
   { name: 'load', rules: [], recipe: 'none — decoration',
     describe: 'Passive (R, L, C) between the drain/collector of an active and a rail: the stage load; drawn above the device under the rail.' },
 ];
@@ -88,12 +92,28 @@ const RAIL_RE = /^(vdd|vcc|vee|vss|avdd|dvdd|v\+|v-|gnd)$/i;
 const CLOCK_RE = /^(phi|ph\d|clk|ck\d*|clock|sw\d*|s\d+|en\b|sel|φ|cl\d)/i;
 const BIAS_RE = /^(vb|vbias|bias|vg\d|vcas|vc\d|vref|vbn|vbp|vcm)/i;
 const isPassive = (c) => c.prefix === 'R' || c.prefix === 'L' || c.prefix === 'C';
+// waveform keywords of a SIGNAL source (the parser keeps them in `value`)
+const WAVE_RE = /\b(ac|sin|sine|pulse|pwl|exp|sffm)\b/i;
+/** A V source that drives a signal, not a supply: it has a waveform. The name
+ *  says nothing (LTspice decks call their 5 V supply `Vin` as often as not). */
+const isSignalSource = (v) => WAVE_RE.test(v.value || '');
+/** Every net a V source ties to ground, signal sources included: a resistor
+ *  to one of them biases a base (`SINE(1 10m 1k)` carries the DC operating
+ *  point of a discrete stage). */
+function sourcedNets(comps) {
+  const s = new Set();
+  for (const v of comps.filter((c) => c.prefix === 'V')) { if (v.nodes[1] === '0') s.add(v.nodes[0]); if (v.nodes[0] === '0') s.add(v.nodes[1]); }
+  return s;
+}
 
-/** Rail nets: ground, named supplies, and any net a V source ties to ground. */
+/** Rail nets: ground, named supplies, and any net a DC supply source ties to
+ *  ground (LTspice decks name their supply n4 as happily as Vcc). A signal
+ *  source is NOT a rail: reading `V1 in 0 AC 1` as one hid every stage whose
+ *  input is `in` (the gate looked biased by a rail). */
 export function railNets(comps) {
   const rails = new Set(['0']);
   for (const n of new Set(comps.flatMap((c) => c.nodes))) if (RAIL_RE.test(n)) rails.add(n);
-  for (const v of comps.filter((c) => c.prefix === 'V')) { if (v.nodes[1] === '0') rails.add(v.nodes[0]); if (v.nodes[0] === '0') rails.add(v.nodes[1]); }
+  for (const v of comps.filter((c) => c.prefix === 'V' && !isSignalSource(c))) { if (v.nodes[1] === '0') rails.add(v.nodes[0]); if (v.nodes[0] === '0') rails.add(v.nodes[1]); }
   return rails;
 }
 
@@ -167,12 +187,15 @@ export function detectMotifs(parsed) {
   }
 
   // Miller / shunt feedback: passive between gate and drain of ONE device
+  // (not when one end is a rail: R from vdd to the gate of a follower whose
+  // drain sits on vdd is that follower's input bias, not feedback)
+  const rails = railNets(comps);
   const ccRefs = new Set(st.crossCoupled.flatMap((c) => c.refs));
   for (const c of comps) {
     if (c.prefix !== 'C' && c.prefix !== 'R') continue;
     const [n1, n2] = c.nodes;
     for (const t of comps.filter(isActive)) {
-      if (ccRefs.has(t.ref)) continue;
+      if (ccRefs.has(t.ref) || rails.has(G(t)) || rails.has(D(t))) continue;
       const gd = new Set([G(t), D(t)]);
       if (gd.size === 2 && gd.has(n1) && gd.has(n2) && n1 !== n2) add(c.prefix === 'C' ? 'miller-capacitor' : 'shunt-feedback', [c.ref, t.ref], { device: t.ref });
     }
@@ -190,15 +213,18 @@ export function detectMotifs(parsed) {
   // resistive collector/drain load to a rail. "Rail" = ground, a named
   // supply, or any net a V source ties to ground (LTspice decks name their
   // supply n4 as happily as Vcc).
-  const rails = railNets(comps);
   const resistorsOn = (net) => comps.filter((c) => c.prefix === 'R' && c.nodes.includes(net));
-  const toRail = (r) => r.nodes.some((n) => rails.has(n));
+  const biasNets = new Set([...rails, ...sourcedNets(comps)]);
+  const toRail = (r) => r.nodes.some((n) => biasNets.has(n));
   const dividerNode = (net) => resistorsOn(net).filter(toRail).length >= 2;
   for (const t of comps.filter((c) => c.prefix === 'Q' || c.prefix === 'J')) {
+    // collector on a rail = a follower, read below: every resistor on Vcc
+    // was its "load" and the stage swallowed its neighbours' base bias
+    if (rails.has(D(t))) continue;
     const baseR = resistorsOn(G(t)).filter((r) => toRail(r) || r.nodes.some((n) => n !== G(t) && dividerNode(n)));
     const loadR = resistorsOn(D(t)).filter(toRail);
     if (baseR.length >= 1 && loadR.length >= 1) {
-      const divider = baseR.flatMap((r) => r.nodes.filter((n) => n !== G(t) && !rails.has(n) && dividerNode(n))).flatMap((n) => resistorsOn(n).filter(toRail));
+      const divider = baseR.flatMap((r) => r.nodes.filter((n) => n !== G(t) && !biasNets.has(n) && dividerNode(n))).flatMap((n) => resistorsOn(n).filter(toRail));
       add('bjt-resistive-stage', [t.ref, ...baseR.map((r) => r.ref), ...divider.map((r) => r.ref), ...loadR.map((r) => r.ref)], { device: t.ref });
     }
   }
@@ -221,7 +247,7 @@ export function detectMotifs(parsed) {
   ]);
   const on = (net) => comps.filter((c) => c.nodes.includes(net));
   const passivesToRail = (net) => on(net).filter((c) => isPassive(c) && c.nodes.some((n) => n !== net && rails.has(n)));
-  const clockDriven = (net) => CLOCK_RE.test(net) || comps.some((v) => v.prefix === 'V' && v.nodes[0] === net && /pulse|pwl/i.test(v.model || v.value || ''));
+  const clockDriven = (net) => CLOCK_RE.test(net) || comps.some((v) => v.prefix === 'V' && v.nodes[0] === net && /pulse|pwl/i.test(v.value || ''));
   const tailNets = new Set(st.diffPairs.map((p) => p.tailNet));
   const actives = comps.filter(isActive);
   for (const t of actives) {
@@ -262,11 +288,36 @@ export function detectMotifs(parsed) {
     }
   }
 
+  // power bridges (the place2 bridge/switch-leg templates): legs grouped by
+  // their P/N ends; a freewheel diode across a switch belongs to its leg
+  {
+    const sw = comps.filter((c) => c.prefix === 'S');
+    const across = (d) => comps.some((k) => 'SMQJ'.includes(k.prefix) && k.nodes.slice(0, 3).includes(d.nodes[0]) && k.nodes.slice(0, 3).includes(d.nodes[1]));
+    const dio = comps.filter((c) => c.prefix === 'D' && !across(c));
+    const groups = new Map();
+    const put = (kind, key, refs) => { const k = kind + '|' + key; if (!groups.has(k)) groups.set(k, new Set()); refs.forEach((r) => groups.get(k).add(r)); };
+    for (const up of dio) for (const down of dio) {
+      if (up === down || down.nodes[1] !== up.nodes[0] || down.nodes[0] === up.nodes[1]) continue;
+      put('diode-bridge', up.nodes[1] + '|' + down.nodes[0], [up.ref, down.ref]);
+    }
+    for (const a of sw) for (const b of sw) {
+      if (a.ref >= b.ref) continue;
+      const shared = a.nodes.slice(0, 2).filter((n) => b.nodes.slice(0, 2).includes(n));
+      // a mid node is never a source-driven bus (S1 and S3 of an inverter share P)
+      if (shared.length !== 1 || shared[0] === '0' || sourcedNets(comps).has(shared[0])) continue;
+      const ends = [a, b].map((k) => k.nodes.slice(0, 2).find((n) => n !== shared[0])).sort();
+      if (ends[0] === ends[1]) continue;
+      const fw = comps.filter((d) => d.prefix === 'D' && [a, b].some((k) => d.nodes.includes(k.nodes[0]) && d.nodes.includes(k.nodes[1])));
+      put('switch-bridge', ends.join('|'), [a.ref, b.ref, ...fw.map((d) => d.ref)]);
+    }
+    for (const [k, refs] of groups) add(k.split('|')[0], [...refs], { rails: k.split('|').slice(1) });
+  }
+
   // macro-blocks: greedy union of overlapping instances of STRUCTURAL motifs
   // (a component belongs to one block); decorations (diode, tail, feedback)
   // attach to the block of their device
   const structural = new Set(['gilbert-quad', 'latch', 'half-latch', 'cascade', 'ring', 'differential-pair', 'current-mirror', 'cross-coupled-pair', 'cascode', 'inverter', 'passive-axis', 'bjt-resistive-stage', 'opamp-stage',
-    'common-source', 'common-gate', 'source-follower', 'switch']);
+    'common-source', 'common-gate', 'source-follower', 'switch', 'diode-bridge', 'switch-bridge']);
   const blockOf = new Map();
   const blocks = [];
   const ordered = [...inst].sort((a, b) => b.refs.length - a.refs.length);
@@ -280,7 +331,8 @@ export function detectMotifs(parsed) {
   }
   for (const i of inst) {
     if (structural.has(i.motif)) continue;
-    const host = i.refs.map((r) => blockOf.get(r)).find(Boolean);
+    // a tail lists only itself: its host is the block of the pair it feeds
+    const host = [...i.refs, ...(i.pair || [])].map((r) => blockOf.get(r)).find(Boolean);
     if (host) { const blk = blocks.find((b) => b.id === host); for (const r of i.refs) if (!blockOf.has(r)) { blk.refs.push(r); blockOf.set(r, blk.id); } blk.decorations = [...(blk.decorations || []), i.motif]; }
   }
   const uncovered = comps.map((c) => c.ref).filter((r) => !blockOf.has(r));

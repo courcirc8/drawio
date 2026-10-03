@@ -1,0 +1,7 @@
+* zener shunt regulator
+Vin vin 0 15
+Rs vin out 470
+Dz 0 out BZX55C5V1
+Cl out 0 10u
+Rl out 0 1k
+.end

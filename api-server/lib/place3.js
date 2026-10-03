@@ -63,7 +63,7 @@ import { preserveElectricalData } from './electrical-data.js';
  * direction) until clear. This is the "real fix" the task calls out: place2
  * only retries for ports/junctions, never for the floating-passive path.
  */
-import { addVertex, addWire, httpError, mxCellPart, getCell } from './model.js';
+import { addVertex, addWire, httpError, mxCellPart, getCell, portId } from './model.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES, formatComponentValue } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs, rotatedAabb } from './route.js';
@@ -494,13 +494,13 @@ function importNetlist3Impl(model, parsed, opts = {}) {
    */
   function dedupNetLabel(net, edgeCell) {
     if (edgeCell == null) return;
-    const portId = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
-    const portCell = getCell(model, portId);
+    const pid = portId(net);
+    const portCell = getCell(model, pid);
     const portValue = portCell != null ? (portCell.getAttribute('value') || '') : '';
     if (portValue !== '' && portValue === net) {
       edgeCell.removeAttribute('value');
     } else {
-      warnings.push(`label-dedup: port ${portId} value "${portValue}" does not match net "${net}" -- keeping wire label to avoid an unnamed net`);
+      warnings.push(`label-dedup: port ${pid} value "${portValue}" does not match net "${net}" -- keeping wire label to avoid an unnamed net`);
     }
   }
 
@@ -597,7 +597,7 @@ function importNetlist3Impl(model, parsed, opts = {}) {
   }
 
   function addBoundaryPortTap(net, anchor, atId) {
-    const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+    const id = portId(net);
     const abs = anchor.ref != null ? pinAbs(placed.get(anchor.ref), anchor.pin) : anchor;
     const w = 24, h = 24;
     let cxAll = 0, cyAll = 0;
@@ -654,7 +654,7 @@ function importNetlist3Impl(model, parsed, opts = {}) {
       const t = terms[0];
       const p = placed.get(t.ref);
       const abs = pinAbs(p, t.pin);
-      const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+      const id = portId(net);
       const leftish = (t.pin.x <= 0.5) !== !!p.flipH;
       const targetX = abs.x + (leftish ? -80 : 56), targetY = abs.y + 36;
       const pos = placeAvoiding(targetX, targetY, 24, 24, 0, leftish ? -20 : 20, 0);

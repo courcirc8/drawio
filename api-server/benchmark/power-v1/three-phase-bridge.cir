@@ -1,0 +1,12 @@
+* three-phase six-diode bridge, star-connected sources
+Va pa 0 SIN(0 100 50 0 0 0)
+Vb pb 0 SIN(0 100 50 0 0 120)
+Vc pc 0 SIN(0 100 50 0 0 240)
+D1 pa dp D
+D2 pb dp D
+D3 pc dp D
+D4 dn pa D
+D5 dn pb D
+D6 dn pc D
+Rl dp dn 50
+.end

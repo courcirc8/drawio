@@ -260,6 +260,13 @@ export function cellInfo(node) {
 function num(v) { return v == null || v === '' ? null : parseFloat(v); }
 
 let idCounter = 0;
+/** Id of the interface port that names `net`. Injective: alphanumerics and
+ *  `_` are kept (P_out, P_vb_1), any other character is hex-encoded — mapping
+ *  them all to `_` gave V+ and V- the same id P_V_ (409 on a push-pull). */
+export function portId(net) {
+  return 'P_' + String(net).replace(/[^A-Za-z0-9_]/g, (c) => '_' + c.charCodeAt(0).toString(16));
+}
+
 export function freshId(model, prefix = 'c') {
   const used = new Set(allCells(model).map((c) => c.getAttribute('id')));
   let id;

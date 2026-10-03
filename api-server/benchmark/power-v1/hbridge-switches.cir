@@ -1,0 +1,15 @@
+* H-bridge with ideal switches and freewheel diodes, RL load
+Vdc bus 0 48
+S1 bus la ga 0 SW
+D1 la bus D
+S2 la 0 gb 0 SW
+D2 0 la D
+S3 bus lb gb 0 SW
+D3 lb bus D
+S4 lb 0 ga 0 SW
+D4 0 lb D
+Rload la m 4
+Lload m lb 1m
+Vga ga 0 PULSE(0 5 0 1n 1n 50u 100u)
+Vgb gb 0 PULSE(5 0 0 1n 1n 50u 100u)
+.end

@@ -28,7 +28,7 @@
  * (anchors of a bulk on an outside net are only resolvable there), then the
  * caller's strict LVS gate. Falls back to place2 for single-block netlists.
  */
-import { newDocument, getPage, normalizeOrigin, allCells, cellInfo, addWire } from './model.js';
+import { newDocument, getPage, normalizeOrigin, allCells, cellInfo, addWire, portId } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { routePage, pinAbs } from './route.js';
 import { detectMotifs } from './motifs.js';
@@ -66,6 +66,68 @@ function railNets(parsed) {
   const rails = new Set(['0']);
   for (const n of new Set(parsed.components.flatMap((c) => c.nodes))) if (/^a?v(dd|cc)d?$/i.test(n)) rails.add(n);
   return rails;
+}
+
+/** Candidates of engine=auto, in tie-break order (fewest checker errors wins,
+ *  the earlier candidate on a tie): [engine, restMode]. Measured 2026-10-03
+ *  with check.py (tuning set 59 / LTspice holdout 131 errors):
+ *    v2 first, then v4 split          20 / 459
+ *    v4 split first, then v2          18 / 405
+ *    + v4 one, v4 absorb+split        18 / 364   (63 holdout circuits at zero)
+ *  check.js and check.py disagree on ties; v4 split wins most of them. */
+export const AUTO_CANDIDATES = [['v4', 'split'], ['v2', null], ['v4', 'one'], ['v4', 'absorb+split']];
+/** Spacings each candidate is also tried with (place2 column pitch / row
+ *  height). Measured 2026-10-03 with tools/ranker-dataset.mjs, selection by
+ *  check.js then conventions (check.py errors, tuning / holdout):
+ *    default only 21 / 200;  + 230x220  19 / 169;  all four spacings 19 / 166.
+ *  The spread of candidates, not a learned ranker, carried the gain: a
+ *  pairwise ranker trained on the tuning sets matched check.js (19 / 170). */
+export const AUTO_SPACINGS = [{}, { colW: 230, rowH: 220 }];
+
+/** What becomes of the components no motif claims. mode:
+ *  'one'     — a single "rest" block (the original v4);
+ *  'absorb'  — a component whose non-rail nets touch exactly ONE motif block
+ *              joins it (one pass); the others stay in one rest block;
+ *  'absorbN' — same, repeated until nothing moves (chains get pulled in);
+ *  'split'   — the rest is cut into connected components (non-rail nets);
+ *  combinations 'absorb+split', 'absorbN+split'.
+ *  Mutates `blocks` (absorbed refs) and returns the rest blocks' refs. */
+function restBlocks(parsed, blocks, uncovered, mode) {
+  let left = [...uncovered];
+  if (!left.length) return [];
+  const rails = railNets(parsed);
+  const comp = new Map(parsed.components.map((c) => [c.ref, c]));
+  const blockOf = new Map();
+  for (const b of blocks) for (const r of b.refs) blockOf.set(r, b);
+  if (mode.startsWith('absorb') && blocks.length) {
+    for (let pass = 0; pass < (mode.startsWith('absorbN') ? 50 : 1); pass++) {
+      let moved = false;
+      for (const ref of [...left]) {
+        const nets = comp.get(ref).nodes.filter((n) => !rails.has(n));
+        const touched = new Set();
+        for (const n of nets) for (const c of parsed.components) if (c.ref !== ref && c.nodes.includes(n) && blockOf.has(c.ref)) touched.add(blockOf.get(c.ref));
+        if (touched.size !== 1) continue;
+        const b = [...touched][0];
+        b.refs.push(ref); blockOf.set(ref, b); left = left.filter((r) => r !== ref); moved = true;
+      }
+      if (!moved) break;
+    }
+  }
+  if (!left.length) return [];
+  if (!mode.endsWith('split')) return [left];
+  // connected components of the rest over its non-rail nets
+  const groups = [];
+  const seen = new Set();
+  for (const start of left) {
+    if (seen.has(start)) continue;
+    const g = []; const stack = [start]; seen.add(start);
+    while (stack.length) {
+      const r = stack.pop(); g.push(r);
+      for (const n of comp.get(r).nodes.filter((x) => !rails.has(x))) for (const o of left) if (!seen.has(o) && comp.get(o).nodes.includes(n)) { seen.add(o); stack.push(o); }
+    }
+    groups.push(g);
+  }
+  return groups;
 }
 
 /** Bounding box of every vertex of a page (label cells included). */
@@ -132,7 +194,8 @@ function pinOnNet(c, net, cellInfoOf) {
 export async function importNetlist4(model, parsed, opts = {}) {
   const motifs = detectMotifs(parsed);
   const blocks = motifs.blocks.map((b) => ({ id: b.id, motif: b.motif, refs: [...b.refs] }));
-  if (motifs.uncovered.length) blocks.push({ id: 'B' + (blocks.length + 1), motif: 'rest', refs: [...motifs.uncovered] });
+  const rest = restBlocks(parsed, blocks, motifs.uncovered, opts.restMode || process.env.V4_REST || 'split');
+  for (const refs of rest) blocks.push({ id: 'B' + (blocks.length + 1), motif: 'rest', refs });
   if (blocks.length <= 1) {
     // nothing to compose: place2 is the whole answer (and the reference);
     // route here because v4 callers do not route (the hierarchical routes
@@ -143,6 +206,7 @@ export async function importNetlist4(model, parsed, opts = {}) {
     return { ...r, engine: 'v4->v2', routed: rr.failed == null, blocks: blocks.map((b) => ({ ...b, box: null })), interBlockNets: [] };
   }
   const rails = railNets(parsed);
+  const pageVdd = [...rails].find((n) => n !== '0') ?? null;
   const blockOf = new Map();
   for (const b of blocks) for (const r of b.refs) blockOf.set(r, b.id);
   // nets per block, boundary nets
@@ -159,7 +223,7 @@ export async function importNetlist4(model, parsed, opts = {}) {
     const sub = subNetlist(parsed, b.refs);
     const doc = newDocument();
     const m = getPage(doc);
-    const placed = importNetlist2(m, sub, { ...opts, _v4block: b.id });
+    const placed = importNetlist2(m, sub, { ...opts, _v4block: b.id, vddNet: pageVdd });
     const r = await routePage(m, placed.wires, {});
     if (r.failed != null) throw new Error(`v4: routing failed inside block ${b.id} (${b.motif}): ${r.failed}`);
     normalizeOrigin(m, 20);
@@ -174,8 +238,8 @@ export async function importNetlist4(model, parsed, opts = {}) {
       // place2 names its ports P_<net> (interface), PN<n> (rail-end ports of
       // a quad, rule 51) or PB_<n>_<ref> (local bias): match by id first,
       // then by the port's label — the net name in upper case
-      const portId = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
-      let port = byId.get(portId);
+      const pid = portId(net);
+      let port = byId.get(pid);
       if (port == null) port = cells.find((c) => c.kind === 'vertex' && c.style.map.get('apiShape') === 'port' && String(c.value).toUpperCase() === net.toUpperCase());
       if (port != null) {
         // the port NAMES the net (extraction merges same-named ports across

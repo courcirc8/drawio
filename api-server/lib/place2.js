@@ -18,7 +18,7 @@ import { preserveElectricalData } from './electrical-data.js';
  *     aux nets >2 terminaux, condensateurs flottants placés entre colonnes.
  * Paramètres exposés dans `opts` pour la boucle d'optimisation.
  */
-import { addVertex, addWire, updateCell, getCell, httpError, allCells, cellInfo, setEdgePoints } from './model.js';
+import { addVertex, addWire, updateCell, getCell, httpError, allCells, cellInfo, setEdgePoints, portId } from './model.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES, GROUND_SHAPE, GROUND_PIN } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs } from './route.js';
@@ -264,7 +264,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   const OUT_RE = /^(out$|out\d|vout|if$|sa$)/i;
   const sidePort = (net, t, p, abs) => {
     const left = IN_RE.test(net);
-    const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+    const id = portId(net);
     let px = left ? Math.min(abs.x, p.x) - 76 : Math.max(abs.x, p.x + (p.w || 0)) + 52;
     const py = abs.y - 12;
     const clash2 = () => [...placed.values()].some((v) =>
@@ -307,7 +307,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const t = terms[0];
       const p = placed.get(t.ref);
       const abs = pinAbs(p, t.pin);
-      const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+      const id = portId(net);
       // direction PHYSIQUE du pin (flips/rotations compris) : un pin qui
       // regarde en haut reçoit son port AU-DESSUS ; pour une E/S nommée non
       // différentielle, la règle 57 (gauche/droite) prime sur le bas/côté
@@ -522,7 +522,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     if (net === vddNet || net === '0' || terms.length < 2) continue;
     if (!/(^|_)(in|out|rf|lo|if|clk|bias|osc|vb)/i.test(net)) continue;
     // l'axe de signal passif a déjà posé son port sur ce net
-    if (placed.has('P_' + net.replace(/[^A-Za-z0-9]/g, '_'))) continue;
+    if (placed.has(portId(net))) continue;
     const withAbs = terms.map((t) => ({ t, abs: pinAbs(placed.get(t.ref), t.pin) }));
     const cxm = withAbs.reduce((s2, w2) => s2 + w2.abs.x, 0) / withAbs.length;
     // préférer un terminal dont le pin REGARDE vers l'extérieur (sinon le
@@ -808,7 +808,31 @@ function importNetlist2Impl(model, parsed, opts = {}) {
   // net d'alimentation : 'vdd' explicite sinon net avec le plus de "tops"
   // rails UNIQUEMENT pour un vrai net d'alimentation nommé — deviner un rail
   // sur « le net avec le plus de tops » déguisait l'entrée du biquad en VDD
-  const vddNet = [...byTopNet.keys()].find((n) => /^a?v(dd|cc)d?$/i.test(n)) ?? null;
+  // place4 imposes the page's supply on a block that only touches it through
+  // the far end of a resistor (never a conduction top): without it, Vcc of a
+  // split block became an anonymous wire and the composed page failed LVS
+  const vddNet = [...byTopNet.keys()].find((n) => /^a?v(dd|cc)d?$/i.test(n)) ??
+    (P.vddNet != null && comps.some((c) => c.nodes.includes(P.vddNet)) ? P.vddNet : null);
+  // a resistor/cap/inductor written `R2 n3 Vcc` (or `R3 0 n5`) is electrically
+  // the same part upside down: turn it so the supply is its TOP and ground its
+  // bottom — otherwise the supply tap landed on its body (comp-overlap +
+  // through on every LTspice deck that lists the rail second)
+  if (P.orientPassives !== false && process.env.P2_ORIENT !== '0') {
+    for (const c of comps) {
+      const ci = info.get(c.ref);
+      if (ci == null || !'RCL'.includes(c.prefix)) continue;
+      if ((vddNet != null && ci.bot === vddNet && ci.top !== '0') || (ci.top === '0' && ci.bot !== vddNet)) {
+        info.set(c.ref, { ...ci, top: ci.bot, bot: ci.top, topPin: ci.botPin, botPin: ci.topPin });
+      }
+    }
+    byTopNet.clear();
+    for (const c of comps) {
+      const ci = info.get(c.ref);
+      if (ci == null) continue;
+      if (!byTopNet.has(ci.top)) byTopNet.set(ci.top, []);
+      byTopNet.get(ci.top).push(c);
+    }
+  }
 
   // ---- construction des piles (DFS depuis vdd, fan-out -> colonnes sœurs)
   // slot: {ref, col, level} ; shared: éléments à top multiple (queues) traités après
@@ -1066,6 +1090,99 @@ function importNetlist2Impl(model, parsed, opts = {}) {
           }
         }
         if (endV != null) { unplaced.delete(endV.ref); chainRefs.add(endV.ref); }
+      }
+    }
+  }
+
+  // ---- PONT DE DIODES (Graetz, triphasé) : un BRAS = diode milieu->P +
+  //      diode N->milieu ; les bras qui partagent P et N forment le pont.
+  //      Dessin des manuels : un bras par colonne, cathodes vers le haut,
+  //      bus P en haut, bus N en bas, milieux (côté alternatif) entre les
+  //      deux diodes ; la charge P-N dans une colonne à droite du pont.
+  //      Sans gabarit, les six diodes d'un pont triphasé tombaient sur une
+  //      seule rangée (28 erreurs check.py sur benchmark/power-v1).
+  const minLegs = P.bridgeMinLegs ?? Number(process.env.P2_BRIDGE ?? 1);
+  if (minLegs > 0) {
+    // a freewheel diode across a switch/transistor belongs with that switch,
+    // not in a rectifier leg (H-bridge: 1 -> 7 errors when it was pulled away)
+    const across = (d) => comps.some((k) => 'SMQJ'.includes(k.prefix) && k.nodes.slice(0, 3).includes(d.nodes[0]) && k.nodes.slice(0, 3).includes(d.nodes[1]));
+    const diodes = comps.filter((k) => k.prefix === 'D' && unplaced.has(k.ref) && info.get(k.ref) != null && !across(k));
+    const legs = new Map();   // 'P|N' -> [{up, down, mid}]
+    for (const up of diodes) {
+      const [mid, Pn] = up.nodes;   // anode = milieu, cathode = P
+      for (const down of diodes) {
+        if (down === up || down.nodes[1] !== mid) continue;   // cathode = milieu
+        const Nn = down.nodes[0];
+        if (Nn === Pn || Nn === mid || Pn === mid) continue;
+        const key = Pn + '|' + Nn;
+        if (!legs.has(key)) legs.set(key, []);
+        const list = legs.get(key);
+        if (!list.some((l) => l.up === up || l.down === down)) list.push({ up, down, mid });
+      }
+    }
+    const turnTop = (k, top) => {
+      const ci = info.get(k.ref);
+      if (ci.top !== top) info.set(k.ref, { ...ci, top: ci.bot, bot: ci.top, topPin: ci.botPin, botPin: ci.topPin });
+    };
+    for (const [key, list] of legs) {
+      if (list.length < minLegs || list.some((l) => !unplaced.has(l.up.ref) || !unplaced.has(l.down.ref))) continue;
+      const [Pn, Nn] = key.split('|');
+      for (const l of list) {
+        const col = nextCol++;
+        turnTop(l.up, Pn); turnTop(l.down, l.mid);
+        slots.set(l.up.ref, { col, level: 0 }); slots.set(l.down.ref, { col, level: 1 });
+        unplaced.delete(l.up.ref); unplaced.delete(l.down.ref);
+      }
+      for (const k of comps) {
+        if ((!unplaced.has(k.ref) && !floating.has(k.ref)) || !'RCL'.includes(k.prefix)) continue;
+        if (new Set(k.nodes).size !== 2 || !k.nodes.includes(Pn) || !k.nodes.includes(Nn)) continue;
+        turnTop(k, Pn);
+        slots.set(k.ref, { col: nextCol++, level: 0.5 });
+        unplaced.delete(k.ref); floating.delete(k.ref);
+      }
+    }
+  }
+
+  // ---- BRAS D'INTERRUPTEURS (onduleurs, hacheurs) : deux S en série par un
+  //      milieu ; une colonne par bras, interrupteur haut sur P, bas sur N,
+  //      la diode de roue libre ACCOLÉE à son interrupteur, cathode en haut.
+  //      Sans gabarit, les six interrupteurs et six diodes d'un onduleur
+  //      triphasé tombaient sur une seule rangée.
+  const swGap = P.switchLegs === false ? 0 : Number(process.env.P2_SWLEG ?? 1);
+  const swLegRefs = new Set();   // switches drawn vertically in a leg (the others keep their row)
+  if (swGap > 0) {
+    const sws = comps.filter((k) => k.prefix === 'S' && unplaced.has(k.ref) && info.get(k.ref) != null);
+    const pairNets = (k) => k.nodes.slice(0, 2);
+    const used = swLegRefs;
+    for (const a of sws) {
+      for (const b of sws) {
+        if (a === b || used.has(a.ref) || used.has(b.ref)) continue;
+        const shared = pairNets(a).filter((n) => pairNets(b).includes(n));
+        if (shared.length !== 1) continue;
+        const mid = shared[0];
+        // never a source-driven bus as mid (S1 and S3 of an inverter share P):
+        // pairing them depended on the loop order alone
+        if (mid === '0' || mid === vddNet || comps.some((v) => (v.prefix === 'V' || v.prefix === 'I') && v.nodes.includes(mid))) continue;
+        const ea = pairNets(a).find((n) => n !== mid), eb = pairNets(b).find((n) => n !== mid);
+        if (ea === eb) continue;
+        // N = ground when one end is ground, P = the other end
+        const upper = eb === '0' ? a : ea === '0' ? b : (ea < eb ? a : b);
+        const lower = upper === a ? b : a;
+        const Pn = upper === a ? ea : eb;
+        const col = nextCol++;
+        const turnTop = (k, top) => {
+          const ci = info.get(k.ref);
+          if (ci.top !== top) info.set(k.ref, { ...ci, top: ci.bot, bot: ci.top, topPin: ci.botPin, botPin: ci.topPin });
+        };
+        turnTop(upper, Pn); turnTop(lower, mid);
+        slots.set(upper.ref, { col, level: 0 }); slots.set(lower.ref, { col, level: 1 });
+        for (const [s, top, level] of [[upper, Pn, 0], [lower, mid, 1]]) {
+          used.add(s.ref); unplaced.delete(s.ref);
+          const fw = comps.find((d) => d.prefix === 'D' && unplaced.has(d.ref) && info.get(d.ref) != null &&
+            d.nodes.includes(s.nodes[0]) && d.nodes.includes(s.nodes[1]));
+          if (fw) { turnTop(fw, top); slots.set(fw.ref, { col: col + swGap, level }); unplaced.delete(fw.ref); }
+        }
+        if (swGap >= 1) nextCol = Math.ceil(col + swGap) + 1;
       }
     }
   }
@@ -1416,6 +1533,26 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     }
   }
 
+  // ---- miroir BIPOLAIRE à bases face à face : le symbole NPN fait 100 px
+  //      de large, deux face à face dans 190 px se chevauchaient (10 px) et
+  //      le fil base-collecteur de la diode traversait le corps. Élargir
+  //      l'entrefer comme pour le latch (benchmark/bjt-v1).
+  const mGap = P.bjtMirrorGap ?? Number(process.env.P2_MGAP ?? 0.3);
+  if (mGap > 0) {
+    for (const mg of structures.mirrors) {
+      const ms = mg.refs.filter((r) => slots.has(r));
+      if (ms.length !== 2 || ms.some((r) => quadRefs.has(r))) continue;
+      if (!ms.every((r) => (comps.find((k) => k.ref === r) || {}).prefix === 'Q')) continue;
+      const [sL, sR] = ms.map((r) => slots.get(r)).sort((a, b) => a.col - b.col);
+      if (sL.col === sR.col || sL.level !== sR.level) continue;
+      const cut = (sL.col + sR.col) / 2;
+      for (const [, sl2] of slots) {
+        if (sl2.col > cut + 0.01) sl2.col += mGap;
+        else if (Math.abs(sl2.col - cut) <= 0.01) sl2.col += mGap / 2;
+      }
+    }
+  }
+
   // ---- latch : ÉLARGIR L'ENTREFER central — les gates de la paire cc se
   //      font face à ~15 px, où DEUX verticales de nets différents doivent
   //      passer (le X) : impossible à ≥10 px d'écart. +0.3 colonne pour
@@ -1514,11 +1651,16 @@ function importNetlist2Impl(model, parsed, opts = {}) {
       if (xN == null) continue;
       const up = ci.top === vddNet || ci.bot === vddNet;
       const kk = sig + (up ? '^' : 'v');
-      const j = shuntK.get(kk) || 0;
-      shuntK.set(kk, j + 1);
       const shape = getShape(ci.shapeKey);
       const vertNative = !!(SPICE_MAP[k.prefix] || {}).vertical;
-      const bx = xN + j * 46;
+      // pitch from the VISIBLE widths (a turned cap or diode is 60 px wide, a
+      // turned resistor 20): a fixed 46 px overlapped Dz and Cl of a zener
+      // shunt regulator (benchmark/bjt-v1); never tighter than the old 46
+      const half = (vertNative ? shape.w : shape.h) / 2;
+      const prev = shuntK.get(kk);
+      const off = prev == null ? 0 : prev.off + Math.max(46, prev.half + half + 4);
+      shuntK.set(kk, { off, half });
+      const bx = xN + off;
       const by = up ? yN - 130 : yN + 130;
       let rot = 0, px2 = bx - shape.w / 2;
       if (!vertNative) {
@@ -1537,7 +1679,7 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     // un PORT à chaque extrémité de l'axe (entrée à gauche, sorties à droite)
     for (const net of new Set([axisPlan.inNet, ...axisPlan.rows.map((r) => r.endNet)])) {
       if (isRailN(net)) continue;
-      const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+      const id = portId(net);
       if (placed.has(id)) continue;
       const xN = nodeX.get(net), yN = rowOf.get(net);
       if (xN == null) continue;
@@ -1571,7 +1713,7 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     const flip = P.flip[c.ref] ? -1 : 1;
     // dipôles verticaux : rotation 90 (in en haut) ; MOS natifs (déjà verticaux)
     let rotation = 0;
-    if ('RCLD'.includes(c.prefix)) rotation = 90 * flip;
+    if ('RCLD'.includes(c.prefix) || (c.prefix === 'S' && (swLegRefs.has(c.ref)))) rotation = 90 * flip * (ci.top != null && ci.top !== c.nodes[0] ? -1 : 1);   // -90: turned passive, its 2nd pin on top
     const w = shape.w, h = shape.h;
     const cx = P.x0 + s.col * P.colW + (channels?.x(s.col) || 0);
     const cy = P.y0 + s.level * P.rowH + (channels?.y(s.level) || 0);

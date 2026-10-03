@@ -166,6 +166,98 @@ than reserved channels. Next: split the rest block into satellites attached
 next to their block, channel-reserve inter-block nets, let the optimizer
 permute block order.
 
+## Power templates, split rest, four-candidate auto — session of 2026-10-03
+
+- **Motif detectors** (`lib/motifs.js`): a signal source (`AC`, `SIN`, `PULSE`…)
+  is no longer a rail (it hid every CS/CG/follower stage on `in`); a
+  collector on a rail is a follower, not a resistive stage; switches are
+  found from the waveform in `value`. New registered motifs:
+  `diode-bridge`, `switch-bridge`.
+- **place2**: R/C/L listed rail-second are turned so the supply is on top;
+  **diode-bridge template** (one leg per column, cathodes up, load P-N
+  beside); **switch-leg template** (freewheel diode beside its switch);
+  BJT mirrors with facing bases get +0.3 column; axis shunts spaced by their
+  visible width.
+- **place4**: the rest is split into connected blocks (`restMode`), each
+  block receives the page supply; injective port ids (`V+`/`V-` crashed).
+- **engine=auto** tries `AUTO_CANDIDATES` = v4 split, v2, v4 one,
+  v4 absorb+split (ties to the earlier one; both import and optimize paths).
+- New tuning sets `benchmark/power-v1` (10) and `benchmark/bjt-v1` (9),
+  written by hand so that power and BJT rules are never tuned on the holdout.
+
+check.py errors, `engine=auto` without optimizer (circuits at zero errors):
+
+| | before (14d9c4a) | after |
+|---|---|---|
+| tuning set 59 (netlists30, netlists, generalization-v1/v2) | 24 (43) | **15 (47)** |
+| holdout-ltspice 131 | 538 (48) | **199 (72)** |
+| power-v1 10 | 67 (1) | **7 (5)** |
+| bjt-v1 9 | 21 (3) | **1 (8)** |
+
+LVS unchanged (59/59, 116/131 — the 15 misses are unsupported elements).
+Cost: sheets about 20-35 % larger (v4 composes blocks with channels), auto
+places four times. Not measured this session: the optimizer path
+(`?optimize=N`) on the new candidates.
+
+Rejected after measurement (tuning set): a penalty on inter-block pins facing
+away (18 -> 26 errors), wider inter-block channels (no gain, +15-35 % area),
+off-page tags instead of inter-block wires (18 -> 29), 1/3/4 blocks per
+column (2 stays best).
+
+## Function recognition and published conventions — 2026-10-03 (step 1 of the IEEE plan)
+
+- `lib/function.js`: naive Bayes over the circuit types of `data/ieee-motifs.json`
+  (motif presence, component kinds, tempered prior, weak net-name cues); power
+  circuits (bridges, zener, half-wave, buck) by rule. Net roles, block roles.
+- `lib/recognize-llm.js`: + published schematics with the closest motif set
+  (index of identifiers and labels only, `tools/build-motif-index.py`, built
+  OUTSIDE the repository on the station) + the local LLM (Ornith, :30010),
+  whose type is accepted only if it is in the Bayes top 8 or the neighbours'
+  types. `POST /recognize`.
+- `lib/conventions.js`: convention score of a page, layout checks weighted by
+  the archive's shares for the recognised type, motif checks at 0.8.
+  `POST /documents/:id/conventions`; `engine=auto` breaks error ties with it.
+- `tools/function-eval.mjs` on `benchmark/function-labels.json` (53 tuning
+  circuits labelled by hand; holdout never labelled for tuning).
+
+| Recognition, top-1 on 53 labelled circuits | |
+|---|---|
+| Bayes, archive prior at full weight | 33 (62 %) |
+| Bayes, prior^0.25, kinds ×0.5, zener/half-wave rules | 43 (81 %), top-3 87 % |
+| retrieval vote alone | 11 (21 %) |
+| Bayes + LLM, LLM unchecked | 45 |
+| **Bayes + LLM checked (top 8 or neighbours)** | **48 (91 %)** |
+
+Convention score (auto): tuning set 0.858 -> 0.913 (perfect 37 -> 45 of 58),
+holdout 0.775 -> 0.790, sheets -14 % on the tuning set, for +1 check.py
+error on each set (13 -> 14, 199 -> 200: check.js picks, check.py judges).
+v4 also attaches a tail to the block of its pair (tuning errors 15 -> 13).
+Rejected: absorbing single-block passives into their block (13 -> 21).
+
+## Learned ranker (step C) — 2026-10-03: measured, not shipped; wider candidate set shipped
+
+`tools/ranker-dataset.mjs` places every netlist as AUTO_CANDIDATES × colW
+{190, 230} × rowH {180, 220} (16 drawings) and records `lib/ranker.js`
+features (candidate, check.js rule counts, conventions, geometry) with the
+check.py verdict; `tools/ranker-train.py` trains a pairwise logistic ranker on
+the tuning sets (5-fold CV by circuit) and evaluates on the holdout.
+
+| check.py errors (circuits at 0) | tuning, 5-fold CV | holdout 131 |
+|---|---|---|
+| auto, 4 candidates, check.js | 21 | 200 (72) |
+| check.js over 16 candidates | 19 | 166 (74) |
+| learned ranker over 16 | 18-19 | 169-170 (75) |
+| oracle over 16 (check.py picks) | 9 | 140 (82) |
+
+The gain is the spread of candidates; the ranker only matches check.js, so
+no model is shipped (`data/ranker.json` absent, `rankScore` returns null).
+Shipped: `AUTO_SPACINGS` — each candidate also at 230×220 (8 drawings, the
+subset that holds the gain): end to end, tuning 14 -> 12 errors, holdout
+200 -> 169 (zero-error 72 -> 74), conventions unchanged, sheets +1-2 %,
+0.3-0.6 s per import. Picking with check.py itself would reach the oracle
+but make the judge its own selector; the ranker is the place for a better
+signal once step D gives real labels.
+
 ## Tests
 
 ```bash

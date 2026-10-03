@@ -61,8 +61,16 @@ curl -s -X POST :8770/documents/doc1/route -d '{}' -H 'Content-Type: application
 
 ### Génération automatique netlist → beau schéma
 ```bash
-# moteur v2 (piles de conduction) + optimisation locale scorée (gate LVS)
-curl -s -X POST ':8770/documents/doc1/netlist/import?optimize=14' -H 'Content-Type: text/plain' --data-binary @c.cir
+# RECOMMANDÉ : engine=auto essaie v4 (macro-blocs, reste découpé), v2, v4 « one »
+# et v4 « absorb+split », chacun à deux espacements (8 dessins), garde celui qui
+# a le moins d'erreurs du checker puis le meilleur score de conventions ;
+# la réponse liste erreurs et conventions de chaque candidat dans `auto`
+curl -s -X POST ':8770/documents/doc1/netlist/import?engine=auto' -H 'Content-Type: text/plain' --data-binary @c.cir
+# même chose + optimisation locale scorée (gate LVS), ~4x plus lent
+curl -s -X POST ':8770/documents/doc1/netlist/import?engine=auto&optimize=8' -H 'Content-Type: text/plain' --data-binary @c.cir
+# motifs reconnus (paires, miroirs, étages CS/CG/suiveur, ponts de diodes,
+# bras d'interrupteurs…), macro-blocs et composants qu'aucun motif ne couvre
+curl -s -X POST :8770/motifs -H 'Content-Type: text/plain' --data-binary @c.cir
 # score de qualité visuelle (géométrie XML + OpenCV ; "reference" optionnelle = PNG à imiter)
 curl -s -X POST :8770/documents/doc1/beauty -H 'Content-Type: application/json' -d '{}'
 # checker de règles (DRC schématique) : violations typées {rule, severity, message, cells}
@@ -72,9 +80,33 @@ curl -s -X POST :8770/documents/doc1/check -H 'Content-Type: application/json' -
 # checker Python INDÉPENDANT (le juge de référence, plus strict) :
 python3 tools/check.py schema.xml --netlist circuit.cir --json
 ```
-`?engine=v1|v2` force un moteur sans optimisation. Le score /100 pénalise
+`?engine=v1|v2|v3|v4|elk` force un moteur. Gabarits connus : paires, miroirs
+(MOS et bipolaires), cascodes, latch, quad de Gilbert, étages à un transistor,
+axe de signal passif, ponts de diodes (Graetz, triphasé, doubleurs) et bras
+d'interrupteurs avec diodes de roue libre (onduleurs, hacheurs). Le score /100 pénalise
 croisements, traversées de composants, coudes, longueur, désalignement,
-déséquilibre. Benchmark rejouable : `tools/run-benchmark.sh`.
+déséquilibre. Benchmark rejouable : `tools/run-benchmark.sh` ; moteurs comparés sur un
+corpus : `node tools/compare-engines.mjs benchmark/<jeu>`. Jeux de réglage :
+`netlists30`, `generalization-v1/v2`, `power-v1`, `bjt-v1` ; jeu de MESURE
+seulement (ne jamais régler dessus) : `holdout-ltspice`.
+
+### Comprendre un circuit avant de le dessiner (reconnaissance de fonction)
+```bash
+# type de circuit (LNA, VCO, opamp, reference, mixer, rectifier, inverter…),
+# phrase de fonction, rôle de chaque bloc et de chaque net, schémas publiés
+# voisins (identifiants seulement) ; ?llm=0 = statistiques seules, sans LLM
+curl -s -X POST :8770/recognize -H 'Content-Type: text/plain' --data-binary @c.cir
+# conventions des schémas PUBLIÉS du même type appliquées au dessin :
+# alimentation en haut, signal de gauche à droite, paires symétriques, charge
+# côté rail, dégénérescence sous le transistor, adaptation avant la grille…
+curl -s -X POST :8770/documents/doc1/conventions -H 'Content-Type: text/plain' --data-binary @c.cir
+```
+Utiliser `/recognize` pour EXPLIQUER un circuit à l'utilisateur (fonction,
+blocs, entrées/sorties) et `/conventions` pour juger un dessin : `failed`
+liste les conventions non respectées. `engine=auto` départage déjà ses
+candidats par ce score. Fiabilité mesurée (53 circuits étiquetés) : 91 % de
+types justes en premier choix avec le LLM, 81 % sans ; LNA et PA restent
+difficiles à distinguer par la structure seule.
 
 ### Vérification
 ```bash
@@ -104,6 +136,8 @@ curl -s -X PUT :8770/documents/doc1/save -d '{"path":"/chemin/schema.drawio"}' -
 | `POST /documents/:id/route` (body `{"wires":[…]}` optionnel) | autoroutage libavoid |
 | `POST …/netlist/import` (SPICE) · `GET …/netlist` (`?format=json`) | netlist |
 | `POST …/lvs` · `GET …/erc` · `GET …/bom` (`?format=csv`) | vérifs |
+| `POST /recognize` (`?llm=0`) · `POST …/conventions` (`?type=`) | fonction, conventions publiées |
+| `POST /motifs` | motifs, macro-blocs, parties non couvertes |
 | `GET …/export?format=png\|svg\|pdf\|xml&scale=&region=x,y,w,h&pageId=` | export |
 | `POST …/checkpoints` · `POST …/checkpoints/:name/restore` | versions |
 
@@ -111,8 +145,10 @@ curl -s -X PUT :8770/documents/doc1/save -d '{"path":"/chemin/schema.drawio"}' -
 
 1. Après une édition géométrique → `POST /route` puis re-exporter un PNG et le
    REGARDER (l'export `region=` + `scale=3` permet de zoomer sur une zone).
-2. Éléments SPICE supportés : R C L D V I Q (BJT) M (MOSFET, bulk ignoré) et
-   G (VCCS = symbole OTA `mxgraph.electrical.abstract.ota_1`, nœud out− ignoré).
+2. Éléments SPICE supportés : R C L D V I Q (BJT) M (MOSFET, bulk ignoré) J
+   (JFET), S (interrupteur, nœuds de commande masqués), E F B (sources
+   commandées), G (VCCS = symbole OTA `mxgraph.electrical.abstract.ota_1`,
+   nœud out− ignoré) et X sur sous-circuit inconnu de type ampli-op.
    Autres lignes → `warnings`, directives `.xxx` ignorées.
    ATTENTION stencils : les noms de pins sont positionnels (NE/SE/W) ; le PMOS
    est dessiné source EN HAUT (NE=source, SE=drain — géré par

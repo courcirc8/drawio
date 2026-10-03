@@ -1,0 +1,9 @@
+* bridge rectifier fed through a source resistance, resistive load
+Vs a 0 SIN(0 10 60)
+Rs a ac1 2
+D1 ac1 p 1N4148
+D2 0 p 1N4148
+D3 n ac1 1N4148
+D4 n 0 1N4148
+Rload p n 100
+.end

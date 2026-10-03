@@ -1,0 +1,12 @@
+* common-emitter stage driving an emitter follower
+Vcc vcc 0 12
+Vs s 0 SIN(0 10m 1k)
+Cin s b1 10u
+R1 vcc b1 56k
+R2 b1 0 12k
+Rc vcc c1 4.7k
+Q1 c1 b1 e1 NPN
+Re e1 0 1k
+Q2 vcc c1 out NPN
+Rout out 0 2.2k
+.end

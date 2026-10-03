@@ -1,0 +1,7 @@
+* simple NPN current mirror with a reference resistor and a resistive load
+Vcc vcc 0 9
+Rref vcc b 8.2k
+Qref b b 0 NPN
+Qout c b 0 NPN
+Rl vcc c 2.2k
+.end

@@ -1,0 +1,9 @@
+* series pass regulator: zener reference, emitter-follower pass transistor
+Vin vin 0 18
+Rb vin z 1k
+Dz 0 z BZX55C9V1
+Cz z 0 10u
+Qp vin z out NPN
+Rl out 0 100
+Co out 0 47u
+.end
