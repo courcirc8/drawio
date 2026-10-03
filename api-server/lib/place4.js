@@ -298,16 +298,44 @@ export async function importNetlist4(model, parsed, opts = {}) {
     }
     col.forEach((blk, i) => rowOf.set(blk.id, i));
   });
-  const GAP_Y = 90;
-  let x = 0;
+  const GAP_Y = 90, BAND_GAP = 160;
   const colWidth = (col) => Math.max(...col.map((b) => b.box.w));
-  columns.forEach((col, ci) => {
-    let y = 0;
-    for (const b of col) { b.dx = x - b.box.x; b.dy = y - b.box.y; y += b.box.h + GAP_Y; }
-    // channel: 100 px + 24 px per net crossing between this column and the next
-    const crossing = boundary.filter((net) => { const rs = [...netBlocks.get(net)].map((id) => rank.get(id)); return Math.min(...rs) <= ci && Math.max(...rs) > ci; }).length;
-    x += colWidth(col) + 100 + 24 * crossing;
-  });
+  const colHeight = (col) => col.reduce((s, b) => s + b.box.h, 0) + GAP_Y * (col.length - 1);
+  // channel: 100 px + 24 px per net crossing between this column and the next
+  const step = columns.map((col, ci) => colWidth(col) + 100 + 24 * boundary.filter((net) => { const rs = [...netBlocks.get(net)].map((id) => rank.get(id)); return Math.min(...rs) <= ci && Math.max(...rs) > ci; }).length);
+  // WRAP (2026-10-03): a chain of blocks gave one column per rank and sheets
+  // of 5:1 to 8:1 on 20-40-part circuits. Columns are cut into BANDS read like
+  // text (left to right, then the next band below), the band count chosen so
+  // the sheet aspect is closest to TARGET_ASPECT. V4_WRAP=0 keeps one band.
+  const TARGET_ASPECT = Number(process.env.V4_ASPECT ?? 1.6);
+  const bandsFor = (nb) => {
+    const total = step.reduce((a, b) => a + b, 0), per = total / nb;
+    const bands = [[]]; let acc = 0;
+    columns.forEach((_, ci) => { if (acc >= per && bands.length < nb) { bands.push([]); acc = 0; } bands[bands.length - 1].push(ci); acc += step[ci]; });
+    const W = Math.max(...bands.map((bd) => bd.reduce((a, ci) => a + step[ci], 0)));
+    const H = bands.reduce((a, bd) => a + Math.max(...bd.map((ci) => colHeight(columns[ci]))), 0) + BAND_GAP * (bands.length - 1);
+    return { bands, W, H };
+  };
+  let plan = bandsFor(1);
+  // only when one band is really too wide: wrapping sheets of 2:1-3:1 cost
+  // errors on the small tuning sets for no visible gain (from 3: 14 -> 18 there)
+  const WRAP_FROM = Number(process.env.V4_WRAP_FROM ?? 3);   // 3: family tune >3:1 7.3 %, 3.5: 8.6 %, 4: 12.5 %
+  if (process.env.V4_WRAP !== '0' && plan.W / plan.H > WRAP_FROM) {
+    for (let nb = 2; nb <= columns.length; nb++) {
+      const c = bandsFor(nb);
+      if (Math.abs(Math.log(c.W / c.H / TARGET_ASPECT)) < Math.abs(Math.log(plan.W / plan.H / TARGET_ASPECT))) plan = c;
+    }
+  }
+  let yBand = 0;
+  for (const bd of plan.bands) {
+    let x = 0;
+    for (const ci of bd) {
+      let y = yBand;
+      for (const b of columns[ci]) { b.dx = x - b.box.x; b.dy = y - b.box.y; y += b.box.h + GAP_Y; }
+      x += step[ci];
+    }
+    yBand += Math.max(...bd.map((ci) => colHeight(columns[ci]))) + BAND_GAP;
+  }
 
   // ---- 3. transplant
   const componentIds = new Set(parsed.components.map((c) => c.ref));

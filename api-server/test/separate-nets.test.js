@@ -127,14 +127,17 @@ test('separateNets: un fil qui frôle (< 6 px) le pin d\'un net étranger s\'en 
   assert.notDeepEqual(after, before, 'le fil frôlant doit avoir bougé');
   const lane = after[0].y;
   assert.ok(Math.abs(lane - 20) >= 6, 'la lane du fil doit être à >= 6 px du pin (10,20), obtenu y=' + lane);
-  // snapshot du comportement ACTUEL : un dog-leg vers x=-4 est inséré sur le segment
-  // vertical (10,24)->(10,100) puis la lane horizontale est décalée de +14 (24 -> 38).
-  // Deux quirks à traiter lors du refactor, figés ici pour ne pas les changer par accident :
-  //  - le waypoint (10,38) est dupliqué ;
-  //  - le détour part à gauche de A (x=-4) alors que le fil ne longe A que sur 10 px.
-  assert.deepEqual(after, [
-    { x: 10, y: 34 }, { x: -4, y: 34 }, { x: -4, y: 38 }, { x: 10, y: 38 }, { x: 10, y: 38 }, { x: 310, y: 38 },
-  ]);
+  // properties instead of the former pixel snapshot (2026-10-03: the
+  // separation now uses check.py's thresholds and keeps a move only if the
+  // wire's local cost goes down, which changes the exact detour): no segment
+  // of n2 within 6 px of the foreign pin, every segment orthogonal
+  const pin = { x: 10, y: 20 };
+  const dPS = (p, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, ll = dx * dx + dy * dy; const t = ll ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / ll)) : 0; return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy); };
+  for (let i = 0; i + 1 < after.length; i++) {
+    const a = after[i], b = after[i + 1];
+    assert.ok(a.x === b.x || a.y === b.y, 'orthogonal segment');
+    assert.ok(dPS(pin, a, b) >= 6, `segment ${i} passes ${dPS(pin, a, b).toFixed(1)} px from the foreign pin`);
+  }
 });
 
 test('separateNets: sans conflit, aucun waypoint ne change', () => {

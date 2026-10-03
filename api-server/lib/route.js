@@ -1225,7 +1225,13 @@ export function separateNets(model, obstacles) {
       Math.max(x1, x2) > v.x + 3 && Math.min(x1, x2) < v.x + v.w - 3 &&
       Math.max(y1, y2) > v.y + 3 && Math.min(y1, y2) < v.y + v.h - 3);
   const done = new Set();
-  for (let repairs = 0; repairs < 30; repairs++) {
+  // thresholds of check.py rule 22 (net_clearance 10 px, overlap > 6 px): the
+  // repair used 5 px / 10 px, so lanes 6-9 px apart were errors it never saw;
+  // and 30 repairs per page did not reach the end on 20-40-part circuits
+  const NEAR = Number(process.env.SEP_NEAR ?? 10), MINOV = Number(process.env.SEP_MINOV ?? 6);
+  const nEdges = allCells(model).filter((n) => cellInfo(n).kind === 'edge').length;
+  const MAXREP = process.env.SEP_MAX != null ? Number(process.env.SEP_MAX) : Math.max(30, 2 * nEdges);
+  for (let repairs = 0; repairs < MAXREP; repairs++) {
     const cells = allCells(model).map(cellInfo);
     const byId2 = new Map(cells.map((c) => [c.id, c]));
     const parent = new Map();
@@ -1265,13 +1271,50 @@ export function separateNets(model, obstacles) {
     }
     let repaired = false;
     const delta = 14;
+    // GUARD (2026-10-03): a lane move fixed rule 22 but created as many
+    // contacts, pin brushes and body crossings (family bench, tune split:
+    // rule 22 438 -> 95, other rules +201). A move is now kept only if the
+    // moved wire's local cost against the other nets goes DOWN.
+    const GUARD = process.env.SEP_GUARD !== '0';
+    const foreignPins = (ei) => edgesInfo.filter((o) => find(o.a) !== find(ei.a)).flatMap((o) => [o.pl[0], o.pl[o.pl.length - 1]]);
+    const dPS = (p, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, ll = dx * dx + dy * dy; const t = ll ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / ll)) : 0; return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy); };
+    const polyNow = (ei) => { const src = byId2.get(ei.c.source), tgt = byId2.get(ei.c.target); const el = allCells(model).find((x) => x.getAttribute('id') === ei.c.id); const pts = cellInfo(el).points || []; return [anchor(ei.c, 'exit', src), ...pts, anchor(ei.c, 'entry', tgt)]; };
+    const localCost = (ei) => {
+      const pl = polyNow(ei);
+      let cost = 0;
+      const others = edgesInfo.filter((o) => o !== ei && find(o.a) !== find(ei.a));
+      for (let i = 0; i + 1 < pl.length; i++) {
+        const p = pl[i], q = pl[i + 1];
+        const h = Math.abs(p.y - q.y) < 0.6, v = Math.abs(p.x - q.x) < 0.6;
+        for (const o of others) for (let k = 0; k + 1 < o.pl.length; k++) {
+          const r = o.pl[k], t = o.pl[k + 1];
+          if (h && Math.abs(r.y - t.y) < 0.6 && Math.abs(p.y - r.y) < NEAR && Math.min(Math.max(p.x, q.x), Math.max(r.x, t.x)) - Math.max(Math.min(p.x, q.x), Math.min(r.x, t.x)) > MINOV) cost++;
+          if (v && Math.abs(r.x - t.x) < 0.6 && Math.abs(p.x - r.x) < NEAR && Math.min(Math.max(p.y, q.y), Math.max(r.y, t.y)) - Math.max(Math.min(p.y, q.y), Math.min(r.y, t.y)) > MINOV) cost++;
+        }
+        for (const pin of foreignPins(ei)) if (dPS(pin, p, q) < 6) cost++;
+        if (i > 0 && i + 1 < pl.length - 1 && blocked(p.x, p.y, q.x, q.y)) cost++;
+      }
+      for (const pt of pl.slice(1, -1)) for (const o of others) for (let k = 0; k + 1 < o.pl.length; k++) if (dPS(pt, o.pl[k], o.pl[k + 1]) < 2.5) cost++;
+      return cost;
+    };
+    const guarded = (ei, act) => {
+      if (!GUARD) return act();
+      const el = allCells(model).find((x) => x.getAttribute('id') === ei.c.id);
+      const before = localCost(ei), snap = (cellInfo(el).points || []).map((p) => ({ ...p }));
+      const savedPts = (ei.c.points || []).map((p) => ({ ...p }));
+      if (!act()) return false;
+      if (localCost(ei) < before) return true;
+      setEdgePoints(el, snap);
+      if (ei.c.points) ei.c.points.forEach((p, k) => { if (savedPts[k]) { p.x = savedPts[k].x; p.y = savedPts[k].y; } });
+      return false;
+    };
     // une lane cible est INTERDITE si un net étranger y possède déjà un
     // segment colinéaire recouvrant (sinon : ping-pong de shifts qui recrée
     // le recouvrement initial, vu sur le Gilbert)
     const laneOccupied = (ei, axis, lane2, l2, h2) => edgesInfo.some((other) =>
       other !== ei && find(other.a) !== find(ei.a) &&
-      other.segs.some((s2) => s2.axis === axis && Math.abs(s2.lane - lane2) < 6 &&
-        Math.min(s2.b, h2) - Math.max(s2.a, l2) > 10));
+      other.segs.some((s2) => s2.axis === axis && Math.abs(s2.lane - lane2) < NEAR &&
+        Math.min(s2.b, h2) - Math.max(s2.a, l2) > MINOV));
     // décaler un segment INTÉRIEUR (2 waypoints)
     const shift = (ei, seg, d) => {
       if (ei.fixed) return false; // tracé figé : c'est l'AUTRE fil qui bouge
@@ -1312,9 +1355,9 @@ export function separateNets(model, obstacles) {
         if (find(A.a) === find(Bv.a)) continue;
         for (const sa of A.segs) {
           for (const sb of Bv.segs) {
-            if (sa.axis !== sb.axis || Math.abs(sa.lane - sb.lane) > 5) continue;
+            if (sa.axis !== sb.axis || Math.abs(sa.lane - sb.lane) >= NEAR) continue;
             const lo = Math.max(sa.a, sb.a), hi = Math.min(sa.b, sb.b);
-            if (hi - lo < 10) continue;
+            if (hi - lo <= MINOV) continue;
             const pairKey = [A.c.id, Bv.c.id, sa.axis, Math.round(lo), Math.round(hi)].join('|');
             if (done.has(pairKey)) {
               if (process.env.DEBUG_SEP === '1') console.error(`[sep] SKIP done ${A.c.source}->${A.c.target} vs ${Bv.c.source}->${Bv.c.target} ${sa.axis} lane=${sa.lane} [${lo},${hi}]`);
@@ -1323,7 +1366,7 @@ export function separateNets(model, obstacles) {
             done.add(pairKey);
             if (process.env.DEBUG_SEP === '1') console.error(`[sep] repair#${repairs} ${A.c.source}->${A.c.target} vs ${Bv.c.source}->${Bv.c.target} ${sa.axis} lane=${sa.lane} [${lo},${hi}]`);
             for (const d of [-delta, delta, -2 * delta, 2 * delta, -3 * delta, 3 * delta, -4 * delta, 4 * delta]) {
-              if (shift(A, sa, d) || shift(Bv, sb, d) || straighten(A, sa, d) || straighten(Bv, sb, d)) {
+              if (guarded(A, () => shift(A, sa, d)) || guarded(Bv, () => shift(Bv, sb, d)) || guarded(A, () => straighten(A, sa, d)) || guarded(Bv, () => straighten(Bv, sb, d))) {
                 repaired = true; break outer;
               }
             }
@@ -1351,7 +1394,7 @@ export function separateNets(model, obstacles) {
             const segA = Adl.pl[sadl.i], segB2 = Adl.pl[sadl.i + 1];
             if ((sadl.axis === 'h' && segA.x > segB2.x) || (sadl.axis === 'v' && segA.y > segB2.y)) jog = jog.reverse();
             pts.splice(sadl.i, 0, ...jog);
-            setEdgePoints(el, pts);
+            if (!guarded(Adl, () => { setEdgePoints(el, pts); return true; })) continue;
             repaired = true; break outer;
           }
         }

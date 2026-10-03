@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Correction de netlists</title>
+<style>
+  body { font: 16px/1.35 system-ui, sans-serif; margin: 0; padding: 10px; max-width: 900px; margin-inline: auto; }
+  #top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  #prog { color: #555; }
+  .pic { width: 100%; border: 1px solid #ccc; border-radius: 6px; background: #fff; min-height: 60px; }
+  h2 { font-size: 14px; color: #666; margin: 10px 0 4px; font-weight: 600; }
+  textarea { width: 100%; box-sizing: border-box; height: 12em; font: 13px/1.3 ui-monospace, monospace; }
+  #flags { color: #a40; font-size: 13px; min-height: 1em; }
+  #btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; position: sticky; bottom: 0; background: #fff; padding: 6px 0; }
+  button { font-size: 18px; padding: 16px 6px; border-radius: 10px; border: 0; color: #fff; }
+  #ok { background: #2a7a2a; } #fix { background: #2456a8; } #rej { background: #9a2a2a; }
+  #redraw { font-size: 14px; padding: 6px 10px; background: #666; }
+  #done { display: none; font-size: 22px; text-align: center; margin-top: 40px; }
+</style>
+</head>
+<body>
+<div id="top"><b id="type"></b><span id="prog"></span></div>
+<div id="main">
+  <h2>Figure publiée</h2>
+  <img id="fig" class="pic" alt="figure">
+  <h2>Notre dessin de la netlist <button id="redraw">redessiner</button></h2>
+  <img id="draw" class="pic" alt="(dessin en cours…)">
+  <h2>Netlist lue (à vérifier ou corriger)</h2>
+  <div id="flags"></div>
+  <textarea id="net" spellcheck="false"></textarea>
+  <div id="btns">
+    <button id="ok" title="touche 1">1 · Juste</button>
+    <button id="fix" title="touche 2">2 · Corrigée</button>
+    <button id="rej" title="touche 3">3 · Rejeter</button>
+  </div>
+</div>
+<div id="done">Lot terminé — merci !</div>
+<script>
+const batch = new URLSearchParams(location.search).get('batch') || 'rf-1';
+let cur = null;
+const $ = (id) => document.getElementById(id);
+async function draw(netlist) {
+  $('draw').removeAttribute('src');
+  try {
+    const d = await (await fetch('/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
+    const r = await fetch(`/documents/${d.id}/netlist/import?engine=auto&force=1`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: netlist });
+    if (!r.ok) { $('draw').alt = 'netlist non dessinable : ' + ((await r.json()).error || r.status); return; }
+    $('draw').src = `/documents/${d.id}/export?format=png&scale=0.8&t=${Date.now()}`;
+  } catch (e) { $('draw').alt = 'erreur de dessin'; }
+}
+async function next() {
+  const j = await (await fetch(`/correct/api/next?batch=${batch}`)).json();
+  if (j.finished) { $('main').style.display = 'none'; $('done').style.display = 'block'; $('prog').textContent = `${j.done}/${j.total}`; return; }
+  cur = j;
+  $('type').textContent = j.type;
+  $('prog').textContent = `${j.done + 1}/${j.total}`;
+  $('fig').src = `/correct/img/${batch}/${j.n}.png`;
+  $('net').value = j.netlist;
+  $('flags').textContent = j.flags.join(' · ');
+  window.scrollTo(0, 0);
+  draw(j.netlist);
+}
+async function answer(verdict) {
+  if (!cur) return;
+  const edited = $('net').value !== cur.netlist;
+  if (verdict === 'ok' && edited) verdict = 'fixed';      // edited then "Juste": keep the edit
+  const r = await (await fetch('/correct/api/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ batch, n: cur.n, verdict, netlist: $('net').value }) })).json();
+  if (r.sealed) alert('Ce circuit recoupe un circuit scellé : il sera écarté.');
+  next();
+}
+$('ok').onclick = () => answer('ok');
+$('fix').onclick = () => answer('fixed');
+$('rej').onclick = () => answer('reject');
+$('redraw').onclick = () => draw($('net').value);
+document.addEventListener('keydown', (e) => {
+  if (document.activeElement === $('net')) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) answer('fixed'); return; }
+  if (e.key === '1') answer('ok'); else if (e.key === '2') answer('fixed'); else if (e.key === '3') answer('reject');
+});
+next();
+</script>
+</body>
+</html>

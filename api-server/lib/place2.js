@@ -1781,6 +1781,9 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     }
     let k = 0;
     for (const e of ch.elems) {
+      // a part shared by two chains (a ring of caps around one device) is
+      // drawn once: the second chain just wires to it (was a 409 crash)
+      if (placed.has(e.c.ref)) { k++; continue; }
       const ci = info.get(e.c.ref);
       const shape = getShape(ci.shapeKey);
       const cx = ga.x - 110 - chOff - k * 125; // pas compacté (le LNA étirait 800 px de vide)
@@ -1815,6 +1818,7 @@ function importNetlist2Impl(model, parsed, opts = {}) {
       const junctionX = (jSelfX + jPrevX) / 2;
       let upK = 0, downK = 0;
       for (const h of e.hangers) {
+        if (placed.has(h.c.ref)) continue;
         const hi = info.get(h.c.ref);
         // rot +90 met nodes[0] ('in') en HAUT, -90 en BAS ; le pin du net
         // partagé (e.net) doit regarder la chaîne : bas pour un hanger haut,
