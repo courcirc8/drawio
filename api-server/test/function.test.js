@@ -66,3 +66,12 @@ test('ranker features: candidate identity, check.js counts, conventions, geometr
   // no trained model is shipped (the ranker did not beat check.js): score is null
   assert.equal(rankScore(f), null);
 });
+
+test('recognizeFromLabels: a vision reading (motifs + component kinds) gets a type ranking', async () => {
+  const { recognizeFromLabels } = await import('../lib/function.js');
+  const lna = recognizeFromLabels({ motifs: ['inductive-degeneration', 'cascode', 'common-gate'], kinds: ['nmos', 'L', 'C', 'R'] });
+  assert.equal(lna.types[0].type, 'LNA');
+  const vco = recognizeFromLabels({ motifs: ['cross-coupled-pair', 'tail'], kinds: ['nmos', 'L', 'C', 'varactor'] });
+  assert.equal(vco.types[0].type, 'VCO');
+  assert.ok(Math.abs(lna.types.reduce((s, t) => s + t.p, 0) - 1) < 0.02);
+});

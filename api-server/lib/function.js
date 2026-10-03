@@ -24,7 +24,6 @@ import { isPmosLike } from './patterns.js';
 
 const STATS = JSON.parse(fs.readFileSync(new URL('../data/ieee-motifs.json', import.meta.url), 'utf8'));
 const TYPES = Object.keys(STATS.by_type).filter((t) => t !== 'tous' && t !== 'sans type');
-const TOTAL = TYPES.reduce((s, t) => s + STATS.by_type[t].schematics, 0);
 const ALPHA = Number(process.env.FN_ALPHA ?? 0.25);
 const KW = Number(process.env.FN_KW ?? 0.5);
 const clamp = (p) => Math.min(0.97, Math.max(0.03, p));
@@ -67,6 +66,48 @@ const NAME_CUES = [
   [/^(lx|sw|vsw)$/i, 'DC-DC', 0.8],
 ];
 
+/** Naive-Bayes ranking of the archive's types from motif and component-kind
+ *  PRESENCE (and net names when known). Shared by netlists and figure readings. */
+function bayesTypes(present, kinds, nets = [], stats = STATS) {
+  const types0 = Object.keys(stats.by_type).filter((t) => t !== 'tous' && t !== 'sans type');
+  const total = types0.reduce((s, t) => s + stats.by_type[t].schematics, 0);
+  const scores = [];
+  for (const t of types0) {
+    const st = stats.by_type[t];
+    // prior TEMPERED (exponent ALPHA): the archive's share of a type says how
+    // often journals publish it, not how often a user asks for it — at full
+    // weight logic/memory (1 586 of 6 900 typed schematics) absorbed the errors
+    let ll = ALPHA * Math.log(st.schematics / total);
+    const why = [];
+    for (const m of MOTIF_KEYS) {
+      const p = clamp(st.motif_share[m] ?? 0);
+      const has = present.has(m);
+      ll += Math.log(has ? p : 1 - p);
+      if (has && p > 0.3) why.push(`${m} (${Math.round(p * 100)} % of published ${t})`);
+    }
+    for (const k of KIND_KEYS) {
+      const p = clamp(1 - Math.exp(-(st.component_share[k] ?? 0)));
+      ll += KW * Math.log(kinds.has(k) ? p : 1 - p);   // reduced weight: kinds are correlated
+    }
+    for (const [re, ty, bonus] of NAME_CUES) if (ty === t && nets.some((n) => re.test(n))) { ll += bonus; why.push(`net name ${nets.find((n) => re.test(n))}`); }
+    scores.push({ type: t, ll, why });
+  }
+  const max = Math.max(...scores.map((s) => s.ll));
+  const z = scores.reduce((s, x) => s + Math.exp(x.ll - max), 0);
+  return scores.map((s) => ({ type: s.type, p: +(Math.exp(s.ll - max) / z).toFixed(3), why: s.why }))
+    .sort((a, b) => b.p - a.p);
+}
+
+/** Recognition from LABELS instead of a netlist: the motifs and component
+ *  kinds a vision reading of a published figure lists (figures.sqlite
+ *  `lectures`: motifs[], components[{kind}]). Same model as recognizeFunction,
+ *  no net names, no power rules (the readings have no bridge labels). */
+export function recognizeFromLabels({ motifs = [], kinds = [] } = {}, stats = STATS) {
+  const present = new Set(motifs);
+  const k = new Set(kinds);
+  return { types: bayesTypes(present, k, [], stats), motifs: [...present], kinds: [...k], rule: 'bayes-labels' };
+}
+
 /** Rank circuit types for a parsed netlist. Returns
  *  {types:[{type, p, why:[…]}], motifs, kinds, evidence}. */
 export function recognizeFunction(parsed) {
@@ -97,31 +138,7 @@ export function recognizeFunction(parsed) {
   if (noAmp && parsed.components.some((c) => c.prefix === 'S') && parsed.components.some((c) => c.prefix === 'L') && parsed.components.some((c) => c.prefix === 'D')) {
     return { types: [{ type: 'DC-DC', p: 0.8, why: ['switch + freewheel diode + inductor, no amplifier'] }], motifs: [...present], kinds: [...kinds], rule: 'power' };
   }
-  const scores = [];
-  for (const t of TYPES) {
-    const st = STATS.by_type[t];
-    // prior TEMPERED (exponent ALPHA): the archive's share of a type says how
-    // often journals publish it, not how often a user asks for it — at full
-    // weight logic/memory (1 586 of 6 900 typed schematics) absorbed the errors
-    let ll = ALPHA * Math.log(st.schematics / TOTAL);
-    const why = [];
-    for (const m of MOTIF_KEYS) {
-      const p = clamp(st.motif_share[m] ?? 0);
-      const has = present.has(m);
-      ll += Math.log(has ? p : 1 - p);
-      if (has && p > 0.3) why.push(`${m} (${Math.round(p * 100)} % of published ${t})`);
-    }
-    for (const k of KIND_KEYS) {
-      const p = clamp(1 - Math.exp(-(st.component_share[k] ?? 0)));
-      ll += KW * Math.log(kinds.has(k) ? p : 1 - p);   // reduced weight: kinds are correlated
-    }
-    for (const [re, ty, bonus] of NAME_CUES) if (ty === t && nets.some((n) => re.test(n))) { ll += bonus; why.push(`net name ${nets.find((n) => re.test(n))}`); }
-    scores.push({ type: t, ll, why });
-  }
-  const max = Math.max(...scores.map((s) => s.ll));
-  const z = scores.reduce((s, x) => s + Math.exp(x.ll - max), 0);
-  const types = scores.map((s) => ({ type: s.type, p: +(Math.exp(s.ll - max) / z).toFixed(3), why: s.why }))
-    .sort((a, b) => b.p - a.p);
+  const types = bayesTypes(present, kinds, nets);
   return { types, motifs: [...present], kinds: [...kinds], rule: 'bayes' };
 }
 
