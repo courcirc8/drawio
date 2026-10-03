@@ -1143,6 +1143,48 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     }
   }
 
+  // ---- BRAS D'INTERRUPTEURS (onduleurs, hacheurs) : deux S en série par un
+  //      milieu ; une colonne par bras, interrupteur haut sur P, bas sur N,
+  //      la diode de roue libre ACCOLÉE à son interrupteur, cathode en haut.
+  //      Sans gabarit, les six interrupteurs et six diodes d'un onduleur
+  //      triphasé tombaient sur une seule rangée.
+  const swGap = P.switchLegs === false ? 0 : Number(process.env.P2_SWLEG ?? 1);
+  const swLegRefs = new Set();   // switches drawn vertically in a leg (the others keep their row)
+  if (swGap > 0) {
+    const sws = comps.filter((k) => k.prefix === 'S' && unplaced.has(k.ref) && info.get(k.ref) != null);
+    const pairNets = (k) => k.nodes.slice(0, 2);
+    const used = swLegRefs;
+    for (const a of sws) {
+      for (const b of sws) {
+        if (a === b || used.has(a.ref) || used.has(b.ref)) continue;
+        const shared = pairNets(a).filter((n) => pairNets(b).includes(n));
+        if (shared.length !== 1) continue;
+        const mid = shared[0];
+        if (mid === '0' || mid === vddNet) continue;
+        const ea = pairNets(a).find((n) => n !== mid), eb = pairNets(b).find((n) => n !== mid);
+        if (ea === eb) continue;
+        // N = ground when one end is ground, P = the other end
+        const upper = eb === '0' ? a : ea === '0' ? b : (ea < eb ? a : b);
+        const lower = upper === a ? b : a;
+        const Pn = upper === a ? ea : eb;
+        const col = nextCol++;
+        const turnTop = (k, top) => {
+          const ci = info.get(k.ref);
+          if (ci.top !== top) info.set(k.ref, { ...ci, top: ci.bot, bot: ci.top, topPin: ci.botPin, botPin: ci.topPin });
+        };
+        turnTop(upper, Pn); turnTop(lower, mid);
+        slots.set(upper.ref, { col, level: 0 }); slots.set(lower.ref, { col, level: 1 });
+        for (const [s, top, level] of [[upper, Pn, 0], [lower, mid, 1]]) {
+          used.add(s.ref); unplaced.delete(s.ref);
+          const fw = comps.find((d) => d.prefix === 'D' && unplaced.has(d.ref) && info.get(d.ref) != null &&
+            d.nodes.includes(s.nodes[0]) && d.nodes.includes(s.nodes[1]));
+          if (fw) { turnTop(fw, top); slots.set(fw.ref, { col: col + swGap, level }); unplaced.delete(fw.ref); }
+        }
+        if (swGap >= 1) nextCol = Math.ceil(col + swGap) + 1;
+      }
+    }
+  }
+
   let roots = (byTopNet.get(vddNet) || []).map((c) => c.ref);
   // heuristique : la pile de polarisation (source de courant en racine) à gauche
   roots.sort((a, b) => (comps.find((c) => c.ref === b).prefix === 'I' ? 1 : 0) -
@@ -1644,7 +1686,7 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     const flip = P.flip[c.ref] ? -1 : 1;
     // dipôles verticaux : rotation 90 (in en haut) ; MOS natifs (déjà verticaux)
     let rotation = 0;
-    if ('RCLD'.includes(c.prefix)) rotation = 90 * flip * (ci.top != null && ci.top !== c.nodes[0] ? -1 : 1);   // -90: turned passive, its 2nd pin on top
+    if ('RCLD'.includes(c.prefix) || (c.prefix === 'S' && (swLegRefs.has(c.ref)))) rotation = 90 * flip * (ci.top != null && ci.top !== c.nodes[0] ? -1 : 1);   // -90: turned passive, its 2nd pin on top
     const w = shape.w, h = shape.h;
     const cx = P.x0 + s.col * P.colW + (channels?.x(s.col) || 0);
     const cy = P.y0 + s.level * P.rowH + (channels?.y(s.level) || 0);

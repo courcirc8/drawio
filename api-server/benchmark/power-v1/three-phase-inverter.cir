@@ -1,0 +1,27 @@
+* three-phase two-level inverter, ideal switches with freewheel diodes, star RL load
+Vdc p 0 600
+S1 p u g1 0 SW
+D1 u p D
+S2 u 0 g2 0 SW
+D2 0 u D
+S3 p v g3 0 SW
+D3 v p D
+S4 v 0 g4 0 SW
+D4 0 v D
+S5 p w g5 0 SW
+D5 w p D
+S6 w 0 g6 0 SW
+D6 0 w D
+Ru u su 10
+Lu su st 5m
+Rv v sv 10
+Lv sv st 5m
+Rw w sw 10
+Lw sw st 5m
+Vg1 g1 0 PULSE(0 5 0 1n 1n 10m 20m)
+Vg2 g2 0 PULSE(5 0 0 1n 1n 10m 20m)
+Vg3 g3 0 PULSE(0 5 6.67m 1n 1n 10m 20m)
+Vg4 g4 0 PULSE(5 0 6.67m 1n 1n 10m 20m)
+Vg5 g5 0 PULSE(0 5 13.3m 1n 1n 10m 20m)
+Vg6 g6 0 PULSE(5 0 13.3m 1n 1n 10m 20m)
+.end

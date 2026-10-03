@@ -36,8 +36,12 @@ test('diode bridge: one leg per column, upper diode above its lower one, load be
 test('freewheel diodes across switches stay out of rectifier legs', { timeout: 120000 }, async () => {
   const { m, parsed, at } = await v2(cir('hbridge-switches'));
   assert.equal(compare(extractNetlist(m), parsed).match, true);
-  // D1 (across S1) and D2 (across S2) would form a leg bus/la/0 if not excluded
-  assert.ok(!(Math.abs(at.get('D1').x - at.get('D2').x) < 2 && at.get('D1').y < at.get('D2').y), 'D1/D2 not stacked as a rectifier leg');
+  // D1 (across S1) and D2 (across S2) would form a leg bus/la/0 of their own if
+  // not excluded; they stay beside their switches, on the same rows
+  for (const [d, s] of [['D1', 'S1'], ['D2', 'S2'], ['D3', 'S3'], ['D4', 'S4']]) {
+    assert.ok(Math.abs(at.get(d).y - at.get(s).y) < 2, `${d} on the row of ${s}`);
+    assert.ok(Math.abs(at.get(d).x - at.get(s).x) < 260, `${d} next to ${s}`);
+  }
 });
 
 test('v4 composes the power circuits and keeps LVS', { timeout: 120000 }, async () => {
@@ -46,5 +50,16 @@ test('v4 composes the power circuits and keeps LVS', { timeout: 120000 }, async 
     const m = getPage(newDocument());
     await importNetlist4(m, parsed);
     assert.equal(compare(extractNetlist(m), parsed).match, true, name);
+  }
+});
+
+test('switch legs: one column per leg, upper switch above lower, freewheel diode beside its switch', { timeout: 120000 }, async () => {
+  const { m, parsed, at } = await v2(cir('three-phase-inverter'));
+  assert.equal(compare(extractNetlist(m), parsed).match, true);
+  for (const [up, down, dUp, dDown] of [['S1', 'S2', 'D1', 'D2'], ['S3', 'S4', 'D3', 'D4'], ['S5', 'S6', 'D5', 'D6']]) {
+    assert.ok(Math.abs(at.get(up).x - at.get(down).x) < 2, `${up}/${down} share a column`);
+    assert.ok(at.get(up).y < at.get(down).y - 40, `${up} above ${down}`);
+    assert.ok(Math.abs(at.get(dUp).y - at.get(up).y) < 2 && at.get(dUp).x > at.get(up).x, `${dUp} beside ${up}`);
+    assert.ok(Math.abs(at.get(dDown).y - at.get(down).y) < 2, `${dDown} beside ${down}`);
   }
 });
