@@ -808,7 +808,31 @@ function importNetlist2Impl(model, parsed, opts = {}) {
   // net d'alimentation : 'vdd' explicite sinon net avec le plus de "tops"
   // rails UNIQUEMENT pour un vrai net d'alimentation nommé — deviner un rail
   // sur « le net avec le plus de tops » déguisait l'entrée du biquad en VDD
-  const vddNet = [...byTopNet.keys()].find((n) => /^a?v(dd|cc)d?$/i.test(n)) ?? null;
+  // place4 imposes the page's supply on a block that only touches it through
+  // the far end of a resistor (never a conduction top): without it, Vcc of a
+  // split block became an anonymous wire and the composed page failed LVS
+  const vddNet = [...byTopNet.keys()].find((n) => /^a?v(dd|cc)d?$/i.test(n)) ??
+    (P.vddNet != null && comps.some((c) => c.nodes.includes(P.vddNet)) ? P.vddNet : null);
+  // a resistor/cap/inductor written `R2 n3 Vcc` (or `R3 0 n5`) is electrically
+  // the same part upside down: turn it so the supply is its TOP and ground its
+  // bottom — otherwise the supply tap landed on its body (comp-overlap +
+  // through on every LTspice deck that lists the rail second)
+  if (P.orientPassives !== false && process.env.P2_ORIENT !== '0') {
+    for (const c of comps) {
+      const ci = info.get(c.ref);
+      if (ci == null || !'RCL'.includes(c.prefix)) continue;
+      if ((vddNet != null && ci.bot === vddNet && ci.top !== '0') || (ci.top === '0' && ci.bot !== vddNet)) {
+        info.set(c.ref, { ...ci, top: ci.bot, bot: ci.top, topPin: ci.botPin, botPin: ci.topPin });
+      }
+    }
+    byTopNet.clear();
+    for (const c of comps) {
+      const ci = info.get(c.ref);
+      if (ci == null) continue;
+      if (!byTopNet.has(ci.top)) byTopNet.set(ci.top, []);
+      byTopNet.get(ci.top).push(c);
+    }
+  }
 
   // ---- construction des piles (DFS depuis vdd, fan-out -> colonnes sœurs)
   // slot: {ref, col, level} ; shared: éléments à top multiple (queues) traités après
@@ -1571,7 +1595,7 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     const flip = P.flip[c.ref] ? -1 : 1;
     // dipôles verticaux : rotation 90 (in en haut) ; MOS natifs (déjà verticaux)
     let rotation = 0;
-    if ('RCLD'.includes(c.prefix)) rotation = 90 * flip;
+    if ('RCLD'.includes(c.prefix)) rotation = 90 * flip * (ci.top != null && ci.top !== c.nodes[0] ? -1 : 1);   // -90: turned passive, its 2nd pin on top
     const w = shape.w, h = shape.h;
     const cx = P.x0 + s.col * P.colW + (channels?.x(s.col) || 0);
     const cy = P.y0 + s.level * P.rowH + (channels?.y(s.level) || 0);
