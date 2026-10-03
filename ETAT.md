@@ -102,6 +102,20 @@ dégradations identiques des deux côtés, découpage par article / par circuit)
 modèle `models/judge-v1.pt`). À faire ensuite : eval.py — invariance au style (même dessin, styles différents → égalité),
 cas témoin bandgap 1645 (v2+branches > éparpillement), score sur le jeu de test.
 
+## Juge DVD v1 : ÉCHEC DE VALIDATION (2026-10-04) — ne pas utiliser
+
+Entraîné : 13 562 schémas DVD lisibles contre 9 210 de nos rendus, texte retiré des deux côtés, familles équilibrées ;
+test acc 98,7 %, AUC 0,999 (trop facile). Tests `tools/judge/eval.py` :
+- style : échelle 0,6 / 1,6 → |Δ| 0,09 / 0,08 (correct) ; traits épaissis → **0,31** ; bruit de scan → **0,20** (échec) ;
+- texte gardé ou retiré → 0,07 ;
+- témoin bandgap : 0,001 contre 0,000 → sans valeur (tous nos dessins ~0) ;
+- jeu de test : publiés 0,97, nôtres 0,01 → sépare scan/rendu propre, pas disposition bonne/mauvaise.
+Modèle `/AI/datasets/judge/models/judge-v1.pt` gardé pour mémoire seulement.
+Pistes v2 : ramener les deux côtés à une même abstraction (squelette des traits → épaisseur fixe, symboles
+réduits à des boîtes ou retirés, seuls fils et positions), entraîner sur des PAIRES de nos propres dessins
+en n'utilisant les DVD que comme distribution de référence, ou détecter les composants dans les figures DVD
+(boîtes) pour comparer des positions relatives plutôt que des pixels.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
