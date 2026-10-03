@@ -53,3 +53,16 @@ test('conventionReport: the LNA drawn by place2 follows its conventions', { time
   const st = rep.checks.find((c) => c.name === 'supply-top');
   if (st) assert.equal(st.weight, 0.903);
 });
+
+test('ranker features: candidate identity, check.js counts, conventions, geometry', { timeout: 120000 }, async () => {
+  const { rankFeatures, rankScore } = await import('../lib/ranker.js');
+  const parsed = cir('netlists', 'vco-lc');
+  const m = getPage(newDocument());
+  const pl = importNetlist2(m, parsed);
+  await routePage(m, pl.wires, {});
+  const f = rankFeatures(m, parsed, { eng: 'v2', colW: 230, rowH: 220 });
+  assert.equal(f.cand_v2, 1); assert.equal(f.colW, 1); assert.equal(f.rowH, 1);
+  for (const k of ['js_errors', 'conv', 'area_per_part', 'wire_per_part', 'bends_per_wire']) assert.ok(Number.isFinite(f[k]), k);
+  // no trained model is shipped (the ranker did not beat check.js): score is null
+  assert.equal(rankScore(f), null);
+});

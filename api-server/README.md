@@ -234,6 +234,30 @@ error on each set (13 -> 14, 199 -> 200: check.js picks, check.py judges).
 v4 also attaches a tail to the block of its pair (tuning errors 15 -> 13).
 Rejected: absorbing single-block passives into their block (13 -> 21).
 
+## Learned ranker (step C) — 2026-10-03: measured, not shipped; wider candidate set shipped
+
+`tools/ranker-dataset.mjs` places every netlist as AUTO_CANDIDATES × colW
+{190, 230} × rowH {180, 220} (16 drawings) and records `lib/ranker.js`
+features (candidate, check.js rule counts, conventions, geometry) with the
+check.py verdict; `tools/ranker-train.py` trains a pairwise logistic ranker on
+the tuning sets (5-fold CV by circuit) and evaluates on the holdout.
+
+| check.py errors (circuits at 0) | tuning, 5-fold CV | holdout 131 |
+|---|---|---|
+| auto, 4 candidates, check.js | 21 | 200 (72) |
+| check.js over 16 candidates | 19 | 166 (74) |
+| learned ranker over 16 | 18-19 | 169-170 (75) |
+| oracle over 16 (check.py picks) | 9 | 140 (82) |
+
+The gain is the spread of candidates; the ranker only matches check.js, so
+no model is shipped (`data/ranker.json` absent, `rankScore` returns null).
+Shipped: `AUTO_SPACINGS` — each candidate also at 230×220 (8 drawings, the
+subset that holds the gain): end to end, tuning 14 -> 12 errors, holdout
+200 -> 169 (zero-error 72 -> 74), conventions unchanged, sheets +1-2 %,
+0.3-0.6 s per import. Picking with check.py itself would reach the oracle
+but make the judge its own selector; the ranker is the place for a better
+signal once step D gives real labels.
+
 ## Tests
 
 ```bash

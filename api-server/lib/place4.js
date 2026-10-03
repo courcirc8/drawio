@@ -76,6 +76,13 @@ function railNets(parsed) {
  *    + v4 one, v4 absorb+split        18 / 364   (63 holdout circuits at zero)
  *  check.js and check.py disagree on ties; v4 split wins most of them. */
 export const AUTO_CANDIDATES = [['v4', 'split'], ['v2', null], ['v4', 'one'], ['v4', 'absorb+split']];
+/** Spacings each candidate is also tried with (place2 column pitch / row
+ *  height). Measured 2026-10-03 with tools/ranker-dataset.mjs, selection by
+ *  check.js then conventions (check.py errors, tuning / holdout):
+ *    default only 21 / 200;  + 230x220  19 / 169;  all four spacings 19 / 166.
+ *  The spread of candidates, not a learned ranker, carried the gain: a
+ *  pairwise ranker trained on the tuning sets matched check.js (19 / 170). */
+export const AUTO_SPACINGS = [{}, { colW: 230, rowH: 220 }];
 
 /** What becomes of the components no motif claims. mode:
  *  'one'     — a single "rest" block (the original v4);

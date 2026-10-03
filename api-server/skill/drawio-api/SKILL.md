@@ -62,8 +62,9 @@ curl -s -X POST :8770/documents/doc1/route -d '{}' -H 'Content-Type: application
 ### Génération automatique netlist → beau schéma
 ```bash
 # RECOMMANDÉ : engine=auto essaie v4 (macro-blocs, reste découpé), v2, v4 « one »
-# et v4 « absorb+split », garde celui qui a le moins d'erreurs du checker ;
-# la réponse liste les erreurs de chaque candidat dans `auto`
+# et v4 « absorb+split », chacun à deux espacements (8 dessins), garde celui qui
+# a le moins d'erreurs du checker puis le meilleur score de conventions ;
+# la réponse liste erreurs et conventions de chaque candidat dans `auto`
 curl -s -X POST ':8770/documents/doc1/netlist/import?engine=auto' -H 'Content-Type: text/plain' --data-binary @c.cir
 # même chose + optimisation locale scorée (gate LVS), ~4x plus lent
 curl -s -X POST ':8770/documents/doc1/netlist/import?engine=auto&optimize=8' -H 'Content-Type: text/plain' --data-binary @c.cir
