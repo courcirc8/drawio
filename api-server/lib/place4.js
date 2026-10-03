@@ -317,7 +317,10 @@ export async function importNetlist4(model, parsed, opts = {}) {
     return { bands, W, H };
   };
   let plan = bandsFor(1);
-  if (process.env.V4_WRAP !== '0') {
+  // only when one band is really too wide: wrapping sheets of 2:1-3:1 cost
+  // errors on the small tuning sets for no visible gain (from 3: 14 -> 18 there)
+  const WRAP_FROM = Number(process.env.V4_WRAP_FROM ?? 3);   // 3: family tune >3:1 7.3 %, 3.5: 8.6 %, 4: 12.5 %
+  if (process.env.V4_WRAP !== '0' && plan.W / plan.H > WRAP_FROM) {
     for (let nb = 2; nb <= columns.length; nb++) {
       const c = bandsFor(nb);
       if (Math.abs(Math.log(c.W / c.H / TARGET_ASPECT)) < Math.abs(Math.log(plan.W / plan.H / TARGET_ASPECT))) plan = c;

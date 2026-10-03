@@ -13,7 +13,7 @@
  *
  * Per circuit: LVS, check.py errors/warnings/crossings, aspect, area and wire
  * length per part, long wires (> 40 % of the sheet's larger side), bends per
- * wire, published-convention score. One JSON line per circuit.
+ * wire, published-convention score, check.py error rules. One JSON line per circuit.
  *
  * Usage:
  *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all]
@@ -91,6 +91,8 @@ async function run() {
       fs.writeFileSync(tmp, serialize(doc));
       const j = JSON.parse(spawnSync('python3', [path.join(HERE, 'check.py'), tmp, '--netlist', man.get(r.id).file, '--json'], { encoding: 'utf8', timeout: 120000 }).stdout);
       row.errors = j.errors; row.warnings = j.warnings; row.crossings = j.crossings ?? 0;
+      row.rules = {};
+      for (const v of j.violations || []) if (v.severity === 'error') row.rules[v.rule] = (row.rules[v.rule] || 0) + 1;
       Object.assign(row, geometry(m, parsed));
       try { row.conv = conventionReport(m, parsed).score; } catch { row.conv = null; }
     } catch (e) { row.failed = String(e.message || e).slice(0, 160); }
