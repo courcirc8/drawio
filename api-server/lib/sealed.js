@@ -28,8 +28,11 @@ function load() {
   return SEALED;
 }
 
-/** 'sealed', 'variant' or null for a netlist text. */
-export function sealedStatus(text) {
+/** 'sealed', 'variant' or null for a netlist text. `family` (a SOURCE label,
+ *  not a recognizer guess) makes the motif-signature rule the same as the one
+ *  tools/seal-eval.mjs applied (same family required); without it the rule is
+ *  applied across families — stricter, used when the family is unknown. */
+export function sealedStatus(text, { family = null } = {}) {
   const s = load();
   if (s == null) return null;
   if (s.sha.has(crypto.createHash('sha256').update(text).digest('hex'))) return 'sealed';
@@ -40,14 +43,14 @@ export function sealedStatus(text) {
   const parts = p.components.length;
   for (const d of s.fps) {
     if (variantSimilarity(d.local, f.local) >= s.rule.localSimilarity) return 'variant';
-    if (d.motifSig === sig && Math.abs(d.parts - parts) <= s.rule.sameFamilyMotifsSizeTol * Math.max(d.parts, parts)) return 'variant';
+    if ((family == null || d.family === family) && d.motifSig === sig && Math.abs(d.parts - parts) <= s.rule.sameFamilyMotifsSizeTol * Math.max(d.parts, parts)) return 'variant';
   }
   return null;
 }
 
 /** Throws when a tuning tool is about to use a sealed circuit or a variant. */
-export function assertNotSealed(text, where = '') {
-  const st = sealedStatus(text);
+export function assertNotSealed(text, where = '', opts = {}) {
+  const st = sealedStatus(text, opts);
   if (st) throw new Error(`refused: ${st} evaluation circuit${where ? ' (' + where + ')' : ''} — sealed for the final human rating`);
 }
 

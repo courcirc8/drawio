@@ -80,7 +80,7 @@ async function run() {
     const text = fs.readFileSync(man.get(r.id).file, 'utf8');
     const row = { id: r.id, source: r.source, family: famOf(r), split: splitOf(r), parts: r.parts, engine };
     try {
-      assertNotSealed(text, r.id);
+      assertNotSealed(text, r.id, { family: r.familyWeak ? null : r.family });
       const parsed = parseSpice(text);
       let doc, m, chosen = engine;
       if (engine === 'auto') { const a = await autoPlace(parsed); doc = a.doc; chosen = a.label; }
