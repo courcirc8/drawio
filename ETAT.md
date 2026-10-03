@@ -56,6 +56,15 @@ familles jamais vues 937 : 16 %, 3 %, 3 977. Comparer les prochains changements 
 Constat clé : le choix d'auto par nombre d'erreurs n'est pas aligné avec la lisibilité (juge Ornith par paires préfère
 v2 79 fois contre 16 sur 144 dessins différents ; net sur une bandgap, marginal ailleurs).
 
+## Correctifs de justesse (soir du 2026-10-03)
+
+- `check.py` règle 26/28 : groupes de miroir par polarité ET par nœud de source (faux positifs : NMOS sous un miroir
+  PMOS, miroir cascode 2×2). Les chiffres « run full-3 » ci-dessus précèdent la seconde correction : remesurer.
+- Analyseur : noms de nœuds insensibles à la casse (`Vin` = `vin`) ; substrat des BJT ; `patterns.js` borné
+  (tableaux de cellules) et rails des PDK ouverts reconnus.
+- `auto` n'élit jamais un dessin qui échoue au LVS ; `place2` ne perd plus les dérivations d'un élément de chaîne partagé.
+  Résultat : les 80 netlists open PDK qui échouaient au LVS passent toutes.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
