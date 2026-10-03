@@ -92,3 +92,14 @@ test('a signal source is not a rail; a collector on a rail is a follower', () =>
   assert.equal(has(cc, 'bjt-resistive-stage').length, 0);
   assert.equal(has(cc, 'source-follower').length, 2);
 });
+
+test('power bridges are registered motifs: diode legs and switch legs grouped by their P/N ends', () => {
+  const has = (r, m) => r.instances.filter((i) => i.motif === m);
+  const pw = (n) => detectMotifs(parseSpice(fs.readFileSync(new URL(`../benchmark/power-v1/${n}.cir`, import.meta.url), 'utf8')));
+  const b3 = has(pw('three-phase-bridge'), 'diode-bridge');
+  assert.equal(b3.length, 1); assert.equal(b3[0].refs.length, 6);
+  const inv = has(pw('three-phase-inverter'), 'switch-bridge');
+  assert.equal(inv.length, 1, 'S1/S3 share the source-driven bus p: not a leg');
+  assert.equal(inv[0].refs.length, 12, 'six switches + six freewheel diodes');
+  assert.equal(has(pw('graetz-rc'), 'diode-bridge')[0].refs.length, 4);
+});

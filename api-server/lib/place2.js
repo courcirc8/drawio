@@ -1160,7 +1160,9 @@ function importNetlist2Impl(model, parsed, opts = {}) {
         const shared = pairNets(a).filter((n) => pairNets(b).includes(n));
         if (shared.length !== 1) continue;
         const mid = shared[0];
-        if (mid === '0' || mid === vddNet) continue;
+        // never a source-driven bus as mid (S1 and S3 of an inverter share P):
+        // pairing them depended on the loop order alone
+        if (mid === '0' || mid === vddNet || comps.some((v) => (v.prefix === 'V' || v.prefix === 'I') && v.nodes.includes(mid))) continue;
         const ea = pairNets(a).find((n) => n !== mid), eb = pairNets(b).find((n) => n !== mid);
         if (ea === eb) continue;
         // N = ground when one end is ground, P = the other end

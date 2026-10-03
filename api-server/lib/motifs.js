@@ -80,6 +80,10 @@ export const MOTIFS = [
     describe: 'Resistor from the drain of stage B back to the gate of stage A when B is driven by A (two-stage shunt feedback) [0.10].' },
   { name: 'matching-network', rules: [], recipe: 'none — IEEE gap (2026-10-03); decoration',
     describe: 'Series inductor or capacitor on the gate/base of an active (input match, Lg of an LNA); drawn on the signal axis before the device [0.02, LNA 0.3].' },
+  { name: 'diode-bridge', rules: [], recipe: 'place2:bridge legs (one column per leg, cathodes up, load P-N beside)',
+    describe: 'Rectifier legs (diode mid->P + diode N->mid) sharing P and N: Graetz, three-phase bridge; one leg = doubler/multiplier stage (benchmark/power-v1).' },
+  { name: 'switch-bridge', rules: [], recipe: 'place2:switch legs (one column per leg, freewheel diode beside its switch)',
+    describe: 'Two switches in series through a mid node (half/full/three-phase bridge, chopper leg), with their antiparallel freewheel diodes (benchmark/power-v1).' },
   { name: 'load', rules: [], recipe: 'none — decoration',
     describe: 'Passive (R, L, C) between the drain/collector of an active and a rail: the stage load; drawn above the device under the rail.' },
 ];
@@ -284,11 +288,36 @@ export function detectMotifs(parsed) {
     }
   }
 
+  // power bridges (the place2 bridge/switch-leg templates): legs grouped by
+  // their P/N ends; a freewheel diode across a switch belongs to its leg
+  {
+    const sw = comps.filter((c) => c.prefix === 'S');
+    const across = (d) => comps.some((k) => 'SMQJ'.includes(k.prefix) && k.nodes.slice(0, 3).includes(d.nodes[0]) && k.nodes.slice(0, 3).includes(d.nodes[1]));
+    const dio = comps.filter((c) => c.prefix === 'D' && !across(c));
+    const groups = new Map();
+    const put = (kind, key, refs) => { const k = kind + '|' + key; if (!groups.has(k)) groups.set(k, new Set()); refs.forEach((r) => groups.get(k).add(r)); };
+    for (const up of dio) for (const down of dio) {
+      if (up === down || down.nodes[1] !== up.nodes[0] || down.nodes[0] === up.nodes[1]) continue;
+      put('diode-bridge', up.nodes[1] + '|' + down.nodes[0], [up.ref, down.ref]);
+    }
+    for (const a of sw) for (const b of sw) {
+      if (a.ref >= b.ref) continue;
+      const shared = a.nodes.slice(0, 2).filter((n) => b.nodes.slice(0, 2).includes(n));
+      // a mid node is never a source-driven bus (S1 and S3 of an inverter share P)
+      if (shared.length !== 1 || shared[0] === '0' || sourcedNets(comps).has(shared[0])) continue;
+      const ends = [a, b].map((k) => k.nodes.slice(0, 2).find((n) => n !== shared[0])).sort();
+      if (ends[0] === ends[1]) continue;
+      const fw = comps.filter((d) => d.prefix === 'D' && [a, b].some((k) => d.nodes.includes(k.nodes[0]) && d.nodes.includes(k.nodes[1])));
+      put('switch-bridge', ends.join('|'), [a.ref, b.ref, ...fw.map((d) => d.ref)]);
+    }
+    for (const [k, refs] of groups) add(k.split('|')[0], [...refs], { rails: k.split('|').slice(1) });
+  }
+
   // macro-blocks: greedy union of overlapping instances of STRUCTURAL motifs
   // (a component belongs to one block); decorations (diode, tail, feedback)
   // attach to the block of their device
   const structural = new Set(['gilbert-quad', 'latch', 'half-latch', 'cascade', 'ring', 'differential-pair', 'current-mirror', 'cross-coupled-pair', 'cascode', 'inverter', 'passive-axis', 'bjt-resistive-stage', 'opamp-stage',
-    'common-source', 'common-gate', 'source-follower', 'switch']);
+    'common-source', 'common-gate', 'source-follower', 'switch', 'diode-bridge', 'switch-bridge']);
   const blockOf = new Map();
   const blocks = [];
   const ordered = [...inst].sort((a, b) => b.refs.length - a.refs.length);
