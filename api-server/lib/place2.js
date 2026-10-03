@@ -1649,11 +1649,16 @@ function importNetlist2Impl(model, parsed, opts = {}) {
       if (xN == null) continue;
       const up = ci.top === vddNet || ci.bot === vddNet;
       const kk = sig + (up ? '^' : 'v');
-      const j = shuntK.get(kk) || 0;
-      shuntK.set(kk, j + 1);
       const shape = getShape(ci.shapeKey);
       const vertNative = !!(SPICE_MAP[k.prefix] || {}).vertical;
-      const bx = xN + j * 46;
+      // pitch from the VISIBLE widths (a turned cap or diode is 60 px wide, a
+      // turned resistor 20): a fixed 46 px overlapped Dz and Cl of a zener
+      // shunt regulator (benchmark/bjt-v1); never tighter than the old 46
+      const half = (vertNative ? shape.w : shape.h) / 2;
+      const prev = shuntK.get(kk);
+      const off = prev == null ? 0 : prev.off + Math.max(46, prev.half + half + 4);
+      shuntK.set(kk, { off, half });
+      const bx = xN + off;
       const by = up ? yN - 130 : yN + 130;
       let rot = 0, px2 = bx - shape.w / 2;
       if (!vertNative) {

@@ -1,0 +1,14 @@
+* class-AB complementary push-pull, two-diode bias
+Vcc vcc 0 12
+Vee vee 0 -12
+Vs s 0 SIN(0 2 1k)
+R1 vcc bn 2.2k
+D1 bm bn D
+D2 bp bm D
+R2 bp vee 2.2k
+Cin1 s bn 10u
+Cin2 s bp 10u
+Qn vcc bn out NPN
+Qp vee bp out PNP
+Rl out 0 8
+.end
