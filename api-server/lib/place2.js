@@ -1531,6 +1531,26 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     }
   }
 
+  // ---- miroir BIPOLAIRE à bases face à face : le symbole NPN fait 100 px
+  //      de large, deux face à face dans 190 px se chevauchaient (10 px) et
+  //      le fil base-collecteur de la diode traversait le corps. Élargir
+  //      l'entrefer comme pour le latch (benchmark/bjt-v1).
+  const mGap = P.bjtMirrorGap ?? Number(process.env.P2_MGAP ?? 0.3);
+  if (mGap > 0) {
+    for (const mg of structures.mirrors) {
+      const ms = mg.refs.filter((r) => slots.has(r));
+      if (ms.length !== 2 || ms.some((r) => quadRefs.has(r))) continue;
+      if (!ms.every((r) => (comps.find((k) => k.ref === r) || {}).prefix === 'Q')) continue;
+      const [sL, sR] = ms.map((r) => slots.get(r)).sort((a, b) => a.col - b.col);
+      if (sL.col === sR.col || sL.level !== sR.level) continue;
+      const cut = (sL.col + sR.col) / 2;
+      for (const [, sl2] of slots) {
+        if (sl2.col > cut + 0.01) sl2.col += mGap;
+        else if (Math.abs(sl2.col - cut) <= 0.01) sl2.col += mGap / 2;
+      }
+    }
+  }
+
   // ---- latch : ÉLARGIR L'ENTREFER central — les gates de la paire cc se
   //      font face à ~15 px, où DEUX verticales de nets différents doivent
   //      passer (le X) : impossible à ≥10 px d'écart. +0.3 colonne pour

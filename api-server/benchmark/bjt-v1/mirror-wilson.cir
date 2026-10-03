@@ -1,0 +1,8 @@
+* Wilson current mirror
+Vcc vcc 0 12
+Rr vcc a 10k
+Q3 o a k NPN
+Q1 a k 0 NPN
+Q2 k k 0 NPN
+Rl vcc o 4.7k
+.end

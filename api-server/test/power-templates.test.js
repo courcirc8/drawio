@@ -63,3 +63,15 @@ test('switch legs: one column per leg, upper switch above lower, freewheel diode
     assert.ok(Math.abs(at.get(dDown).y - at.get(down).y) < 2, `${dDown} beside ${down}`);
   }
 });
+
+test('BJT mirror with facing bases: no body overlap, no checker error (bjt-v1)', { timeout: 120000 }, async () => {
+  for (const name of ['mirror-simple', 'mirror-widlar', 'mirror-wilson']) {
+    const parsed = parseSpice(fs.readFileSync(new URL(`../benchmark/bjt-v1/${name}.cir`, import.meta.url), 'utf8'));
+    const m = getPage(newDocument());
+    const p = importNetlist2(m, parsed);
+    await routePage(m, p.wires, {});
+    assert.equal(compare(extractNetlist(m), parsed).match, true, name);
+    const errs = checkDocument(m).violations.filter((v) => v.severity === 'error' && v.rule !== '30');
+    assert.deepEqual(errs.map((v) => v.rule + ' ' + v.message), [], name);
+  }
+});

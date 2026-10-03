@@ -1,0 +1,8 @@
+* Widlar current source
+Vcc vcc 0 15
+R1 vcc x 14k
+Q1 x x 0 NPN
+Q2 o x e 2N2222
+Re e 0 5k
+Rl vcc o 10k
+.end
