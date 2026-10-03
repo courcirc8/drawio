@@ -162,7 +162,7 @@ function perturb(rnd, base, placedInfo) {
  */
 const rankValue = (r) => (r == null ? -Infinity : (r.score_raw != null ? r.score_raw : r.score));
 
-export async function optimizeNetlist(parsed, { iterations = 10, reference = null, seed = 42, engine = 'v2', preseed = null, preseedScale = null, restMode = null } = {}) {
+export async function optimizeNetlist(parsed, { iterations = 10, reference = null, seed = 42, engine = 'v2', preseed = null, preseedScale = null, restMode = null, extra = null } = {}) {
   const rnd = mulberry(seed);
   const history = [];
   // ---- recherche à FAISCEAU sur score rapide (géométrie seule)
@@ -172,7 +172,7 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
   // EVERY candidate: it is a starting geometry, not a post-hoc filter, so the
   // beam must explore perturbations OF the reference layout, not of a layout
   // the reference then overwrites.
-  const base = { ...(preseed ? { seed: preseed, ...(preseedScale ? { seedScale: preseedScale } : {}) } : {}), ...(restMode ? { restMode } : {}) };
+  const base = { ...(preseed ? { seed: preseed, ...(preseedScale ? { seedScale: preseedScale } : {}) } : {}), ...(restMode ? { restMode } : {}), ...(extra || {}) };
   // engine=auto (2026-09-18): the macro-block engine (v4) wins on multi-stage
   // netlists the templates of place2 do not cover and loses on the
   // single-structure circuits place2 was tuned for. Choosing on the SEEDS
@@ -184,9 +184,9 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
     // every candidate of AUTO_CANDIDATES (place4.js), labelled v4:<mode>
     const { AUTO_CANDIDATES } = await import('./place4.js');
     const runs = [];
-    for (const [eng, mode] of AUTO_CANDIDATES) {
-      const label = mode ? `v4:${mode}` : eng;
-      try { runs.push({ eng: label, ...(await optimizeNetlist(parsed, { iterations, reference, seed, engine: eng, preseed, preseedScale, restMode: mode })) }); }
+    for (const [eng, mode, extra] of AUTO_CANDIDATES) {
+      const label = (mode ? `v4:${mode}` : eng) + (extra && extra.branchExtend ? '+branches' : '');
+      try { runs.push({ eng: label, ...(await optimizeNetlist(parsed, { iterations, reference, seed, engine: eng, preseed, preseedScale, restMode: mode, extra })) }); }
       catch (e) { runs.push({ eng: label, error: String(e.message || e).slice(0, 120) }); }
     }
     const ok = runs.filter((r) => r.best != null);
