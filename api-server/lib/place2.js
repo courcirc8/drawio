@@ -18,7 +18,7 @@ import { preserveElectricalData } from './electrical-data.js';
  *     aux nets >2 terminaux, condensateurs flottants placés entre colonnes.
  * Paramètres exposés dans `opts` pour la boucle d'optimisation.
  */
-import { addVertex, addWire, updateCell, getCell, httpError, allCells, cellInfo, setEdgePoints } from './model.js';
+import { addVertex, addWire, updateCell, getCell, httpError, allCells, cellInfo, setEdgePoints, portId } from './model.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES, GROUND_SHAPE, GROUND_PIN } from './components.js';
 import { getShape, getPin } from './stencils.js';
 import { pinAbs } from './route.js';
@@ -264,7 +264,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
   const OUT_RE = /^(out$|out\d|vout|if$|sa$)/i;
   const sidePort = (net, t, p, abs) => {
     const left = IN_RE.test(net);
-    const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+    const id = portId(net);
     let px = left ? Math.min(abs.x, p.x) - 76 : Math.max(abs.x, p.x + (p.w || 0)) + 52;
     const py = abs.y - 12;
     const clash2 = () => [...placed.values()].some((v) =>
@@ -307,7 +307,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const t = terms[0];
       const p = placed.get(t.ref);
       const abs = pinAbs(p, t.pin);
-      const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+      const id = portId(net);
       // direction PHYSIQUE du pin (flips/rotations compris) : un pin qui
       // regarde en haut reçoit son port AU-DESSUS ; pour une E/S nommée non
       // différentielle, la règle 57 (gauche/droite) prime sur le bas/côté
@@ -522,7 +522,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     if (net === vddNet || net === '0' || terms.length < 2) continue;
     if (!/(^|_)(in|out|rf|lo|if|clk|bias|osc|vb)/i.test(net)) continue;
     // l'axe de signal passif a déjà posé son port sur ce net
-    if (placed.has('P_' + net.replace(/[^A-Za-z0-9]/g, '_'))) continue;
+    if (placed.has(portId(net))) continue;
     const withAbs = terms.map((t) => ({ t, abs: pinAbs(placed.get(t.ref), t.pin) }));
     const cxm = withAbs.reduce((s2, w2) => s2 + w2.abs.x, 0) / withAbs.length;
     // préférer un terminal dont le pin REGARDE vers l'extérieur (sinon le
@@ -1537,7 +1537,7 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     // un PORT à chaque extrémité de l'axe (entrée à gauche, sorties à droite)
     for (const net of new Set([axisPlan.inNet, ...axisPlan.rows.map((r) => r.endNet)])) {
       if (isRailN(net)) continue;
-      const id = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
+      const id = portId(net);
       if (placed.has(id)) continue;
       const xN = nodeX.get(net), yN = rowOf.get(net);
       if (xN == null) continue;

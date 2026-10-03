@@ -28,7 +28,7 @@
  * (anchors of a bulk on an outside net are only resolvable there), then the
  * caller's strict LVS gate. Falls back to place2 for single-block netlists.
  */
-import { newDocument, getPage, normalizeOrigin, allCells, cellInfo, addWire } from './model.js';
+import { newDocument, getPage, normalizeOrigin, allCells, cellInfo, addWire, portId } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { routePage, pinAbs } from './route.js';
 import { detectMotifs } from './motifs.js';
@@ -174,8 +174,8 @@ export async function importNetlist4(model, parsed, opts = {}) {
       // place2 names its ports P_<net> (interface), PN<n> (rail-end ports of
       // a quad, rule 51) or PB_<n>_<ref> (local bias): match by id first,
       // then by the port's label — the net name in upper case
-      const portId = 'P_' + net.replace(/[^A-Za-z0-9]/g, '_');
-      let port = byId.get(portId);
+      const pid = portId(net);
+      let port = byId.get(pid);
       if (port == null) port = cells.find((c) => c.kind === 'vertex' && c.style.map.get('apiShape') === 'port' && String(c.value).toUpperCase() === net.toUpperCase());
       if (port != null) {
         // the port NAMES the net (extraction merges same-named ports across
