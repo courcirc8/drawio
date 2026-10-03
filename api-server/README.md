@@ -166,6 +166,44 @@ than reserved channels. Next: split the rest block into satellites attached
 next to their block, channel-reserve inter-block nets, let the optimizer
 permute block order.
 
+## Power templates, split rest, four-candidate auto — session of 2026-10-03
+
+- **Motif detectors** (`lib/motifs.js`): a signal source (`AC`, `SIN`, `PULSE`…)
+  is no longer a rail (it hid every CS/CG/follower stage on `in`); a
+  collector on a rail is a follower, not a resistive stage; switches are
+  found from the waveform in `value`. New registered motifs:
+  `diode-bridge`, `switch-bridge`.
+- **place2**: R/C/L listed rail-second are turned so the supply is on top;
+  **diode-bridge template** (one leg per column, cathodes up, load P-N
+  beside); **switch-leg template** (freewheel diode beside its switch);
+  BJT mirrors with facing bases get +0.3 column; axis shunts spaced by their
+  visible width.
+- **place4**: the rest is split into connected blocks (`restMode`), each
+  block receives the page supply; injective port ids (`V+`/`V-` crashed).
+- **engine=auto** tries `AUTO_CANDIDATES` = v4 split, v2, v4 one,
+  v4 absorb+split (ties to the earlier one; both import and optimize paths).
+- New tuning sets `benchmark/power-v1` (10) and `benchmark/bjt-v1` (9),
+  written by hand so that power and BJT rules are never tuned on the holdout.
+
+check.py errors, `engine=auto` without optimizer (circuits at zero errors):
+
+| | before (14d9c4a) | after |
+|---|---|---|
+| tuning set 59 (netlists30, netlists, generalization-v1/v2) | 24 (43) | **15 (47)** |
+| holdout-ltspice 131 | 538 (48) | **199 (72)** |
+| power-v1 10 | 67 (1) | **7 (5)** |
+| bjt-v1 9 | 21 (3) | **1 (8)** |
+
+LVS unchanged (59/59, 116/131 — the 15 misses are unsupported elements).
+Cost: sheets about 20-35 % larger (v4 composes blocks with channels), auto
+places four times. Not measured this session: the optimizer path
+(`?optimize=N`) on the new candidates.
+
+Rejected after measurement (tuning set): a penalty on inter-block pins facing
+away (18 -> 26 errors), wider inter-block channels (no gain, +15-35 % area),
+off-page tags instead of inter-block wires (18 -> 29), 1/3/4 blocks per
+column (2 stays best).
+
 ## Tests
 
 ```bash
