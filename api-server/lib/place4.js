@@ -32,6 +32,7 @@ import { newDocument, getPage, normalizeOrigin, allCells, cellInfo, addWire, por
 import { importNetlist2 } from './place2.js';
 import { routePage, pinAbs } from './route.js';
 import { detectMotifs } from './motifs.js';
+import { detectStructures } from './patterns.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES } from './components.js';
 import { getPin } from './stencils.js';
 import { preserveElectricalData } from './electrical-data.js';
@@ -83,6 +84,23 @@ export const AUTO_CANDIDATES = [['v4', 'split'], ['v2', null], ['v4', 'one'], ['
  *  The spread of candidates, not a learned ranker, carried the gain: a
  *  pairwise ranker trained on the tuning sets matched check.js (19 / 170). */
 export const AUTO_SPACINGS = [{}, { colW: 230, rowH: 220 }];
+
+/** MIRROR GROUPS (2026-10-03, reference family: check.py rule 26 was its top
+ *  error): every transistor on the gate net of a mirror's diode must share
+ *  one row, which only place2 can do inside ONE block — a multi-output PMOS
+ *  mirror of a bandgap was spread over several blocks and rows. All blocks
+ *  holding members of one mirror group are united (narrower than the general
+ *  small-block merge, which was rejected). */
+function unionMirrors(parsed, blocks) {
+  let st; try { st = detectStructures(parsed); } catch { return; }
+  for (const m of st.mirrors || []) {
+    const hosts = [...new Set(m.refs.map((r) => blocks.find((b) => b.refs.includes(r))).filter(Boolean))];
+    if (hosts.length < 2) continue;
+    const [keep, ...others] = hosts.sort((a, b) => b.refs.length - a.refs.length);
+    for (const o of others) { keep.refs.push(...o.refs); blocks.splice(blocks.indexOf(o), 1); }
+  }
+  blocks.forEach((b, i) => { b.id = 'B' + (i + 1); });
+}
 
 /** What becomes of the components no motif claims. mode:
  *  'one'     — a single "rest" block (the original v4);
@@ -196,6 +214,7 @@ export async function importNetlist4(model, parsed, opts = {}) {
   const blocks = motifs.blocks.map((b) => ({ id: b.id, motif: b.motif, refs: [...b.refs] }));
   const rest = restBlocks(parsed, blocks, motifs.uncovered, opts.restMode || process.env.V4_REST || 'split');
   for (const refs of rest) blocks.push({ id: 'B' + (blocks.length + 1), motif: 'rest', refs });
+  if (opts.mirrorUnion ?? (process.env.V4_MIRROR !== '0')) unionMirrors(parsed, blocks);
   if (blocks.length <= 1) {
     // nothing to compose: place2 is the whole answer (and the reference);
     // route here because v4 callers do not route (the hierarchical routes
