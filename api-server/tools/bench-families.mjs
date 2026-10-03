@@ -16,7 +16,7 @@
  * wire, published-convention score, check.py error rules. One JSON line per circuit.
  *
  * Usage:
- *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all]
+ *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all] [--sources a,b] [--exclude-source a,b]
  *   node tools/bench-families.mjs sum  DIR [DIR2]       (DIR2: compare two runs)
  */
 import fs from 'node:fs';
@@ -68,11 +68,13 @@ function geometry(m, parsed) {
 async function run() {
   const out = arg('--out'); const engine = arg('--engine', 'auto'); const [si, sk] = (arg('--shard', '0/1')).split('/').map(Number);
   const wantSplit = arg('--split', 'all'); const limit = Number(arg('--limit', 1e9));
+  // --sources a,b keeps only those sources; --exclude-source a,b drops them
+  const onlySrc = arg('--sources', null)?.split(','), exSrc = (arg('--exclude-source', '') || '').split(',').filter(Boolean);
   fs.mkdirSync(out, { recursive: true });
   const ex = bankExclusions(BANK);
   const man = new Map(fs.readFileSync(`${BANK}/manifest.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).map((r) => [r.id, r]));
   const inv = fs.readFileSync(`${BANK}/inventory.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
-    .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && (wantSplit === 'all' || splitOf(r) === wantSplit))
+    .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && (wantSplit === 'all' || splitOf(r) === wantSplit) && (!onlySrc || onlySrc.includes(r.source)) && !exSrc.includes(r.source))
     .filter((_, i) => i % sk === si).slice(0, limit);
   const fd = fs.openSync(path.join(out, `shard-${si}.jsonl`), 'w');
   const tmp = `/tmp/bf-${process.pid}.xml`;
