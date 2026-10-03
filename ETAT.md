@@ -95,6 +95,13 @@ Plan (à exécuter) :
    paires « même dessin, styles différents » → égalité, précision sur un jeu publié/généré mis de côté.
 4. Rapporter à l'orchestrateur ; ne rien brancher dans auto sans accord.
 
+Avancement (soir du 2026-10-03) : outils dans `api-server/tools/judge/` (normalize.py — réduction BOX + seuil 245 pour
+garder les fils fins ; build-pub.py ; render-gen.mjs ; normalize-dir.py ; train.py = ResNet18 1 canal, de zéro,
+dégradations identiques des deux côtés, découpage par article / par circuit). Constructions lancées
+(`/AI/datasets/judge/pub`, `gen-raw` → `gen`), puis entraînement chaîné (`/AI/datasets/judge/pipeline.log`,
+modèle `models/judge-v1.pt`). À faire ensuite : eval.py — invariance au style (même dessin, styles différents → égalité),
+cas témoin bandgap 1645 (v2+branches > éparpillement), score sur le jeu de test.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
