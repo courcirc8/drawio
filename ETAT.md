@@ -19,7 +19,7 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 - Entraînement : schémas **DVD seulement** (`figures.origine IN ('dvd-2001','dvd-2008')`), usage privé ; **Xplore exclu**.
   Corpus IEEE : rien dans Git, rien hors d'ai-station.
 - Pas de D synthétique (génération jugée trop mauvaise pour servir de base).
-- Main `dev` du fork protégée par Eric : PR, fusion par l'orchestrateur sur accord d'Eric. Branche de travail `motif-templates`.
+- Main `dev` du fork protégée par Eric : PR, fusion par l'orchestrateur sur accord d'Eric. Branche de travail `motif-templates` (PR #2 à #6 fusionnées ; #6 = commit 4b09a8f).
 
 ## Où sont les choses
 
@@ -72,6 +72,28 @@ v2 79 fois contre 16 sur 144 dessins différents ; net sur une bandgap, marginal
 | banque d'origine : sans erreur / > 3:1 | 51 % / 5 % (905) | 55 % / 7 % (579) | 25 % / 3 % (937) |
 | open PDK : sans erreur / > 3:1 | 34 % / 13 % (459) | 33 % / 15 % (297) | 34 % / 11 % (345) |
 0 échec LVS. Références (réglage) : 40 % sans erreur, erreurs surtout de routage (pin-clearance, 22-contact, through).
+
+## DÉCISION D'ERIC (2026-10-03 soir) : GO juge appris sur les DVD — premier jalon 2-3 jours
+
+Pourquoi : le juge à règles (check.py) et l'œil se contredisent (bandgap 1645 : auto choisit un éparpillement à 1 erreur
+contre le dessin de manuel « v2+branches » à 2 erreurs ; règle AUTO_BAND=1 : 50,8 % → 38,8 % sans erreur). Images :
+`~/ClaudeCode/schematic/qualite-exemples/bandgap-1645-*.png`. Il faut un arbitre indépendant.
+
+Contraintes : (a) il doit juger la DISPOSITION, pas le style : normaliser les deux côtés au même rendu, et tester sur des
+paires « même dessin, styles différents » qui doivent donner égalité ; (b) NE PAS l'utiliser pour choisir dans auto avant
+validation ; (c) jamais les 50 scellés ni leurs variantes (lib/sealed.js) ; (d) modèle privé sur ai-station ;
+données DVD seulement (`figures.origine IN ('dvd-2001','dvd-2008')`, `lectures.readable`).
+
+Plan (à exécuter) :
+1. Jeu de données : recadrages des schémas DVD lisibles (outil de recadrage du RAG, un rendu à la fois ; code dans le
+   worktree `/tmp/claude-1000/local_AI-main/rag` ou le clone local_AI à jour), normalisés (niveaux de gris, binarisation,
+   squelettisation/épaisseur de trait fixe, même résolution) ; nos rendus des circuits de la banque (hors scellés)
+   passés par la MÊME normalisation. Tout sous `/AI/datasets/judge/` (hors Git).
+2. Tâche : classifieur « publié / généré » sur images normalisées, ou mieux un score de paire. LoRA d'un VLM local
+   (ou petit CNN/ViT si plus simple) sur un GPU d'ai-station (vérifier la carte libre : sgl-ornith occupe une carte).
+3. Validation : constance entre les deux ordres, cas témoins (bandgap 1645 : v2+branches > éparpillement),
+   paires « même dessin, styles différents » → égalité, précision sur un jeu publié/généré mis de côté.
+4. Rapporter à l'orchestrateur ; ne rien brancher dans auto sans accord.
 
 ## Chantier en cours
 
