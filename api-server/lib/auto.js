@@ -38,7 +38,18 @@ async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
  *  when every candidate failed. */
 export async function autoPlace(parsed) {
   const trials = await Promise.all(AUTO_SPACINGS.flatMap((sp) => AUTO_CANDIDATES.map(([eng, mode, extra]) => trial(parsed, eng, mode, sp, extra || {}))));
-  const win = trials.reduce((a, b) => (b.errs < a.errs || (b.errs === a.errs && b.conv > a.conv + 1e-9) ? b : a));
+  let win = trials.reduce((a, b) => (b.errs < a.errs || (b.errs === a.errs && b.conv > a.conv + 1e-9) ? b : a));
+  // STACK-FIRST BAND (experiment, AUTO_BAND=N): among candidates within N
+  // check.py-like errors of the best, prefer the branch-column drawings
+  // (v2+branches, then v2) — one error decided a scatter of islands over a
+  // textbook bandgap. A selection-criterion change: Eric decides.
+  const band = Number(process.env.AUTO_BAND ?? 0);
+  if (band > 0 && win.errs !== Infinity) {
+    const rank = (t) => (t.eng === 'v2' && t.extra && t.extra.branchExtend ? 0 : t.eng === 'v2' ? 1 : 2);
+    const near = trials.filter((t) => t.errs <= win.errs + band);
+    const best = near.reduce((a, b) => (rank(b) < rank(a) || (rank(b) === rank(a) && b.errs < a.errs) ? b : a));
+    if (rank(best) < rank(win)) win = best;
+  }
   if (win.doc == null || win.errs === Infinity) {
     // nothing passes LVS: return the first drawn candidate, the caller's LVS gate reports it
     const any = trials.find((t) => t.doc);
