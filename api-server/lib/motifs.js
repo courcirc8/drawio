@@ -331,7 +331,8 @@ export function detectMotifs(parsed) {
   }
   for (const i of inst) {
     if (structural.has(i.motif)) continue;
-    const host = i.refs.map((r) => blockOf.get(r)).find(Boolean);
+    // a tail lists only itself: its host is the block of the pair it feeds
+    const host = [...i.refs, ...(i.pair || [])].map((r) => blockOf.get(r)).find(Boolean);
     if (host) { const blk = blocks.find((b) => b.id === host); for (const r of i.refs) if (!blockOf.has(r)) { blk.refs.push(r); blockOf.set(r, blk.id); } blk.decorations = [...(blk.decorations || []), i.motif]; }
   }
   const uncovered = comps.map((c) => c.ref).filter((r) => !blockOf.has(r));
