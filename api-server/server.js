@@ -331,7 +331,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     }
     const lvsReport = lvs.compare(netlist.extractNetlist(model.getPage(entry.doc)), parsed);
     if (!lvsReport.match) throw model.httpError(422, 'final optimized document failed strict LVS');
-    return res.status(201).json({ engine: (usedEngine === 'v3' ? 'place3+optimize' : usedEngine === 'v4' ? 'place4+optimize' : 'place2+optimize') + (engine === 'auto' ? ' (auto)' : ''), score: best.score,
+    return res.status(201).json({ engine: (usedEngine === 'v3' ? 'place3+optimize' : String(usedEngine).startsWith('v4') ? 'place4+optimize' : 'place2+optimize') + (engine === 'auto' ? ' (auto)' : ''), score: best.score,
       metrics: best.metrics, params: best.params, history, lvs: lvsReport,
       components: best.placed.components, wires: best.placed.wires,
       ...(annReport ? { annotations: annReport } : {}) });
@@ -348,20 +348,25 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     placed = place3.importNetlist3(m, parsed, seed ? { seed, ...(seedScale ? { seedScale } : {}) } : {});
   } else if (engine === 'auto') {
     // both engines, judged by the JS checker; fewer errors wins (see optimize.js)
-    const { importNetlist4 } = await import('./lib/place4.js');
+    // every candidate of AUTO_CANDIDATES (place4.js); ties go to the earlier one
+    const { importNetlist4, AUTO_CANDIDATES } = await import('./lib/place4.js');
     const { checkDocument } = await import('./lib/check.js');
-    const trial = async (eng) => {
+    const trial = async (eng, restMode) => {
       const d = model.newDocument(); const mm = model.getPage(d);
       let p;
-      if (eng === 'v4') p = await importNetlist4(mm, parsed);
-      else { p = place2.importNetlist2(mm, parsed); await route.routePage(mm, p.wires, {}); model.normalizeOrigin(mm); }
+      try {
+        if (eng === 'v4') p = await importNetlist4(mm, parsed, { restMode });
+        else { p = place2.importNetlist2(mm, parsed); await route.routePage(mm, p.wires, {}); model.normalizeOrigin(mm); }
+      } catch (e) { return { eng, restMode, errs: Infinity, error: String(e.message || e) }; }
       const errs = checkDocument(mm).violations.filter((v) => v.severity === 'error' && v.rule !== '30').length;
-      return { eng, d, p, errs };
+      return { eng, restMode, d, p, errs };
     };
-    const [t2, t4] = await Promise.all([trial('v2'), trial('v4')]);
-    const win = t4.errs < t2.errs ? t4 : t2;
+    const trials = await Promise.all(AUTO_CANDIDATES.map(([eng, mode]) => trial(eng, mode)));
+    const win = trials.reduce((a, b) => (b.errs < a.errs ? b : a));
+    if (win.d == null) throw model.httpError(422, 'auto: every engine failed: ' + trials.map((t) => t.error).join(' | '));
     entry.doc = win.d;
-    placed = { ...win.p, engine: win.eng + ' (auto)', auto: { v2: t2.errs, v4: t4.errs } };
+    const label = (t) => (t.eng === 'v4' ? 'v4:' + t.restMode : t.eng);
+    placed = { ...win.p, engine: label(win) + ' (auto)', auto: Object.fromEntries(trials.map((t) => [label(t), t.errs])) };
     const extracted = netlist.extractNetlist(model.getPage(entry.doc));
     const report = lvs.compare(extracted, parsed);
     const decision = lvs.gate(report, { force });

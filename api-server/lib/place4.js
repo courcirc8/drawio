@@ -68,6 +68,15 @@ function railNets(parsed) {
   return rails;
 }
 
+/** Candidates of engine=auto, in tie-break order (fewest checker errors wins,
+ *  the earlier candidate on a tie): [engine, restMode]. Measured 2026-10-03
+ *  with check.py (tuning set 59 / LTspice holdout 131 errors):
+ *    v2 first, then v4 split          20 / 459
+ *    v4 split first, then v2          18 / 405
+ *    + v4 one, v4 absorb+split        18 / 364   (63 holdout circuits at zero)
+ *  check.js and check.py disagree on ties; v4 split wins most of them. */
+export const AUTO_CANDIDATES = [['v4', 'split'], ['v2', null], ['v4', 'one'], ['v4', 'absorb+split']];
+
 /** What becomes of the components no motif claims. mode:
  *  'one'     — a single "rest" block (the original v4);
  *  'absorb'  — a component whose non-rail nets touch exactly ONE motif block
