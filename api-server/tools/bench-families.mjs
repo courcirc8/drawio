@@ -72,7 +72,8 @@ async function run() {
   const onlySrc = arg('--sources', null)?.split(','), exSrc = (arg('--exclude-source', '') || '').split(',').filter(Boolean);
   fs.mkdirSync(out, { recursive: true });
   const ex = bankExclusions(BANK);
-  const man = new Map(fs.readFileSync(`${BANK}/manifest.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).map((r) => [r.id, r]));
+  const man = new Map(fs.readdirSync(BANK).filter((f) => /^manifest.*\.jsonl$/.test(f))
+    .flatMap((f) => fs.readFileSync(`${BANK}/${f}`, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))).map((r) => [r.id, r]));
   const inv = fs.readFileSync(`${BANK}/inventory.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
     .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && (wantSplit === 'all' || splitOf(r) === wantSplit) && (!onlySrc || onlySrc.includes(r.source)) && !exSrc.includes(r.source))
     .filter((_, i) => i % sk === si).slice(0, limit);

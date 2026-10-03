@@ -48,8 +48,10 @@ Node : `~/.local/node/bin` (hors PATH). Ne jamais tuer par motif (`pkill -f`) : 
 | familles jamais vues (937) | 12 % / 77 % | 15 % / 8 % |
 
 Depuis : commit `0a299c8` (miroirs d'un même groupe dans un même bloc v4) — réglage 1 935 → 1 901 erreurs.
-**Juge `check.py` corrigé (non committé au moment d'écrire)** : la règle 26 (miroir sur une rangée) mêlait NMOS et PMOS
-d'un même nœud de grille → faux positifs (moitié des erreurs 26). Tous les chiffres vont bouger : remesurer la référence.
+Juge `check.py` corrigé (commit `96bbc74`) : la règle 26 mêlait NMOS et PMOS d'un même nœud de grille (faux positifs).
+**Nouvelle référence (juge corrigé, banque d'origine sans open PDK, run `full-3`)** :
+réglage 905 : 46 % sans erreur, 5 % > 3:1, 1 837 erreurs ; test 579 : 49 %, 7 %, 1 373 ;
+familles jamais vues 937 : 16 %, 3 %, 3 977. Comparer les prochains changements à CES chiffres.
 
 Constat clé : le choix d'auto par nombre d'erreurs n'est pas aligné avec la lisibilité (juge Ornith par paires préfère
 v2 79 fois contre 16 sur 144 dessins différents ; net sur une bandgap, marginal ailleurs).
@@ -58,12 +60,11 @@ v2 79 fois contre 16 sur 144 dessins différents ; net sur une bandgap, marginal
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
    Déjà fait : branches prolongées (`place2 opts.branchExtend`, actif dans les blocs v4), substrat des BJT, groupes de miroirs.
-2. **Inventaire open PDK** : 7 292 fichiers téléchargés, 6 498 netlists converties (`manifest-openpdk.jsonl`).
-   `inventory-bank.mjs` **bloque** sur certaines netlists open PDK (même 400 ne passent pas en 5 min) : trouver le
-   circuit/l'étape (fingerprint, detectMotifs ou recognizeFunction) et le borner. Tant que ce n'est pas réglé,
-   `inventory.jsonl` est **incomplet** (inventaire interrompu) : le régénérer avant tout banc
-   (`node tools/inventory-bank.mjs`, éventuellement en excluant openpdk). Puis reconvertir (`crawl-openpdk.py convert`)
-   pour inclure la fin du téléchargement, et mesurer les circuits open PDK à part (`--sources openpdk`).
+2. **Open PDK** : téléchargement complet (7 292 fichiers, 628 dépôts), 6 640 netlists converties, **1 707 utilisables
+   et distinctes** (inventaire complet, 7 s ; le blocage venait de la détection des paires, corrigée dans `patterns.js`).
+   Familles « par nom » : PLL 271, ADC 206, opamp 192, comparateur 101, DAC 97, référence 89, oscillateur 51, régulateur 42…
+   Licences : Apache-2.0 688, MIT 222, sans licence déclarée 688 (usage privé d'évaluation seulement).
+   ADC/DAC → famille `data-converter` = JAMAIS VUE : mesure seulement. Mesure séparée : `--sources openpdk`.
 3. **Page de correction** `/correct` prête (lot rf-1). Eric doit lancer une fois
    `sudo tailscale serve --bg --https=8443 http://127.0.0.1:8770`, puis `tools/correct-session.sh` ;
    URL https://ai-station.tail10543b.ts.net:8443/correct?batch=rf-1 ; fin : `correct-session.sh --stop` puis `sudo tailscale serve --https=8443 off`.
