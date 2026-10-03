@@ -26,13 +26,15 @@ const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? proces
 const BANK = arg('--bank', '/AI/datasets/netlists/bank');
 const DRAWABLE = new Set(['R', 'C', 'L', 'D', 'V', 'I', 'M', 'Q', 'J', 'S', 'E', 'F', 'G', 'B']);
 
-const man = fs.readFileSync(`${BANK}/manifest.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+// main manifest + extra sources (open-PDK crawl: manifest-openpdk.jsonl)
+const man = fs.readdirSync(BANK).filter((f) => /^manifest.*\.jsonl$/.test(f)).sort()
+  .flatMap((f) => fs.readFileSync(`${BANK}/${f}`, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)));
 const out = fs.openSync(`${BANK}/inventory.jsonl`, 'w');
 const stat = {};
 const bump = (k, sub) => { stat[k] ||= {}; stat[k][sub] = (stat[k][sub] || 0) + 1; };
 const seenWl = new Map();
 for (const r of man) {
-  const rec = { id: r.id, source: r.source, family: r.family, familyWeak: false };
+  const rec = { id: r.id, source: r.source, family: r.family, familyWeak: false, familySource: r.familySource || 'source' };
   try {
     const p = parseSpice(fs.readFileSync(r.file, 'utf8'));
     const comps = p.components;

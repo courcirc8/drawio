@@ -23,7 +23,8 @@ export function detectStructures(parsed) {
   const mos = comps.filter(isMos);
   const railNames = new Set(['0']);
   for (const n of new Set(comps.flatMap((c) => c.nodes))) {
-    if (/^(vdd|vcc|vss|avdd|dvdd)$/i.test(n)) railNames.add(n);
+    // + the supply names of the open PDKs (sky130 VPWR/VGND, vccd1, vssa1…)
+    if (/^(vdd|vcc|vss|avdd|dvdd|avss|dvss|gnd|agnd|dgnd|vpwr|vgnd|vpb|vnb|vccd\d*|vssd\d*|vdda\d*|vssa\d*|vccio|vssio)$/i.test(n)) railNames.add(n);
   }
   const out = { diffPairs: [], mirrors: [], cascodes: [], crossCoupled: [], diodes: [], tails: [] };
 
@@ -32,9 +33,15 @@ export function detectStructures(parsed) {
 
   // paires différentielles : 2 MOS de même type, sources communes (hors rail),
   // gates distinctes
+  // a source net shared by MORE than 4 same-type devices is a common line
+  // (a cell array's ground or bias rail), not a pair's tail: on a 144-part
+  // array it produced thousands of "pairs" and the quad search below hung
+  const srcCount = new Map();
+  for (const c of mos) { const k = S(c) + '|' + isPmosLike(c); srcCount.set(k, (srcCount.get(k) || 0) + 1); }
   for (let i = 0; i < mos.length; i++) {
     for (let j = i + 1; j < mos.length; j++) {
       const a = mos[i], b = mos[j];
+      if ((srcCount.get(S(a) + '|' + isPmosLike(a)) || 0) > 4) continue;
       // la masse est un rail : deux MOS à source massée (Wilson M2/M3) ne
       // forment pas une paire — le flip « gates extérieures » écrasait la
       // règle 28 du miroir

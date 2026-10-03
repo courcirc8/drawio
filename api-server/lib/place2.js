@@ -1815,7 +1815,9 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     for (const e of ch.elems) {
       // a part shared by two chains (a ring of caps around one device) is
       // drawn once: the second chain just wires to it (was a 409 crash)
-      if (placed.has(e.c.ref)) { k++; continue; }
+      // drawn once (shared by two chains), but its hangers are still drawn
+      // here: skipping them dropped a shunt cap silently (LVS: C17 missing)
+      const already = placed.has(e.c.ref);
       const ci = info.get(e.c.ref);
       const shape = getShape(ci.shapeKey);
       const cx = ga.x - 110 - chOff - k * 125; // pas compacté (le LNA étirait 800 px de vide)
@@ -1827,10 +1829,12 @@ function importNetlist2Impl(model, parsed, opts = {}) {
       // ORIENTATION PAR NET : le pin du net côté ancre (e.net) regarde à
       // DROITE — sinon les fils s'enroulent autour du composant
       const eFlip = e.c.nodes[0] === e.net;
-      const cellE = addVertex(model, { id: e.c.ref, shape: ci.shapeKey, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, value: e.c.value || '' });
-      if (eFlip) cellE.setAttribute('style', cellE.getAttribute('style') + 'flipH=1;');
-      placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, flipH: eFlip });
-      for (let i = 0; i < ci.po.length; i++) term(e.c.nodes[i], e.c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
+      if (!already) {
+        const cellE = addVertex(model, { id: e.c.ref, shape: ci.shapeKey, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, value: e.c.value || '' });
+        if (eFlip) cellE.setAttribute('style', cellE.getAttribute('style') + 'flipH=1;');
+        placed.set(e.c.ref, { id: e.c.ref, x: cx - shape.w / 2, y, w: shape.w, h: shape.h, rotation: 0, flipH: eFlip });
+        for (let i = 0; i < ci.po.length; i++) term(e.c.nodes[i], e.c.ref, ci.po[i], getPin(ci.shapeKey, ci.po[i]));
+      }
       // dérivations : bias en haut (vertical), shunt masse en bas (vertical)
       // AXE = le MILIEU du fil de jonction (entre le pin de cet élément et
       // celui du voisin côté ancre) : le té répartit les espaces comme dans

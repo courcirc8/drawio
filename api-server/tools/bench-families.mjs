@@ -16,7 +16,7 @@
  * wire, published-convention score, check.py error rules. One JSON line per circuit.
  *
  * Usage:
- *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all]
+ *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all] [--sources a,b] [--exclude-source a,b]
  *   node tools/bench-families.mjs sum  DIR [DIR2]       (DIR2: compare two runs)
  */
 import fs from 'node:fs';
@@ -68,15 +68,22 @@ function geometry(m, parsed) {
 async function run() {
   const out = arg('--out'); const engine = arg('--engine', 'auto'); const [si, sk] = (arg('--shard', '0/1')).split('/').map(Number);
   const wantSplit = arg('--split', 'all'); const limit = Number(arg('--limit', 1e9));
+  // --sources a,b keeps only those sources; --exclude-source a,b drops them
+  const onlySrc = arg('--sources', null)?.split(','), exSrc = (arg('--exclude-source', '') || '').split(',').filter(Boolean);
   fs.mkdirSync(out, { recursive: true });
   const ex = bankExclusions(BANK);
-  const man = new Map(fs.readFileSync(`${BANK}/manifest.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).map((r) => [r.id, r]));
+  const man = new Map(fs.readdirSync(BANK).filter((f) => /^manifest.*\.jsonl$/.test(f))
+    .flatMap((f) => fs.readFileSync(`${BANK}/${f}`, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))).map((r) => [r.id, r]));
   const inv = fs.readFileSync(`${BANK}/inventory.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
-    .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && (wantSplit === 'all' || splitOf(r) === wantSplit))
+    .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && (wantSplit === 'all' || splitOf(r) === wantSplit) && (!onlySrc || onlySrc.includes(r.source)) && !exSrc.includes(r.source))
     .filter((_, i) => i % sk === si).slice(0, limit);
-  const fd = fs.openSync(path.join(out, `shard-${si}.jsonl`), 'w');
+  // --resume: skip circuits already measured in this output directory
+  const done = new Set();
+  if (argv.includes('--resume')) for (const f of fs.readdirSync(out).filter((x) => x.endsWith('.jsonl'))) for (const l of fs.readFileSync(path.join(out, f), 'utf8').split('\n')) if (l.trim()) done.add(JSON.parse(l).id);
+  const fd = fs.openSync(path.join(out, argv.includes('--resume') ? `shard-${si}-r${Date.now()}.jsonl` : `shard-${si}.jsonl`), 'w');
   const tmp = `/tmp/bf-${process.pid}.xml`;
   for (const r of inv) {
+    if (done.has(r.id)) continue;
     const text = fs.readFileSync(man.get(r.id).file, 'utf8');
     const row = { id: r.id, source: r.source, family: famOf(r), split: splitOf(r), parts: r.parts, engine };
     try {
@@ -102,7 +109,7 @@ async function run() {
   console.log(`shard ${si}/${sk}: ${inv.length} circuits -> ${out}`);
 }
 
-function load(dir) { return fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')).flatMap((f) => fs.readFileSync(path.join(dir, f), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))); }
+function load(dir) { return fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl') && f.startsWith('shard')).flatMap((f) => fs.readFileSync(path.join(dir, f), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))); }
 const med = (a) => { const s = a.filter((x) => x != null).sort((x, y) => x - y); return s.length ? s[Math.floor((s.length - 1) / 2)] : null; };
 function table(rows) {
   const g = new Map();

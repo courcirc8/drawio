@@ -23,6 +23,7 @@ import { pinAbs } from './route.js';
  * extracts back to the same 5-node form as a real one.
  */
 export function parseSpice(text, opts = {}) {
+  const caseOf = new Map();   // lower-case node -> first spelling (see mapNet)
   const rawLines = String(text).split(/\r?\n/);
   // join continuations
   const lines = [];
@@ -72,7 +73,11 @@ export function parseSpice(text, opts = {}) {
     const prefix = ref0[0].toUpperCase();
     const ref = ctx.prefix + ref0;
     const mapNet = (n) => {
-      const nn = normNode(n);
+      // SPICE node names are case-insensitive: "Vin" and "vin" are one node,
+      // spelled as first met (an LVS failure on 80 open-PDK netlists)
+      const n0 = normNode(n), key = n0.toLowerCase();
+      if (!caseOf.has(key)) caseOf.set(key, n0);
+      const nn = caseOf.get(key);
       if (nn === '0') return '0';
       if (ctx.nets.has(nn)) return ctx.nets.get(nn);
       return ctx.prefix ? ctx.prefix + nn : nn;
