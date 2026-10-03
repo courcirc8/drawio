@@ -367,30 +367,13 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   } else if (engine === 'v3') {
     placed = place3.importNetlist3(m, parsed, seed ? { seed, ...(seedScale ? { seedScale } : {}) } : {});
   } else if (engine === 'auto') {
-    // both engines, judged by the JS checker; fewer errors wins (see optimize.js)
-    // every candidate of AUTO_CANDIDATES (place4.js); ties go to the earlier one
-    const { importNetlist4, AUTO_CANDIDATES, AUTO_SPACINGS } = await import('./lib/place4.js');
-    const { checkDocument } = await import('./lib/check.js');
-    const { conventionReport } = await import('./lib/conventions.js');
-    const trial = async (eng, restMode, sp = {}) => {
-      const d = model.newDocument(); const mm = model.getPage(d);
-      let p;
-      try {
-        if (eng === 'v4') p = await importNetlist4(mm, parsed, { restMode, ...sp });
-        else { p = place2.importNetlist2(mm, parsed, sp); await route.routePage(mm, p.wires, {}); model.normalizeOrigin(mm); }
-      } catch (e) { return { eng, restMode, sp, errs: Infinity, error: String(e.message || e) }; }
-      const errs = checkDocument(mm).violations.filter((v) => v.severity === 'error' && v.rule !== '30').length;
-      const conv = conventionReport(mm, parsed).score ?? 0;
-      return { eng, restMode, sp, d, p, errs, conv };
-    };
-    const trials = await Promise.all(AUTO_SPACINGS.flatMap((sp) => AUTO_CANDIDATES.map(([eng, mode]) => trial(eng, mode, sp))));
-    // fewest errors, then the drawing closest to published conventions
-    // (lib/conventions.js), then the earlier candidate
-    const win = trials.reduce((a, b) => (b.errs < a.errs || (b.errs === a.errs && b.conv > a.conv + 1e-9) ? b : a));
-    if (win.d == null) throw model.httpError(422, 'auto: every engine failed: ' + trials.map((t) => t.error).join(' | '));
-    entry.doc = win.d;
-    const label = (t) => (t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
-    placed = { ...win.p, engine: label(win) + ' (auto)', auto: Object.fromEntries(trials.map((t) => [label(t), { errors: t.errs, conventions: t.conv }])) };
+    // lib/auto.js: AUTO_CANDIDATES x AUTO_SPACINGS, fewest check.js errors,
+    // then published conventions, then the earlier candidate
+    const { autoPlace } = await import('./lib/auto.js');
+    let win;
+    try { win = await autoPlace(parsed); } catch (e) { throw model.httpError(e.status || 500, e.message); }
+    entry.doc = win.doc;
+    placed = { ...win.placed, engine: win.label + ' (auto)', auto: win.trials };
     const extracted = netlist.extractNetlist(model.getPage(entry.doc));
     const report = lvs.compare(extracted, parsed);
     const decision = lvs.gate(report, { force });
