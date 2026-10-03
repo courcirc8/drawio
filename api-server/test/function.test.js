@@ -75,3 +75,16 @@ test('recognizeFromLabels: a vision reading (motifs + component kinds) gets a ty
   assert.equal(vco.types[0].type, 'VCO');
   assert.ok(Math.abs(lna.types.reduce((s, t) => s + t.p, 0) - 1) < 0.02);
 });
+
+test('sealed guard: the sealed set is hashes only in the repository; known tuning circuits pass', async () => {
+  const { sealedStatus, assertNotSealed } = await import('../lib/sealed.js');
+  const m = JSON.parse(fs.readFileSync(new URL('../benchmark/sealed-50.json', import.meta.url), 'utf8'));
+  assert.equal(m.circuits.length, 50);
+  for (const c of m.circuits) assert.deepEqual(Object.keys(c).sort(), ['family', 'sha256', 'slot', 'wl'], 'no id, no name, no netlist');
+  // circuits of the tuning sets were excluded from the draw: never refused
+  for (const n of ['vco-lc', 'ota-cmos', 'gilbert-mixer']) {
+    const t = fs.readFileSync(new URL(`../benchmark/netlists30/${n}.cir`, import.meta.url), 'utf8');
+    assert.equal(sealedStatus(t), null, n);
+    assert.doesNotThrow(() => assertNotSealed(t));
+  }
+});
