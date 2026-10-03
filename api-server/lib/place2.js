@@ -1094,6 +1094,55 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     }
   }
 
+  // ---- PONT DE DIODES (Graetz, triphasé) : un BRAS = diode milieu->P +
+  //      diode N->milieu ; les bras qui partagent P et N forment le pont.
+  //      Dessin des manuels : un bras par colonne, cathodes vers le haut,
+  //      bus P en haut, bus N en bas, milieux (côté alternatif) entre les
+  //      deux diodes ; la charge P-N dans une colonne à droite du pont.
+  //      Sans gabarit, les six diodes d'un pont triphasé tombaient sur une
+  //      seule rangée (28 erreurs check.py sur benchmark/power-v1).
+  const minLegs = P.bridgeMinLegs ?? Number(process.env.P2_BRIDGE ?? 1);
+  if (minLegs > 0) {
+    // a freewheel diode across a switch/transistor belongs with that switch,
+    // not in a rectifier leg (H-bridge: 1 -> 7 errors when it was pulled away)
+    const across = (d) => comps.some((k) => 'SMQJ'.includes(k.prefix) && k.nodes.slice(0, 3).includes(d.nodes[0]) && k.nodes.slice(0, 3).includes(d.nodes[1]));
+    const diodes = comps.filter((k) => k.prefix === 'D' && unplaced.has(k.ref) && info.get(k.ref) != null && !across(k));
+    const legs = new Map();   // 'P|N' -> [{up, down, mid}]
+    for (const up of diodes) {
+      const [mid, Pn] = up.nodes;   // anode = milieu, cathode = P
+      for (const down of diodes) {
+        if (down === up || down.nodes[1] !== mid) continue;   // cathode = milieu
+        const Nn = down.nodes[0];
+        if (Nn === Pn || Nn === mid || Pn === mid) continue;
+        const key = Pn + '|' + Nn;
+        if (!legs.has(key)) legs.set(key, []);
+        const list = legs.get(key);
+        if (!list.some((l) => l.up === up || l.down === down)) list.push({ up, down, mid });
+      }
+    }
+    const turnTop = (k, top) => {
+      const ci = info.get(k.ref);
+      if (ci.top !== top) info.set(k.ref, { ...ci, top: ci.bot, bot: ci.top, topPin: ci.botPin, botPin: ci.topPin });
+    };
+    for (const [key, list] of legs) {
+      if (list.length < minLegs || list.some((l) => !unplaced.has(l.up.ref) || !unplaced.has(l.down.ref))) continue;
+      const [Pn, Nn] = key.split('|');
+      for (const l of list) {
+        const col = nextCol++;
+        turnTop(l.up, Pn); turnTop(l.down, l.mid);
+        slots.set(l.up.ref, { col, level: 0 }); slots.set(l.down.ref, { col, level: 1 });
+        unplaced.delete(l.up.ref); unplaced.delete(l.down.ref);
+      }
+      for (const k of comps) {
+        if ((!unplaced.has(k.ref) && !floating.has(k.ref)) || !'RCL'.includes(k.prefix)) continue;
+        if (new Set(k.nodes).size !== 2 || !k.nodes.includes(Pn) || !k.nodes.includes(Nn)) continue;
+        turnTop(k, Pn);
+        slots.set(k.ref, { col: nextCol++, level: 0.5 });
+        unplaced.delete(k.ref); floating.delete(k.ref);
+      }
+    }
+  }
+
   let roots = (byTopNet.get(vddNet) || []).map((c) => c.ref);
   // heuristique : la pile de polarisation (source de courant en racine) à gauche
   roots.sort((a, b) => (comps.find((c) => c.ref === b).prefix === 'I' ? 1 : 0) -

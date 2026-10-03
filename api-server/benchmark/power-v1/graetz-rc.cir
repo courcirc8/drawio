@@ -1,0 +1,9 @@
+* Graetz bridge rectifier, floating AC source, RC load
+Vac ac1 ac2 SIN(0 12 50)
+D1 ac1 dcp 1N4007
+D2 ac2 dcp 1N4007
+D3 0 ac1 1N4007
+D4 0 ac2 1N4007
+Cf dcp 0 470u
+Rl dcp 0 1k
+.end

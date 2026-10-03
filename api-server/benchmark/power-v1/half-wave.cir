@@ -1,0 +1,6 @@
+* half-wave rectifier with smoothing capacitor
+V1 ac 0 SIN(0 9 50)
+D1 ac out 1N4001
+C1 out 0 220u
+R1 out 0 2k
+.end

@@ -1,0 +1,9 @@
+* buck converter, ideal switch
+Vin vi 0 24
+S1 vi sw g 0 SW
+D1 0 sw D
+L1 sw out 100u
+C1 out 0 100u
+R1 out 0 5
+Vg g 0 PULSE(0 5 0 1n 1n 4u 10u)
+.end
