@@ -204,6 +204,36 @@ away (18 -> 26 errors), wider inter-block channels (no gain, +15-35 % area),
 off-page tags instead of inter-block wires (18 -> 29), 1/3/4 blocks per
 column (2 stays best).
 
+## Function recognition and published conventions — 2026-10-03 (step 1 of the IEEE plan)
+
+- `lib/function.js`: naive Bayes over the circuit types of `data/ieee-motifs.json`
+  (motif presence, component kinds, tempered prior, weak net-name cues); power
+  circuits (bridges, zener, half-wave, buck) by rule. Net roles, block roles.
+- `lib/recognize-llm.js`: + published schematics with the closest motif set
+  (index of identifiers and labels only, `tools/build-motif-index.py`, built
+  OUTSIDE the repository on the station) + the local LLM (Ornith, :30010),
+  whose type is accepted only if it is in the Bayes top 8 or the neighbours'
+  types. `POST /recognize`.
+- `lib/conventions.js`: convention score of a page, layout checks weighted by
+  the archive's shares for the recognised type, motif checks at 0.8.
+  `POST /documents/:id/conventions`; `engine=auto` breaks error ties with it.
+- `tools/function-eval.mjs` on `benchmark/function-labels.json` (53 tuning
+  circuits labelled by hand; holdout never labelled for tuning).
+
+| Recognition, top-1 on 53 labelled circuits | |
+|---|---|
+| Bayes, archive prior at full weight | 33 (62 %) |
+| Bayes, prior^0.25, kinds ×0.5, zener/half-wave rules | 43 (81 %), top-3 87 % |
+| retrieval vote alone | 11 (21 %) |
+| Bayes + LLM, LLM unchecked | 45 |
+| **Bayes + LLM checked (top 8 or neighbours)** | **48 (91 %)** |
+
+Convention score (auto): tuning set 0.858 -> 0.913 (perfect 37 -> 45 of 58),
+holdout 0.775 -> 0.790, sheets -14 % on the tuning set, for +1 check.py
+error on each set (13 -> 14, 199 -> 200: check.js picks, check.py judges).
+v4 also attaches a tail to the block of its pair (tuning errors 15 -> 13).
+Rejected: absorbing single-block passives into their block (13 -> 21).
+
 ## Tests
 
 ```bash

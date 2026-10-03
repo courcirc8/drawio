@@ -89,6 +89,24 @@ corpus : `node tools/compare-engines.mjs benchmark/<jeu>`. Jeux de réglage :
 `netlists30`, `generalization-v1/v2`, `power-v1`, `bjt-v1` ; jeu de MESURE
 seulement (ne jamais régler dessus) : `holdout-ltspice`.
 
+### Comprendre un circuit avant de le dessiner (reconnaissance de fonction)
+```bash
+# type de circuit (LNA, VCO, opamp, reference, mixer, rectifier, inverter…),
+# phrase de fonction, rôle de chaque bloc et de chaque net, schémas publiés
+# voisins (identifiants seulement) ; ?llm=0 = statistiques seules, sans LLM
+curl -s -X POST :8770/recognize -H 'Content-Type: text/plain' --data-binary @c.cir
+# conventions des schémas PUBLIÉS du même type appliquées au dessin :
+# alimentation en haut, signal de gauche à droite, paires symétriques, charge
+# côté rail, dégénérescence sous le transistor, adaptation avant la grille…
+curl -s -X POST :8770/documents/doc1/conventions -H 'Content-Type: text/plain' --data-binary @c.cir
+```
+Utiliser `/recognize` pour EXPLIQUER un circuit à l'utilisateur (fonction,
+blocs, entrées/sorties) et `/conventions` pour juger un dessin : `failed`
+liste les conventions non respectées. `engine=auto` départage déjà ses
+candidats par ce score. Fiabilité mesurée (53 circuits étiquetés) : 91 % de
+types justes en premier choix avec le LLM, 81 % sans ; LNA et PA restent
+difficiles à distinguer par la structure seule.
+
 ### Vérification
 ```bash
 curl -s :8770/documents/doc1/netlist            # netlist SPICE extraite
@@ -117,6 +135,8 @@ curl -s -X PUT :8770/documents/doc1/save -d '{"path":"/chemin/schema.drawio"}' -
 | `POST /documents/:id/route` (body `{"wires":[…]}` optionnel) | autoroutage libavoid |
 | `POST …/netlist/import` (SPICE) · `GET …/netlist` (`?format=json`) | netlist |
 | `POST …/lvs` · `GET …/erc` · `GET …/bom` (`?format=csv`) | vérifs |
+| `POST /recognize` (`?llm=0`) · `POST …/conventions` (`?type=`) | fonction, conventions publiées |
+| `POST /motifs` | motifs, macro-blocs, parties non couvertes |
 | `GET …/export?format=png\|svg\|pdf\|xml&scale=&region=x,y,w,h&pageId=` | export |
 | `POST …/checkpoints` · `POST …/checkpoints/:name/restore` | versions |
 

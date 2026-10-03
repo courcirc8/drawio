@@ -275,6 +275,26 @@ app.post('/motifs', wrap(async (req, res) => {
   res.json({ registry: MOTIFS, ...detectMotifs(netlist.parseSpice(spice)) });
 }));
 
+// Function recognition (lib/function.js + lib/recognize-llm.js): circuit type
+// ranked from the IEEE statistics, published schematics with the same motifs,
+// then the local LLM checked against both. ?llm=0 skips the LLM.
+app.post('/recognize', wrap(async (req, res) => {
+  const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
+  if (spice == null || spice === '') throw model.httpError(400, 'SPICE netlist required');
+  const { recognize } = await import('./lib/recognize-llm.js');
+  res.json(await recognize(netlist.parseSpice(spice), { llm: req.query.llm !== '0' }));
+}));
+
+// Drawing conventions of published schematics of the same function
+// (lib/conventions.js): weighted checks on the page, ?type= forces the type.
+app.post('/documents/:id/conventions', wrap(async (req, res) => {
+  const { model: m } = pageOf(req);
+  const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
+  if (spice == null || spice === '') throw model.httpError(400, 'SPICE netlist (the reference) required');
+  const { conventionReport } = await import('./lib/conventions.js');
+  res.json(conventionReport(m, netlist.parseSpice(spice), { type: req.query.type || null }));
+}));
+
 // ------------------------------------------------------------- routing
 app.post('/documents/:id/route', wrap(async (req, res) => {
   const { model: m } = pageOf(req);
@@ -351,6 +371,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     // every candidate of AUTO_CANDIDATES (place4.js); ties go to the earlier one
     const { importNetlist4, AUTO_CANDIDATES } = await import('./lib/place4.js');
     const { checkDocument } = await import('./lib/check.js');
+    const { conventionReport } = await import('./lib/conventions.js');
     const trial = async (eng, restMode) => {
       const d = model.newDocument(); const mm = model.getPage(d);
       let p;
@@ -359,14 +380,17 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
         else { p = place2.importNetlist2(mm, parsed); await route.routePage(mm, p.wires, {}); model.normalizeOrigin(mm); }
       } catch (e) { return { eng, restMode, errs: Infinity, error: String(e.message || e) }; }
       const errs = checkDocument(mm).violations.filter((v) => v.severity === 'error' && v.rule !== '30').length;
-      return { eng, restMode, d, p, errs };
+      const conv = conventionReport(mm, parsed).score ?? 0;
+      return { eng, restMode, d, p, errs, conv };
     };
     const trials = await Promise.all(AUTO_CANDIDATES.map(([eng, mode]) => trial(eng, mode)));
-    const win = trials.reduce((a, b) => (b.errs < a.errs ? b : a));
+    // fewest errors, then the drawing closest to published conventions
+    // (lib/conventions.js), then the earlier candidate
+    const win = trials.reduce((a, b) => (b.errs < a.errs || (b.errs === a.errs && b.conv > a.conv + 1e-9) ? b : a));
     if (win.d == null) throw model.httpError(422, 'auto: every engine failed: ' + trials.map((t) => t.error).join(' | '));
     entry.doc = win.d;
     const label = (t) => (t.eng === 'v4' ? 'v4:' + t.restMode : t.eng);
-    placed = { ...win.p, engine: label(win) + ' (auto)', auto: Object.fromEntries(trials.map((t) => [label(t), t.errs])) };
+    placed = { ...win.p, engine: label(win) + ' (auto)', auto: Object.fromEntries(trials.map((t) => [label(t), { errors: t.errs, conventions: t.conv }])) };
     const extracted = netlist.extractNetlist(model.getPage(entry.doc));
     const report = lvs.compare(extracted, parsed);
     const decision = lvs.gate(report, { force });

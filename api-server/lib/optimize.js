@@ -191,9 +191,12 @@ export async function optimizeNetlist(parsed, { iterations = 10, reference = nul
     }
     const ok = runs.filter((r) => r.best != null);
     if (!ok.length) throw new Error('auto: both engines failed: ' + runs.map((r) => r.eng + ':' + r.error).join(' | '));
-    ok.sort((a, b) => (a.best.checkErrors - b.best.checkErrors) || (rankValue(b.best) - rankValue(a.best)));
+    // fewest errors, then closest to published conventions, then rank value
+    const { conventionReport } = await import('./conventions.js');
+    for (const r of ok) { try { r.conv = conventionReport(getPage(r.best.doc), parsed).score ?? 0; } catch { r.conv = 0; } }
+    ok.sort((a, b) => (a.best.checkErrors - b.best.checkErrors) || (b.conv - a.conv) || (rankValue(b.best) - rankValue(a.best)));
     const win = ok[0];
-    return { best: win.best, engine: win.eng, history: [{ iter: 'auto', chosen: win.eng, candidates: runs.map((r) => ({ engine: r.eng, errors: r.best?.checkErrors, score: r.best?.score, error: r.error })) }, ...win.history] };
+    return { best: win.best, engine: win.eng, history: [{ iter: 'auto', chosen: win.eng, candidates: runs.map((r) => ({ engine: r.eng, errors: r.best?.checkErrors, conventions: r.conv, score: r.best?.score, error: r.error })) }, ...win.history] };
   }
   const seed0 = await evaluate(parsed, base, reference, true, engine);
   // Message d'erreur du fork conservé: `reason` nomme QUELLE porte a rejeté le
