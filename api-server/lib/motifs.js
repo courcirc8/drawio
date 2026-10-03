@@ -88,12 +88,28 @@ const RAIL_RE = /^(vdd|vcc|vee|vss|avdd|dvdd|v\+|v-|gnd)$/i;
 const CLOCK_RE = /^(phi|ph\d|clk|ck\d*|clock|sw\d*|s\d+|en\b|sel|φ|cl\d)/i;
 const BIAS_RE = /^(vb|vbias|bias|vg\d|vcas|vc\d|vref|vbn|vbp|vcm)/i;
 const isPassive = (c) => c.prefix === 'R' || c.prefix === 'L' || c.prefix === 'C';
+// waveform keywords of a SIGNAL source (the parser keeps them in `value`)
+const WAVE_RE = /\b(ac|sin|sine|pulse|pwl|exp|sffm)\b/i;
+/** A V source that drives a signal, not a supply: it has a waveform. The name
+ *  says nothing (LTspice decks call their 5 V supply `Vin` as often as not). */
+const isSignalSource = (v) => WAVE_RE.test(v.value || '');
+/** Every net a V source ties to ground, signal sources included: a resistor
+ *  to one of them biases a base (`SINE(1 10m 1k)` carries the DC operating
+ *  point of a discrete stage). */
+function sourcedNets(comps) {
+  const s = new Set();
+  for (const v of comps.filter((c) => c.prefix === 'V')) { if (v.nodes[1] === '0') s.add(v.nodes[0]); if (v.nodes[0] === '0') s.add(v.nodes[1]); }
+  return s;
+}
 
-/** Rail nets: ground, named supplies, and any net a V source ties to ground. */
+/** Rail nets: ground, named supplies, and any net a DC supply source ties to
+ *  ground (LTspice decks name their supply n4 as happily as Vcc). A signal
+ *  source is NOT a rail: reading `V1 in 0 AC 1` as one hid every stage whose
+ *  input is `in` (the gate looked biased by a rail). */
 export function railNets(comps) {
   const rails = new Set(['0']);
   for (const n of new Set(comps.flatMap((c) => c.nodes))) if (RAIL_RE.test(n)) rails.add(n);
-  for (const v of comps.filter((c) => c.prefix === 'V')) { if (v.nodes[1] === '0') rails.add(v.nodes[0]); if (v.nodes[0] === '0') rails.add(v.nodes[1]); }
+  for (const v of comps.filter((c) => c.prefix === 'V' && !isSignalSource(c))) { if (v.nodes[1] === '0') rails.add(v.nodes[0]); if (v.nodes[0] === '0') rails.add(v.nodes[1]); }
   return rails;
 }
 
@@ -167,12 +183,15 @@ export function detectMotifs(parsed) {
   }
 
   // Miller / shunt feedback: passive between gate and drain of ONE device
+  // (not when one end is a rail: R from vdd to the gate of a follower whose
+  // drain sits on vdd is that follower's input bias, not feedback)
+  const rails = railNets(comps);
   const ccRefs = new Set(st.crossCoupled.flatMap((c) => c.refs));
   for (const c of comps) {
     if (c.prefix !== 'C' && c.prefix !== 'R') continue;
     const [n1, n2] = c.nodes;
     for (const t of comps.filter(isActive)) {
-      if (ccRefs.has(t.ref)) continue;
+      if (ccRefs.has(t.ref) || rails.has(G(t)) || rails.has(D(t))) continue;
       const gd = new Set([G(t), D(t)]);
       if (gd.size === 2 && gd.has(n1) && gd.has(n2) && n1 !== n2) add(c.prefix === 'C' ? 'miller-capacitor' : 'shunt-feedback', [c.ref, t.ref], { device: t.ref });
     }
@@ -190,15 +209,18 @@ export function detectMotifs(parsed) {
   // resistive collector/drain load to a rail. "Rail" = ground, a named
   // supply, or any net a V source ties to ground (LTspice decks name their
   // supply n4 as happily as Vcc).
-  const rails = railNets(comps);
   const resistorsOn = (net) => comps.filter((c) => c.prefix === 'R' && c.nodes.includes(net));
-  const toRail = (r) => r.nodes.some((n) => rails.has(n));
+  const biasNets = new Set([...rails, ...sourcedNets(comps)]);
+  const toRail = (r) => r.nodes.some((n) => biasNets.has(n));
   const dividerNode = (net) => resistorsOn(net).filter(toRail).length >= 2;
   for (const t of comps.filter((c) => c.prefix === 'Q' || c.prefix === 'J')) {
+    // collector on a rail = a follower, read below: every resistor on Vcc
+    // was its "load" and the stage swallowed its neighbours' base bias
+    if (rails.has(D(t))) continue;
     const baseR = resistorsOn(G(t)).filter((r) => toRail(r) || r.nodes.some((n) => n !== G(t) && dividerNode(n)));
     const loadR = resistorsOn(D(t)).filter(toRail);
     if (baseR.length >= 1 && loadR.length >= 1) {
-      const divider = baseR.flatMap((r) => r.nodes.filter((n) => n !== G(t) && !rails.has(n) && dividerNode(n))).flatMap((n) => resistorsOn(n).filter(toRail));
+      const divider = baseR.flatMap((r) => r.nodes.filter((n) => n !== G(t) && !biasNets.has(n) && dividerNode(n))).flatMap((n) => resistorsOn(n).filter(toRail));
       add('bjt-resistive-stage', [t.ref, ...baseR.map((r) => r.ref), ...divider.map((r) => r.ref), ...loadR.map((r) => r.ref)], { device: t.ref });
     }
   }
@@ -221,7 +243,7 @@ export function detectMotifs(parsed) {
   ]);
   const on = (net) => comps.filter((c) => c.nodes.includes(net));
   const passivesToRail = (net) => on(net).filter((c) => isPassive(c) && c.nodes.some((n) => n !== net && rails.has(n)));
-  const clockDriven = (net) => CLOCK_RE.test(net) || comps.some((v) => v.prefix === 'V' && v.nodes[0] === net && /pulse|pwl/i.test(v.model || v.value || ''));
+  const clockDriven = (net) => CLOCK_RE.test(net) || comps.some((v) => v.prefix === 'V' && v.nodes[0] === net && /pulse|pwl/i.test(v.value || ''));
   const tailNets = new Set(st.diffPairs.map((p) => p.tailNet));
   const actives = comps.filter(isActive);
   for (const t of actives) {

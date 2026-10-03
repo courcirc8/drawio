@@ -72,3 +72,23 @@ test('motifs: single-device stages and their decorations (IEEE gaps, 2026-10-03)
   const fb = txt('* two stages\nM1 a in 0 0 NMOS\nR1 vdd a 1k\nM2 out a 0 0 NMOS\nR2 vdd out 1k\nRf out in 10k\n.end');
   assert.equal(has(fb, 'resistive-feedback').length, 1);
 });
+
+test('a signal source is not a rail; a collector on a rail is a follower', () => {
+  const has = (r, m) => r.instances.filter((i) => i.motif === m);
+  const txt = (s) => detectMotifs(parseSpice(s));
+  // the stimulus V1 must not turn `in` into a rail (the CS gate looked rail-biased)
+  const cs = txt('V1 in 0 AC 1\nVDD vdd 0 1.8\nRD vdd out 1k\nM1 out in 0 0 NMOS\n.end');
+  assert.equal(has(cs, 'common-source').length, 1);
+  const sf = txt('V1 in 0 SIN(0 1 1k)\nVDD vdd 0 1.8\nM1 vdd in out 0 NMOS\nRS out 0 1k\n.end');
+  assert.equal(has(sf, 'source-follower').length, 1);
+  // a plain DC source is a supply whatever its name
+  assert.equal(has(txt('V1 Vin 0 5\nR1 Vin c 1k\nR2 Vin b 10k\nQ1 c b 0 2N3904\n.end'), 'bjt-resistive-stage').length, 1);
+  // a pulse source drives a switch (the waveform is in `value`, not `model`)
+  assert.equal(has(txt('V1 g 0 PULSE(0 1 0 1n 1n 5n 10n)\nM1 in g x 0 NMOS\nC1 x 0 1p\n.end'), 'switch').length, 1);
+  // R from Vcc to the base of a follower is its bias, not shunt feedback, and
+  // two followers on Vcc do not merge into one "resistive stage"
+  const cc = txt('V2 Vcc 0 12\nV1 sig 0 SINE(0 1 1k)\nQ1 Vcc b1 o1 2N3904\nR1 o1 0 3k\nR2 Vcc b1 620k\nC1 b1 sig 1u\nQ2 Vcc b2 o2 2N3904\nR3 o2 0 3k\nR4 Vcc b2 50k\nR5 b2 0 86k\nC2 b2 sig 1u\n.end');
+  assert.equal(has(cc, 'shunt-feedback').length, 0);
+  assert.equal(has(cc, 'bjt-resistive-stage').length, 0);
+  assert.equal(has(cc, 'source-follower').length, 2);
+});
