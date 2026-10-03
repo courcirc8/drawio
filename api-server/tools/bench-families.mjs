@@ -77,9 +77,13 @@ async function run() {
   const inv = fs.readFileSync(`${BANK}/inventory.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
     .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && (wantSplit === 'all' || splitOf(r) === wantSplit) && (!onlySrc || onlySrc.includes(r.source)) && !exSrc.includes(r.source))
     .filter((_, i) => i % sk === si).slice(0, limit);
-  const fd = fs.openSync(path.join(out, `shard-${si}.jsonl`), 'w');
+  // --resume: skip circuits already measured in this output directory
+  const done = new Set();
+  if (argv.includes('--resume')) for (const f of fs.readdirSync(out).filter((x) => x.endsWith('.jsonl'))) for (const l of fs.readFileSync(path.join(out, f), 'utf8').split('\n')) if (l.trim()) done.add(JSON.parse(l).id);
+  const fd = fs.openSync(path.join(out, argv.includes('--resume') ? `shard-${si}-r${Date.now()}.jsonl` : `shard-${si}.jsonl`), 'w');
   const tmp = `/tmp/bf-${process.pid}.xml`;
   for (const r of inv) {
+    if (done.has(r.id)) continue;
     const text = fs.readFileSync(man.get(r.id).file, 'utf8');
     const row = { id: r.id, source: r.source, family: famOf(r), split: splitOf(r), parts: r.parts, engine };
     try {
@@ -105,7 +109,7 @@ async function run() {
   console.log(`shard ${si}/${sk}: ${inv.length} circuits -> ${out}`);
 }
 
-function load(dir) { return fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')).flatMap((f) => fs.readFileSync(path.join(dir, f), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))); }
+function load(dir) { return fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl') && f.startsWith('shard')).flatMap((f) => fs.readFileSync(path.join(dir, f), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))); }
 const med = (a) => { const s = a.filter((x) => x != null).sort((x, y) => x - y); return s.length ? s[Math.floor((s.length - 1) / 2)] : null; };
 function table(rows) {
   const g = new Map();

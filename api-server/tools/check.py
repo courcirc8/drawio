@@ -659,14 +659,17 @@ class Checker:
                 # the gate net of a PMOS mirror is not a member of the mirror
                 # and is drawn below it — mixing them flagged correct drawings
                 # (2026-10-03, half of the rule-26 errors of the family bench)
-                by_gate.setdefault((i['G'], mos_kind(self.verts[cid]['shape'])), []).append(cid)
+                # ... and same SOURCE net (patterns.js's definition): the four
+                # devices of a cascode mirror share the gate but sit two above
+                # two, in series — the 2x2 grid of every textbook, not a fault
+                by_gate.setdefault((i['G'], mos_kind(self.verts[cid]['shape']), i['S']), []).append(cid)
         groups = []
         for net, refs in by_source.items():
             # même polarité exigée : NMOS+PMOS a source commune = étage de
             # sortie push-pull (classe AB), pas une paire différentielle
             if len(refs) == 2 and mos_kind(self.verts[refs[0]]['shape']) == mos_kind(self.verts[refs[1]]['shape']):
                 groups.append(('paire (source commune)', '14', refs))
-        for (net, _kind), refs in by_gate.items():
+        for (net, _kind, _src), refs in by_gate.items():
             if len(refs) >= 2 and any(info[r]['D'] == net for r in refs):
                 groups.append(('miroir de courant', '26', refs))
         for label, rule, refs in groups:
