@@ -7,7 +7,8 @@
  *
  * Reads figures.sqlite READ-ONLY, writes one JSONL line per readable figure
  * OUTSIDE the repository (format agreed with the RAG session):
- *   {"paper_id","page","rang","types":[{type,p}×3],"motifs":[…],"version"}
+ *   {"paper_id","page","rang","types":[{type,p}×3],"motifs":[…],"p_type1_cv","version"}
+ * p_type1_cv = precision of the first type in the 2-fold CV below (null if never predicted on typed figures).
  * Nothing of the corpus is printed: the report holds counts only.
  *
  * Report: agreement of the first type with the CAPTION type (figures.type,
@@ -26,7 +27,7 @@ import { recognizeFromLabels, STATS } from '../lib/function.js';
 const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
 const DB = arg('--db', '/AI/datasets/IEEE/derived/figures.sqlite');
 const OUT = arg('--out', '/AI/datasets/IEEE/derived/etiquettes-recognize.jsonl');
-const VERSION = 'recognize-1';
+const VERSION = 'recognize-2';   // 2: + p_type1_cv
 
 const db = new DatabaseSync(DB, { readOnly: true });
 const rows = [];
@@ -61,27 +62,20 @@ function buildStats(rs) {
 }
 
 function agreement(rs, statsFor) {
-  const per = {};
+  const per = {}, predicted = {};
   let n = 0, top1 = 0, top3 = 0;
   for (const r of rs) {
     if (!r.ctype) continue;
     const ranked = recognizeFromLabels(r, statsFor(r)).types.map((t) => t.type);
     const p = (per[r.ctype] ||= { n: 0, top1: 0 });
     p.n++; n++;
-    if (ranked[0] === r.ctype) { p.top1++; top1++; }
+    const q = (predicted[ranked[0]] ||= { n: 0, hit: 0 });
+    q.n++;
+    if (ranked[0] === r.ctype) { p.top1++; top1++; q.hit++; }
     if (ranked.slice(0, 3).includes(r.ctype)) top3++;
   }
-  return { n, top1, top3, per };
+  return { n, top1, top3, per, predicted };
 }
-
-// labels (full statistics)
-const fd = fs.openSync(OUT, 'w');
-for (const r of rows) {
-  const rec = recognizeFromLabels(r);
-  fs.writeSync(fd, JSON.stringify({ paper_id: r.paper_id, page: r.page, rang: r.rang,
-    types: rec.types.slice(0, 3).map((t) => ({ type: t.type, p: t.p })), motifs: r.motifs, version: VERSION }) + '\n');
-}
-fs.closeSync(fd);
 
 // agreement with the caption type
 const inS = agreement(rows, () => STATS);
@@ -89,6 +83,19 @@ const papers = [...new Set(rows.map((r) => r.paper_id))].sort();
 const fold = new Map(papers.map((p, i) => [p, i % 2]));
 const stats = [0, 1].map((k) => buildStats(rows.filter((r) => fold.get(r.paper_id) !== k)));
 const cv = agreement(rows, (r) => stats[fold.get(r.paper_id)]);
+// precision of each FIRST type in the CV (share of its predictions the caption confirms):
+// written as p_type1_cv so the RAG search can weight the facet per line
+const precision = Object.fromEntries(Object.entries(cv.predicted).map(([t, v]) => [t, +(v.hit / v.n).toFixed(3)]));
+// labels (full statistics)
+const fd = fs.openSync(OUT, 'w');
+for (const r of rows) {
+  const rec = recognizeFromLabels(r);
+  fs.writeSync(fd, JSON.stringify({ paper_id: r.paper_id, page: r.page, rang: r.rang,
+    types: rec.types.slice(0, 3).map((t) => ({ type: t.type, p: t.p })), motifs: r.motifs,
+    p_type1_cv: precision[rec.types[0].type] ?? null, version: VERSION }) + '\n');
+}
+fs.closeSync(fd);
+
 const pct = (a, b) => (b ? (100 * a / b).toFixed(0) + ' %' : '-');
 console.log(`${rows.length} readable figures labelled -> ${OUT}`);
 console.log(`caption-typed figures: ${inS.n}; untyped (labels are new information there): ${rows.length - inS.n}`);
