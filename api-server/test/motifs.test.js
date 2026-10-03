@@ -49,3 +49,26 @@ test('motifs: the holdout gap is named — discrete BJT stages and op-amp stages
   assert.equal(has(op, 'opamp-stage').length, 1);
   assert.equal(has(op, 'passive-axis').length, 0, 'an op-amp circuit is not a passive network');
 });
+
+test('motifs: single-device stages and their decorations (IEEE gaps, 2026-10-03)', () => {
+  const lna = detectMotifs(cir('lna-shaeffer-lee', 'netlists'));
+  assert.equal(has(lna, 'cascode').length, 1);
+  assert.equal(has(lna, 'inductive-degeneration').length, 1, 'Ls under M1');
+  assert.equal(has(lna, 'matching-network').length, 1, 'Lg before M1');
+  assert.equal(has(lna, 'load').length, 1, 'Ld above M2');
+  assert.equal(lna.coverage, 1, 'every LNA component is explained');
+  assert.equal(has(lna, 'common-gate').length, 0, 'the cascode top is not re-read as a CG stage');
+  const vco = detectMotifs(cir('vco-lc', 'netlists'));
+  assert.equal(has(vco, 'matching-network').length, 0, 'tank caps between actives are not an input match');
+  const txt = (s) => detectMotifs(parseSpice(s));
+  const cs = txt('* CS stage\nM1 out in s 0 NMOS\nR1 s 0 100\nR2 vdd out 1k\n.end');
+  assert.equal(has(cs, 'common-source').length, 1); assert.equal(cs.coverage, 1);
+  const sf = txt('* follower\nM1 vdd in out 0 NMOS\nI1 out 0 1m\n.end');
+  assert.equal(has(sf, 'source-follower').length, 1); assert.equal(sf.coverage, 1);
+  const cg = txt('* CG stage\nM1 out vb in 0 NMOS\nR1 vdd out 1k\nL1 in 0 2n\n.end');
+  assert.equal(has(cg, 'common-gate').length, 1);
+  const sw = txt('* S/H\nM1 in phi1 x 0 NMOS\nC1 x 0 1p\n.end');
+  assert.equal(has(sw, 'switch').length, 1);
+  const fb = txt('* two stages\nM1 a in 0 0 NMOS\nR1 vdd a 1k\nM2 out a 0 0 NMOS\nR2 vdd out 1k\nRf out in 10k\n.end');
+  assert.equal(has(fb, 'resistive-feedback').length, 1);
+});

@@ -38,3 +38,15 @@ opamp 0,69, ADC 0,54, VCO 0,54, reference 0,27, sensor 0,23) ; nombre d'étages 
 Les étiquettes de motifs viennent du modèle de vision : fiables sur les schémas RF et analogiques simples
 (vérifié à l'image sur un pilote de LNA), bruitées sur la logique et les mémoires. Les netlists lues par vision
 ne sont pas incluses : leurs nœuds sont incohérents.
+
+## Registre (2026-10-03)
+
+Les motifs ci-dessus sont déclarés dans `lib/motifs.js` avec un détecteur chacun (sans gabarit de placement) :
+`common-source`, `common-gate`, `source-follower`, `switch` (structurels, un bloc chacun) ;
+`inductive-degeneration`, `resistive-feedback`, `matching-network`, `load` (décorations rattachées au bloc de
+leur transistor). Un transistor déjà expliqué par une paire, un miroir, un cascode, une paire croisée, un
+inverseur ou une diode n'est jamais relu comme étage simple.
+
+Couverture (`tools/motif-coverage.mjs`), avant → après : `benchmark/netlists` 0,517 → 0,737 (LNA 0,4 → 1) ;
+`benchmark/holdout-ltspice` (131 circuits) 0,548 → 0,598, actifs 0,679 → 0,776, circuits à actifs non
+couverts 48 → 39. Suite de tests : 257 réussites, 0 échec.

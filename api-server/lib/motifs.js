@@ -64,7 +64,38 @@ export const MOTIFS = [
     describe: 'BJT/JFET whose base/gate is biased by a resistive divider from the rail and whose collector/drain load is a resistor: the classic discrete stage; no template yet.' },
   { name: 'opamp-stage', rules: [], recipe: 'none — holdout gap (2026-09-18)',
     describe: 'Op-amp (X) with a feedback passive between its output and inverting input (inverting/non-inverting/integrator stages); no template yet.' },
+  // --- motifs the published IEEE schematics employ that no template covered (docs/ieee-motifs.md,
+  //     share of 10 966 readable schematics in brackets). Detected and reported; no recipe yet.
+  { name: 'common-source', rules: [], recipe: 'none — IEEE gap (2026-10-03)',
+    describe: 'Single active: signal on the gate/base, source/emitter on a rail or degenerated to it by one passive, a passive load from drain/collector to a rail (CS/CE gain stage) [0.13].' },
+  { name: 'common-gate', rules: [], recipe: 'none — IEEE gap (2026-10-03)',
+    describe: 'Single active whose gate/base sits on a rail or a DC bias net and whose source/emitter carries the signal (CG/CB stage, not a cascode top) [0.14].' },
+  { name: 'source-follower', rules: [], recipe: 'none — IEEE gap (2026-10-03)',
+    describe: 'Active with drain/collector on a rail and the output on its source/emitter, loaded by a current source, resistor or active to the other rail (buffer) [0.12].' },
+  { name: 'switch', rules: [], recipe: 'none — IEEE gap (2026-10-03)',
+    describe: 'MOS driven by a clock/phase net (phi, clk, ck, sw, s1…) or by a pulse source: sample-and-hold, switched-capacitor and DC-DC switches [0.23].' },
+  { name: 'inductive-degeneration', rules: [], recipe: 'none — IEEE gap (2026-10-03); decoration',
+    describe: 'Inductor between the source/emitter of an active and a rail or tail net (LNA/PA input stage); hugs its device below it [0.08, LNA 0.59].' },
+  { name: 'resistive-feedback', rules: [], recipe: 'none — IEEE gap (2026-10-03); decoration',
+    describe: 'Resistor from the drain of stage B back to the gate of stage A when B is driven by A (two-stage shunt feedback) [0.10].' },
+  { name: 'matching-network', rules: [], recipe: 'none — IEEE gap (2026-10-03); decoration',
+    describe: 'Series inductor or capacitor on the gate/base of an active (input match, Lg of an LNA); drawn on the signal axis before the device [0.02, LNA 0.3].' },
+  { name: 'load', rules: [], recipe: 'none — decoration',
+    describe: 'Passive (R, L, C) between the drain/collector of an active and a rail: the stage load; drawn above the device under the rail.' },
 ];
+
+const RAIL_RE = /^(vdd|vcc|vee|vss|avdd|dvdd|v\+|v-|gnd)$/i;
+const CLOCK_RE = /^(phi|ph\d|clk|ck\d*|clock|sw\d*|s\d+|en\b|sel|φ|cl\d)/i;
+const BIAS_RE = /^(vb|vbias|bias|vg\d|vcas|vc\d|vref|vbn|vbp|vcm)/i;
+const isPassive = (c) => c.prefix === 'R' || c.prefix === 'L' || c.prefix === 'C';
+
+/** Rail nets: ground, named supplies, and any net a V source ties to ground. */
+export function railNets(comps) {
+  const rails = new Set(['0']);
+  for (const n of new Set(comps.flatMap((c) => c.nodes))) if (RAIL_RE.test(n)) rails.add(n);
+  for (const v of comps.filter((c) => c.prefix === 'V')) { if (v.nodes[1] === '0') rails.add(v.nodes[0]); if (v.nodes[0] === '0') rails.add(v.nodes[1]); }
+  return rails;
+}
 
 /** Detect every motif instance of a parsed netlist.
  *  Returns {instances:[{motif, refs, nets?, extra}], blocks, uncovered, coverage, summary}. */
@@ -159,9 +190,7 @@ export function detectMotifs(parsed) {
   // resistive collector/drain load to a rail. "Rail" = ground, a named
   // supply, or any net a V source ties to ground (LTspice decks name their
   // supply n4 as happily as Vcc).
-  const rails = new Set(['0']);
-  for (const n of new Set(comps.flatMap((c) => c.nodes))) if (/^(vdd|vcc|vee|vss|avdd|dvdd|v\+|v-)$/i.test(n)) rails.add(n);
-  for (const v of comps.filter((c) => c.prefix === 'V')) { if (v.nodes[1] === '0') rails.add(v.nodes[0]); if (v.nodes[0] === '0') rails.add(v.nodes[1]); }
+  const rails = railNets(comps);
   const resistorsOn = (net) => comps.filter((c) => c.prefix === 'R' && c.nodes.includes(net));
   const toRail = (r) => r.nodes.some((n) => rails.has(n));
   const dividerNode = (net) => resistorsOn(net).filter(toRail).length >= 2;
@@ -181,10 +210,63 @@ export function detectMotifs(parsed) {
     if (fb.length) add('opamp-stage', [x.ref, ...fb.map((c) => c.ref)], { device: x.ref });
   }
 
+  // ---- single-device stages and their decorations (IEEE gaps, 2026-10-03).
+  // A device already explained by a multi-device structure (pair, mirror,
+  // cascode, cross-coupled pair, inverter, diode) is never re-read as a stage.
+  const explained = new Set([
+    ...st.diffPairs.flatMap((p) => p.refs), ...st.mirrors.flatMap((m) => m.refs),
+    ...st.cascodes.flatMap((c) => [c.top, c.bottom]), ...st.crossCoupled.flatMap((c) => c.refs),
+    ...st.diodes.map((d) => d.ref), ...inverters.flatMap((i) => i.refs),
+    ...inst.filter((i) => i.motif === 'bjt-resistive-stage').flatMap((i) => i.refs),
+  ]);
+  const on = (net) => comps.filter((c) => c.nodes.includes(net));
+  const passivesToRail = (net) => on(net).filter((c) => isPassive(c) && c.nodes.some((n) => n !== net && rails.has(n)));
+  const clockDriven = (net) => CLOCK_RE.test(net) || comps.some((v) => v.prefix === 'V' && v.nodes[0] === net && /pulse|pwl/i.test(v.model || v.value || ''));
+  const tailNets = new Set(st.diffPairs.map((p) => p.tailNet));
+  const actives = comps.filter(isActive);
+  for (const t of actives) {
+    const d = D(t), g = G(t), s = S(t);
+    if (t.prefix === 'M' && clockDriven(g)) { add('switch', [t.ref], { gate: g }); continue; }
+    if (explained.has(t.ref)) continue;
+    if (!rails.has(g) && rails.has(d) && !rails.has(s) && on(s).length >= 2) {
+      // drain on a rail, output on the source: follower (its load: passive/source to the other rail)
+      const loads = on(s).filter((c) => c.ref !== t.ref && (c.prefix === 'I' || (isPassive(c) && c.nodes.some((n) => n !== s && rails.has(n)))));
+      add('source-follower', [t.ref, ...loads.map((c) => c.ref)], { device: t.ref, out: s });
+      continue;
+    }
+    if ((rails.has(g) || BIAS_RE.test(g)) && !rails.has(s) && !rails.has(d)) {
+      add('common-gate', [t.ref], { device: t.ref, in: s, out: d });
+      continue;
+    }
+    if (!rails.has(g) && !rails.has(d)) {
+      const degen = rails.has(s) ? [] : passivesToRail(s).filter((c) => c.prefix !== 'C');
+      if (rails.has(s) || (degen.length === 1 && on(s).length === 2)) {
+        const loads = passivesToRail(d);
+        if (loads.length) add('common-source', [t.ref, ...degen.map((c) => c.ref), ...loads.map((c) => c.ref)], { device: t.ref, in: g, out: d });
+      }
+    }
+  }
+  for (const t of actives) {
+    const s = S(t), g = G(t), d = D(t);
+    for (const l of on(s).filter((c) => c.prefix === 'L' && c.nodes.some((n) => n !== s && (rails.has(n) || tailNets.has(n))))) add('inductive-degeneration', [l.ref, t.ref], { device: t.ref });
+    // input match: series L/C on the gate whose far end is a passive-only net (a port, the source side)
+    const activeNets = new Set(actives.flatMap((c) => c.nodes));
+    if (!rails.has(g)) for (const m of on(g).filter((c) => (c.prefix === 'L' || c.prefix === 'C') && c.nodes.every((n) => n === g || (!rails.has(n) && !activeNets.has(n))))) add('matching-network', [m.ref, t.ref], { device: t.ref });
+    if (!rails.has(d)) for (const l of passivesToRail(d)) add('load', [l.ref, t.ref], { device: t.ref });
+  }
+  // two-stage resistive feedback: R from drain(B) to gate(A) with gate(B) == drain(A)
+  for (const r of comps.filter((c) => c.prefix === 'R')) {
+    for (const a of actives) for (const b of actives) {
+      if (a === b || G(b) !== D(a) || D(a) === D(b)) continue;
+      if (r.nodes.includes(G(a)) && r.nodes.includes(D(b)) && G(a) !== D(b)) add('resistive-feedback', [r.ref, a.ref, b.ref], { from: b.ref, to: a.ref });
+    }
+  }
+
   // macro-blocks: greedy union of overlapping instances of STRUCTURAL motifs
   // (a component belongs to one block); decorations (diode, tail, feedback)
   // attach to the block of their device
-  const structural = new Set(['gilbert-quad', 'latch', 'half-latch', 'cascade', 'ring', 'differential-pair', 'current-mirror', 'cross-coupled-pair', 'cascode', 'inverter', 'passive-axis', 'bjt-resistive-stage', 'opamp-stage']);
+  const structural = new Set(['gilbert-quad', 'latch', 'half-latch', 'cascade', 'ring', 'differential-pair', 'current-mirror', 'cross-coupled-pair', 'cascode', 'inverter', 'passive-axis', 'bjt-resistive-stage', 'opamp-stage',
+    'common-source', 'common-gate', 'source-follower', 'switch']);
   const blockOf = new Map();
   const blocks = [];
   const ordered = [...inst].sort((a, b) => b.refs.length - a.refs.length);
