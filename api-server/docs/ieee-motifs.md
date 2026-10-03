@@ -47,6 +47,6 @@ Les motifs ci-dessus sont déclarés dans `lib/motifs.js` avec un détecteur cha
 leur transistor). Un transistor déjà expliqué par une paire, un miroir, un cascode, une paire croisée, un
 inverseur ou une diode n'est jamais relu comme étage simple.
 
-Couverture (`tools/motif-coverage.mjs`), avant → après : `benchmark/netlists` 0,517 → 0,737 (LNA 0,4 → 1) ;
+Couverture (`tools/motif-coverage.mjs`), avant → après : `benchmark/netlists` 0,517 → 0,709 (LNA 0,4 → 1) ;
 `benchmark/holdout-ltspice` (131 circuits) 0,548 → 0,598, actifs 0,679 → 0,776, circuits à actifs non
 couverts 48 → 39. Suite de tests : 257 réussites, 0 échec.
