@@ -31,19 +31,29 @@ def split_of(key):
     return 'train' if h < 0.8 else 'val' if h < 0.9 else 'test'
 
 
+# circuit families on both sides (caption type of the published figure, bank
+# family of ours), so the sampler can give every family the same weight in
+# each class: the judge must not learn "this kind of circuit is published"
+PUB_FAM = {'LNA': 'lna', 'mixer': 'mixer', 'PA': 'pa', 'PLL': 'pll', 'VCO': 'oscillator', 'opamp': 'opamp',
+           'reference': 'reference', 'filter': 'filter', 'ADC': 'data-converter', 'DAC': 'data-converter', 'DC-DC': 'power'}
+GEN_FAM = {'adc': 'data-converter', 'dac': 'data-converter', 'oscillator': 'oscillator', 'VCO': 'oscillator', 'LNA': 'lna', 'PA': 'pa', 'PLL': 'pll'}
+
+
 def load_items():
     items = []
-    for l in open(f'{ROOT}/pub/index.jsonl'):
+    for l in open(f'{ROOT}/pub-raw/index.jsonl'):
         r = json.loads(l)
         p = f'{ROOT}/pub/{r["n"]}.png'
         if os.path.exists(p):
-            items.append((p, 1, split_of('pub:' + r['key'].split('|')[0])))
+            items.append((p, 1, split_of('pub:' + r['key'].split('|')[0]), PUB_FAM.get(r.get('type'), 'other')))
+    known = set(PUB_FAM.values())
     for f in glob.glob(f'{ROOT}/gen-raw/index-*.jsonl'):
         for l in open(f):
             r = json.loads(l)
             p = f'{ROOT}/gen/{r["file"]}'
             if os.path.exists(p):
-                items.append((p, 0, split_of('gen:' + r['id'])))
+                fam = GEN_FAM.get(r.get('family'), r.get('family'))
+                items.append((p, 0, split_of('gen:' + r['id']), fam if fam in known else 'other'))
     return items
 
 
@@ -74,7 +84,7 @@ class DS(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.items)
     def __getitem__(self, i):
-        p, y, _ = self.items[i]
+        p, y = self.items[i][0], self.items[i][1]
         a = 1.0 - np.asarray(Image.open(p).convert('L'), dtype=np.float32) / 255.0
         x = degrade(a) if self.aug else torch.from_numpy(a)[None]
         return x, torch.tensor(float(y))
@@ -102,8 +112,11 @@ if __name__ == '__main__':
     items = load_items()
     parts = {s: [it for it in items if it[2] == s] for s in ('train', 'val', 'test')}
     print({s: (len(v), sum(1 for it in v if it[1] == 1)) for s, v in parts.items()}, flush=True)
+    print('families (published, generated):', {f: (sum(1 for it in items if it[3] == f and it[1] == 1), sum(1 for it in items if it[3] == f and it[1] == 0)) for f in sorted({it[3] for it in items})}, flush=True)
     tr = parts['train']
-    w = [1.0 / sum(1 for it in tr if it[1] == y) for _, y, _ in tr]   # balance the classes
+    cnt = {}
+    for it in tr: cnt[(it[1], it[3])] = cnt.get((it[1], it[3]), 0) + 1
+    w = [1.0 / cnt[(it[1], it[3])] for it in tr]   # balance classes AND families within each class
     sampler = torch.utils.data.WeightedRandomSampler(w, num_samples=len(tr), replacement=True)
     dl = torch.utils.data.DataLoader(DS(tr, True), batch_size=128, sampler=sampler, num_workers=8)
     dv = torch.utils.data.DataLoader(DS(parts['val'], False), batch_size=256, num_workers=8)

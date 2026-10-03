@@ -1,16 +1,18 @@
 """build-pub.py — published side of the judge dataset: readable schematics of
 the IEEE DVDs ONLY (figures.origine dvd-2001/dvd-2008, lectures.readable),
-cropped by the RAG tool (one render at a time), normalised (normalize.py),
-written to /AI/datasets/judge/pub/<n>.png + index.jsonl. Station only, never
+cropped by the RAG tool (one render at a time), written RAW to
+/AI/datasets/judge/pub-raw/<n>.png + index.jsonl; normalisation (text removal
+included) is done afterwards by normalize-dir.py with the system python, the
+SAME way as our renders. Station only, never
 committed. Run with the RAG venv:
   ~/ClaudeCode/local_AI/rag/.venv/bin/python tools/judge/build-pub.py [--limit N]"""
 import json, os, sqlite3, sys
 sys.path.insert(0, os.path.expanduser('~/ClaudeCode/local_AI/rag'))
 sys.path.insert(0, os.path.dirname(__file__))
 from rag.extract.figures import recadrer   # noqa: E402
-from normalize import normalize            # noqa: E402
 
-OUT = '/AI/datasets/judge/pub'
+OUT = '/AI/datasets/judge/pub-raw'
+os.makedirs(OUT, exist_ok=True)
 limit = int(sys.argv[sys.argv.index('--limit') + 1]) if '--limit' in sys.argv else None
 db = sqlite3.connect('file:/AI/datasets/IEEE/derived/figures.sqlite?mode=ro', uri=True)
 rows = db.execute("""SELECT f.paper_id, f.page, f.rang, f.type FROM lectures l JOIN figures f USING (paper_id, page, rang)
@@ -27,10 +29,8 @@ with open(idx_path, 'a') as idx:
         if key in done:
             continue
         try:
-            im = normalize(recadrer(pid, page, rang, dpi=150))
+            im = recadrer(pid, page, rang, dpi=150).convert('L')
         except Exception:
-            continue
-        if im is None:
             continue
         n += 1
         im.save(os.path.join(OUT, f'{n}.png'))

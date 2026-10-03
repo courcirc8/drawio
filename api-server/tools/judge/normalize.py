@@ -19,10 +19,31 @@ def otsu(g):
     return int(np.nanargmax(s))
 
 
-def normalize(img, size=SIZE):
+def strip_text(ink, frac=0.03):
+    """Remove TEXT on both sides (labels, values, captions, figure numbers):
+    every connected ink component whose bounding box is small next to the
+    drawing (max side < frac x the larger image side) is a glyph, a dot or a
+    digit, not a wire or a symbol. The judge must not learn "there is text" or
+    a font (orchestrator's condition). Needs scipy; run with the system python."""
+    from scipy import ndimage
+    lab, n = ndimage.label(ink, structure=np.ones((3, 3)))
+    if n == 0:
+        return ink
+    lim = frac * max(ink.shape)
+    sl = ndimage.find_objects(lab)
+    keep = np.zeros(n + 1, dtype=bool)
+    for i, s in enumerate(sl, start=1):
+        if s is not None and max(s[0].stop - s[0].start, s[1].stop - s[1].start) >= lim:
+            keep[i] = True
+    return keep[lab]
+
+
+def normalize(img, size=SIZE, text=False):
     g = np.asarray(img.convert('L'), dtype=np.uint8)
     t = otsu(g)
     ink = g < t
+    if not text:
+        ink = strip_text(ink)
     ys, xs = np.nonzero(ink)
     if len(xs) == 0:
         return None
