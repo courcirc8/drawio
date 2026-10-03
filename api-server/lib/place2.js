@@ -1282,6 +1282,38 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     for (const x of ss) x.level = L;
   }
 
+  // ---- PROLONGER LES BRANCHES (2026-10-03, bandgaps du banc par famille) :
+  //      un élément dont le nœud du HAUT est alimenté par un élément déjà posé
+  //      se pose SOUS lui, dans sa colonne — y compris une R « flottante »
+  //      entre deux nets de signal (R1 d'une bandgap) : sinon la branche
+  //      miroir PMOS -> R -> PNP -> masse était coupée, et les PNP parqués en
+  //      rangée à gauche tiraient leurs fils à travers toute la feuille.
+  //      Répété jusqu'à stabilité (une chaîne se prolonge pas à pas).
+  // opt-in (opts.branchExtend, an engine=auto candidate): on the family bench
+  // it took errors 2 082 -> 1 923, but changed the tuned stacks of the
+  // hand-made MOS circuits the regression tests pin (ota-cmos, VCOs, LNAs)
+  if (P.branchExtend || process.env.P2_FOOT === '1') {
+    const taken = (col, lvl) => [...slots.values()].some((s2) => Math.abs(s2.col - col) < 0.3 && Math.abs(s2.level - lvl) < 0.3);
+    for (let progress = true, guard = 0; progress && guard < comps.length; guard++) {
+      progress = false;
+      for (const c of comps) {
+        const inStack = unplaced.has(c.ref) || (floating.has(c.ref) && 'RCL'.includes(c.prefix) && !chainRefs.has(c.ref));
+        if (!inStack || axisRefs.has(c.ref)) continue;
+        const ci = info.get(c.ref);
+        if (ci == null || ci.top === vddNet || ci.top === '0') continue;
+        const feeder = [...slots.entries()].filter(([r]) => { const fi = info.get(r); return fi != null && fi.bot === ci.top; })
+          .sort((a, b) => b[1].level - a[1].level)[0];
+        if (!feeder) continue;
+        const [, fs] = feeder;
+        let col = fs.col;
+        for (let k = 1; k < 7 && taken(col, fs.level + 1); k++) col = fs.col + (k % 2 ? 0.6 : -0.6) * Math.ceil(k / 2);
+        floating.delete(c.ref);
+        place(c.ref, col, fs.level + 1);
+        progress = true;
+      }
+    }
+  }
+
   // reste : un dipôle R/L/C entre deux nets de SIGNAL sans pile d'accueil
   // (ex: R de contre-réaction inter-étages) rejoint les flottants — placé au
   // barycentre de ses nets, jamais parqué dans un coin. Le vrai reste

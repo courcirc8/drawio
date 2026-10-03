@@ -75,7 +75,7 @@ function railNets(parsed) {
  *    v4 split first, then v2          18 / 405
  *    + v4 one, v4 absorb+split        18 / 364   (63 holdout circuits at zero)
  *  check.js and check.py disagree on ties; v4 split wins most of them. */
-export const AUTO_CANDIDATES = [['v4', 'split'], ['v2', null], ['v4', 'one'], ['v4', 'absorb+split']];
+export const AUTO_CANDIDATES = [['v4', 'split'], ['v2', null], ['v4', 'one'], ['v4', 'absorb+split'], ['v2', null, { branchExtend: true }]];
 /** Spacings each candidate is also tried with (place2 column pitch / row
  *  height). Measured 2026-10-03 with tools/ranker-dataset.mjs, selection by
  *  check.js then conventions (check.py errors, tuning / holdout):
@@ -200,7 +200,7 @@ export async function importNetlist4(model, parsed, opts = {}) {
     // nothing to compose: place2 is the whole answer (and the reference);
     // route here because v4 callers do not route (the hierarchical routes
     // of a composed page must not be re-routed page-wide)
-    const r = importNetlist2(model, parsed, opts);
+    const r = importNetlist2(model, parsed, { branchExtend: true, ...opts });
     const rr = await routePage(model, r.wires, {});
     normalizeOrigin(model);
     return { ...r, engine: 'v4->v2', routed: rr.failed == null, blocks: blocks.map((b) => ({ ...b, box: null })), interBlockNets: [] };
@@ -223,7 +223,9 @@ export async function importNetlist4(model, parsed, opts = {}) {
     const sub = subNetlist(parsed, b.refs);
     const doc = newDocument();
     const m = getPage(doc);
-    const placed = importNetlist2(m, sub, { ...opts, _v4block: b.id, vddNet: pageVdd });
+    // branch extension on inside blocks by default (family bench: errors -8 %);
+    // plain v2 keeps it off (its regression tests pin the tuned stacks)
+    const placed = importNetlist2(m, sub, { branchExtend: true, ...opts, _v4block: b.id, vddNet: pageVdd });
     const r = await routePage(m, placed.wires, {});
     if (r.failed != null) throw new Error(`v4: routing failed inside block ${b.id} (${b.motif}): ${r.failed}`);
     normalizeOrigin(m, 20);

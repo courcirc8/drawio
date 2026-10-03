@@ -119,6 +119,14 @@ export function parseSpice(text, opts = {}) {
     let nodes = tokens.slice(1, 1 + nNodes).map(mapNet);
     const fullNodes = [...nodes];
     let rest = tokens.slice(1 + nNodes);
+    // SPICE Q: collector base emitter [substrate] model — with a substrate
+    // node, "Q3 c b e 0 PNP" read model='0' and every such PNP became an NPN
+    // (drawn upside down; 4-terminal BJTs of AnalogGenie, LTspice). The
+    // substrate is kept in fullNodes like a MOS bulk, the model is the next word.
+    if (prefix === 'Q' && rest.length >= 2 && !rest[0].includes('=') && !rest[1].includes('=') && !/^[-+.0-9]/.test(rest[1])) {
+      fullNodes.push(mapNet(rest[0]));
+      rest = rest.slice(1);
+    }
     if (map.dropNodes) nodes = nodes.filter((_, i) => !map.dropNodes.includes(i));
     // V/I may carry "DC 5" style values
     if (!rest.length) warnings.push('missing value or model: ' + line);
@@ -345,10 +353,13 @@ export function extractNetlist(model) {
     // the raw mxCell id — the id is what a GUI copy/paste silently reassigns.
     const ref = identityOf(cell);
     const fullNodes = [...nodes];
-    if (cls.mapping.dropNodes) {
-      let hidden;
-      try { hidden = JSON.parse(cell.attrs?.spice_hidden_nodes || 'null'); } catch { hidden = null; }
-      for (const index of cls.mapping.dropNodes) {
+    let hiddenAttr;
+    try { hiddenAttr = JSON.parse(cell.attrs?.spice_hidden_nodes || 'null'); } catch { hiddenAttr = null; }
+    // declared hidden terminals, or the optional ones the cell persisted (BJT substrate)
+    const hiddenIdx = cls.mapping.dropNodes || (Array.isArray(hiddenAttr) ? hiddenAttr.map((h) => h.index).sort((a, b) => a - b) : null);
+    if (hiddenIdx && hiddenIdx.length) {
+      const hidden = hiddenAttr;
+      for (const index of hiddenIdx) {
         const h = hidden?.find(h => h.index === index);
         let net = null;
         if (h?.anchor) {

@@ -9,7 +9,13 @@ export function preserveElectricalData(model, parsed) {
     if (!node) continue;
     node.setAttribute('refdes', c.ref);
     node.setAttribute('spice_value', c.value || '');
-    const hidden = (SPICE_MAP[c.prefix]?.dropNodes || []).map(index => {
+    // declared hidden terminals (MOS bulk) + OPTIONAL ones present in this
+    // netlist (BJT substrate "Q c b e s model"): every fullNodes index that
+    // the visible pins do not carry
+    const declared = SPICE_MAP[c.prefix]?.dropNodes || [];
+    const optional = !declared.length && (c.fullNodes?.length || 0) > c.nodes.length
+      ? Array.from({ length: c.fullNodes.length - c.nodes.length }, (_, k) => c.nodes.length + k) : [];
+    const hidden = [...declared, ...optional].map(index => {
       const net = c.fullNodes?.[index];
       if (!net) return {index};
       // Bind omitted terminals to a visible pin, so later GUI rewires are observed.
