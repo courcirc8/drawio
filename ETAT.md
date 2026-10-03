@@ -65,6 +65,14 @@ v2 79 fois contre 16 sur 144 dessins différents ; net sur une bandgap, marginal
 - `auto` n'élit jamais un dessin qui échoue au LVS ; `place2` ne perd plus les dérivations d'un élément de chaîne partagé.
   Résultat : les 80 netlists open PDK qui échouaient au LVS passent toutes.
 
+## RÉFÉRENCE ACTUELLE (run `full-4` / `openpdk-2`, juge corrigé, correctifs LVS) — comparer à ceci
+
+| | réglage | test | familles jamais vues |
+|---|---|---|---|
+| banque d'origine : sans erreur / > 3:1 | 51 % / 5 % (905) | 55 % / 7 % (579) | 25 % / 3 % (937) |
+| open PDK : sans erreur / > 3:1 | 34 % / 13 % (459) | 33 % / 15 % (297) | 34 % / 11 % (345) |
+0 échec LVS. Références (réglage) : 40 % sans erreur, erreurs surtout de routage (pin-clearance, 22-contact, through).
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
