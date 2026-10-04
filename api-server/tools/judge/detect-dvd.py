@@ -23,7 +23,8 @@ from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 m = fasterrcnn_resnet50_fpn_v2(weights=None, weights_backbone=None)
 m.roi_heads.box_predictor = FastRCNNPredictor(m.roi_heads.box_predictor.cls_score.in_features, len(tdet.CLASSES))
-m.load_state_dict(torch.load('/AI/datasets/judge/models/detector-v1.pt', map_location='cpu', weights_only=True))
+MODEL = args[args.index('--model') + 1] if '--model' in args else '/AI/datasets/judge/models/detector-v1.pt'
+m.load_state_dict(torch.load(MODEL, map_location='cpu', weights_only=True))
 m.to(dev).eval()
 
 idx = [json.loads(l) for l in open('/AI/datasets/judge/pub-raw/index.jsonl')]
