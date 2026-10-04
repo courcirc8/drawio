@@ -116,6 +116,26 @@ réduits à des boîtes ou retirés, seuls fils et positions), entraîner sur de
 en n'utilisant les DVD que comme distribution de référence, ou détecter les composants dans les figures DVD
 (boîtes) pour comparer des positions relatives plutôt que des pixels.
 
+## DÉCISION D'ERIC (2026-10-04) : juge v2 = piste (2) puis (3) — détecteur de composants, puis positions relatives
+
+Plan (à exécuter, rien n'est encore fait) :
+1. Détecteur de composants entraîné sur **AMSNet** (734 circuits : image d'origine + boîtes dessinées à la main + netlist ;
+   GPL, usage privé OK). Archive : `/AI/datasets/netlists/ams.net.github.io/amsnet_1.0-*.zip`, par circuit
+   `<id>.jpg`, `<id>_bbox.json` (clés `<classe>_<rotation>` → listes `[x0,y0,x1,y1]` ; classes : nmos, pmos,
+   nmos-mirror, pmos-mirror, nmos-cross, pmos-cross, resistor, capacitor, inductor, current, voltage, vdd, gnd,
+   net-black, net-white, current-arrow…), `<id>.cir`. Détecteur conseillé : torchvision Faster R-CNN (déjà installé,
+   système python, carte GPU 1) ; classes regroupées (transistor N/P avec orientation, R, C, L, sources, vdd, gnd).
+   Vérifier qu'aucun circuit AMSNet n'est scellé ou variante (lib/sealed.js) avant entraînement.
+2. Valider sur un échantillon de figures DVD (précision visuelle à contrôler SANS sortir d'image du corpus : comptes,
+   cohérence avec `lectures.components` du RAG — nombre de transistors/R/C détectés vs lus).
+3. Appliquer aux 13 562 schémas DVD (`/AI/datasets/judge/pub-raw/`, origine dvd-* seulement) → positions et classes
+   des composants → statistiques de disposition (positions relatives par motif : charge au-dessus, miroir sur une
+   rangée, PMOS au-dessus des NMOS, symétrie, signal à gauche…).
+4. Juge v2 : comparer les positions relatives de NOS dessins (connues exactement depuis le .drawio) à ces
+   statistiques → score indépendant du style. Tests obligatoires : « même disposition, styles différents » → même
+   score (trivial ici : on part des positions, pas des pixels), témoin bandgap 1645 (v2+branches > éparpillement),
+   séparation publiés/générés sur des positions. Rien dans auto avant validation et accord d'Eric. Modèle privé.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
