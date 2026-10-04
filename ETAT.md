@@ -146,7 +146,11 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
 - Pistes : (a) réentraîner avec des dégradations « scan » d'AMSNet (sous-résolution 150 ppp, bruit, flou, JPEG,
   épaisseur) ; (b) ajouter nos propres dessins rendus (boîtes exactes connues) avec styles aléatoires ;
   (c) annotation de quelques centaines de figures DVD par Eric (coûteux pour lui, seulement si (a)+(b) échouent).
-- En cours : (a) `train-detector.py --scan-aug` → `detector-v2.pt`, vérifié par `detect-dvd.py --check 300 --model …v2.pt`.
+- (a) FAIT : `detector-v2.pt` (dégradations scan) — AMSNet intact (NMOS 0,98/0,99) ; sur 300 figures DVD, comptes exacts
+  vs Ornith : NMOS 2 % → 9 % (écart moyen 4,7), PMOS 3 % → 9 %, R 14 % → 17 %, C 13 % → 30 %. Mieux, insuffisant.
+- PROCHAINE ÉTAPE : pseudo-étiquettes + auto-apprentissage (ci-dessous), en partant de detector-v2 ; prévoir un petit
+  jeu DVD vérifié à part pour mesurer (par ex. figures où détections et lecture Ornith concordent exactement,
+  mises de côté, et non utilisées pour l'entraînement).
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
