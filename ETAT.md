@@ -136,6 +136,17 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
    score (trivial ici : on part des positions, pas des pixels), témoin bandgap 1645 (v2+branches > éparpillement),
    séparation publiés/générés sur des positions. Rien dans auto avant validation et accord d'Eric. Modèle privé.
 
+## Détecteur v1 (2026-10-04) : excellent sur AMSNet, NE TRANSFÈRE PAS aux scans DVD
+
+- Validation AMSNet (73 circuits) : précision/rappel NMOS 0,98/0,99, PMOS 0,91/0,97, R 0,99/1,00, C 0,96/1,00, VDD 0,86/0,90.
+- Sur 300 figures DVD, comparé aux composants lus par Ornith (RAG) : transistors détectés 0,34 NMOS + 0,14 PMOS par figure
+  contre 3,3 + 1,7 lus ; R 0,98 contre 1,36 ; C 0,26 contre 1,37. Agrandir l'image ×2/×3 ne change rien
+  (0,4 transistor contre 4,5 lus) : c'est le STYLE des symboles (manuels contre articles scannés), pas l'échelle.
+- Outils : `tools/judge/train-detector.py`, `tools/judge/detect-dvd.py --check N` (comptes seulement, aucune image ne sort).
+- Pistes : (a) réentraîner avec des dégradations « scan » d'AMSNet (sous-résolution 150 ppp, bruit, flou, JPEG,
+  épaisseur) ; (b) ajouter nos propres dessins rendus (boîtes exactes connues) avec styles aléatoires ;
+  (c) annotation de quelques centaines de figures DVD par Eric (coûteux pour lui, seulement si (a)+(b) échouent).
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
