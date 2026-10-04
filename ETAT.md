@@ -163,6 +163,10 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   self-train depuis st3. PRÊT : `python3 tools/judge/self-train.py --boxes --start detector-st3 --tag sb --size 1200`
   (testé à vide sur les 3 000 premières boîtes : 134 figures de mesure, 1 229 du pool). Passe RAG `rag-boites-liste`
   programmée à 22 h le 4 oct. ; filtrer sur les clés de pub-raw (le fichier contient aussi d'autres figures).
+- Orchestrateur (audit RAG : Ornith optimiste en absolu, fiable en relatif) : le jeu DVD de contrôle doit être vérifié par
+  un autre juge qu'Ornith avant de conclure. EN ATTENTE d'Eric : (a) auditeurs Opus sur ~40 figures DVD — images hors
+  station, contraire à la règle, donc seulement sur accord explicite ; (b) Eric compte 30 figures sur page mobile ;
+  (c) à défaut, concordance de 3 signaux et comparaisons relatives entre versions seulement.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
