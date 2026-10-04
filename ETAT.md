@@ -118,10 +118,10 @@ en n'utilisant les DVD que comme distribution de référence, ou détecter les c
 
 ## DÉCISION D'ERIC (2026-10-04) : juge v2 = piste (2) puis (3) — détecteur de composants, puis positions relatives
 
-Plan (à exécuter, rien n'est encore fait) :
+Plan (étape 1 commencée : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_1.0/`, format des boîtes établi) :
 1. Détecteur de composants entraîné sur **AMSNet** (734 circuits : image d'origine + boîtes dessinées à la main + netlist ;
    GPL, usage privé OK). Archive : `/AI/datasets/netlists/ams.net.github.io/amsnet_1.0-*.zip`, par circuit
-   `<id>.jpg`, `<id>_bbox.json` (clés `<classe>_<rotation>` → listes `[x0,y0,x1,y1]` ; classes : nmos, pmos,
+   `<id>.jpg`, `<id>_bbox.json` (clés `<classe>_<rotation>` → listes **`[y0,x0,y1,x1]` (ligne, colonne ; vérifié à l'œil, l'ordre x,y ne tient pas pour 480 circuits)** ; classes : nmos, pmos,
    nmos-mirror, pmos-mirror, nmos-cross, pmos-cross, resistor, capacitor, inductor, current, voltage, vdd, gnd,
    net-black, net-white, current-arrow…), `<id>.cir`. Détecteur conseillé : torchvision Faster R-CNN (déjà installé,
    système python, carte GPU 1) ; classes regroupées (transistor N/P avec orientation, R, C, L, sources, vdd, gnd).
