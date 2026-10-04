@@ -148,9 +148,19 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   (c) annotation de quelques centaines de figures DVD par Eric (coûteux pour lui, seulement si (a)+(b) échouent).
 - (a) FAIT : `detector-v2.pt` (dégradations scan) — AMSNet intact (NMOS 0,98/0,99) ; sur 300 figures DVD, comptes exacts
   vs Ornith : NMOS 2 % → 9 % (écart moyen 4,7), PMOS 3 % → 9 %, R 14 % → 17 %, C 13 % → 30 %. Mieux, insuffisant.
-- PROCHAINE ÉTAPE : pseudo-étiquettes + auto-apprentissage (ci-dessous), en partant de detector-v2 ; prévoir un petit
-  jeu DVD vérifié à part pour mesurer (par ex. figures où détections et lecture Ornith concordent exactement,
-  mises de côté, et non utilisées pour l'entraînement).
+- (b) FAIT, 1re passe : `tools/judge/self-train.py` (3 tours, filtre = top-n confiants = décomptes Ornith nmos/pmos/R/C,
+  pas de boîtes croisées ; 600 → 1 148 → 1 565 figures gardées sur 10 324 du pool) → `detector-st3.pt`.
+  Mesure sur 1 137 figures de papiers mis de côté (10 %, hachage `st:`+paper_id), compte exact vs lecture Ornith :
+  NMOS 12 → 17,5 %, PMOS 8 → 9 %, R 15 → 35 %, C 26 → 40 % ; AMSNet val intact (NMOS 0,99/0,99).
+  Inférence à min_size 1200 / max 2000 : R 40 %, C 43 %. Rendu à 300 dpi au lieu de 150 : aucun gain.
+- CONSTAT : la référence Ornith est bruitée. Deux lectures Ornith indépendantes (lectures + boites-ornith.jsonl, 3 000
+  figures) ne s'accordent en compte exact que NMOS 14 %, PMOS 17 %, R 37 %, C 34 %. Sur les figures où les deux
+  lectures s'accordent (mes papiers de mesure, 12 à 23 par type), st3 donne le compte exact NMOS 46 %, PMOS 42 %,
+  R 26 %, C 70 % (v2 : 31/17/26/43 %) ; à un près : 77/67/63/83 %. Progrès réel, échantillon trop petit.
+- PROCHAINE ÉTAPE : session RAG sollicitée pour `boites` sur les 13 562 figures DVD de pub-raw (de nuit). Ensuite :
+  (1) jeu de mesure = figures des papiers mis de côté où les deux lectures s'accordent ; (2) filtre pseudo-étiquettes
+  = accord des deux lectures + appariement un à un des centres Ornith (tolérance 10 % de la largeur) ; relancer
+  self-train depuis st3.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
