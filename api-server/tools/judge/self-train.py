@@ -12,8 +12,15 @@ Each round:
 Measured on the EVAL split (papers never used for pseudo-labels): exact match of
 the detected counts with the Ornith counts, per kind, plus AMSNet val (no regression).
 Prints numbers only; no image leaves the station.
+With --boxes (second, independent Ornith reading with approximate centres,
+boites-ornith.jsonl): a figure is used only where both readings give the same
+count for each kind, each kept box must pair one-to-one with an Ornith centre of
+its kind within 10 % of the image width, and the eval counts only the figures
+where both readings agree (the transistor counts of a single reading agree with
+a second reading only 14 % of the time: too noisy to measure against).
 Usage: python3 tools/judge/self-train.py [--rounds 3] [--epochs 6] [--gpu 1] [--start detector-v2]
-Writes /AI/datasets/judge/models/detector-st<r>.pt and self-train.json."""
+       [--boxes] [--tag st] [--size 1200]
+Writes /AI/datasets/judge/models/detector-<tag><r>.pt and <tag>.json."""
 import hashlib, json, os, random, sqlite3, sys
 import torch
 from PIL import Image
@@ -32,6 +39,7 @@ args = sys.argv
 opt = lambda k, d: type(d)(args[args.index(k) + 1]) if k in args else d
 ROUNDS, EPOCHS, GPU = opt('--rounds', 3), opt('--epochs', 6), opt('--gpu', 1)
 START = opt('--start', 'detector-v2')
+TAG, SIZE, BOXES = opt('--tag', 'st'), opt('--size', 800), '--boxes' in args
 KEEP, EXTRA, LOW = opt('--keep', 0.5), opt('--extra', 0.5), 0.2
 MAXSIDE = 1600
 ROOT = '/AI/datasets/judge'
@@ -62,6 +70,11 @@ def load_pub(n):
 
 
 def figures():
+    second = {}
+    if BOXES:
+        for l in open('/AI/datasets/IEEE/derived/boites-ornith.jsonl'):
+            b = json.loads(l)
+            second[f"{b['paper_id']}|{b['page']}|{b['rang']}"] = b
     db = sqlite3.connect('file:/AI/datasets/IEEE/derived/figures.sqlite?mode=ro', uri=True)
     out = []
     for l in open(f'{ROOT}/pub-raw/index.jsonl'):
@@ -76,7 +89,15 @@ def figures():
         cnt = {d: sum(1 for c in comps if c.get('kind') == k) for d, k in KIND.items()}
         if sum(cnt.values()) == 0 or len(comps) > 60:
             continue
-        out.append({'n': r['n'], 'split': split_of(pid), 'cnt': cnt})
+        f = {'n': r['n'], 'split': split_of(pid), 'cnt': cnt}
+        b = second.get(r['key'])
+        if b is not None:
+            f['cnt2'] = {d: sum(1 for c in b['components'] if c.get('kind') == k) for d, k in KIND.items()}
+            f['centres'] = [(c['centre'], c['kind']) for c in b['components'] if c.get('centre')]
+            f['W'], f['H'] = b['W'], b['H']
+        if BOXES and b is None:
+            continue
+        out.append(f)
     return out
 
 
@@ -93,6 +114,8 @@ def counts_match(figs, det, thr):
     a = {k: [0, 0, 0.0] for k in KIND}
     for f in figs:
         for k in KIND:
+            if BOXES and f['cnt2'][k] != f['cnt'][k]:
+                continue
             nd = sum(1 for _, c, s in det[f['n']] if c == k and s >= thr); nr = f['cnt'][k]
             if nd or nr:
                 a[k][1] += 1; a[k][0] += nd == nr; a[k][2] += abs(nd - nr)
@@ -101,6 +124,8 @@ def counts_match(figs, det, thr):
 
 def pseudo(f, dets):
     keep = []
+    if BOXES and f['cnt2'] != f['cnt']:
+        return None
     for k in KIND:
         cand = sorted((d for d in dets if d[1] == k), key=lambda d: -d[2])
         n = f['cnt'][k]
@@ -111,8 +136,25 @@ def pseudo(f, dets):
         for j in range(i + 1, len(keep)):
             if tdet.iou(keep[i][0], keep[j][0]) > 0.5:
                 return None
+    if BOXES and not centres_pair(f, keep):
+        return None
     keep += [d for d in dets if d[1] in FREE and d[2] >= 0.7]
     return keep
+
+
+def centres_pair(f, keep):
+    """Each kept box pairs one-to-one with an Ornith centre of its kind within 10 % of the width.
+    Ornith centres are in 150 dpi crop pixels (= pub-raw); boxes are in load_pub pixels."""
+    sc = min(1.0, MAXSIDE / max(f['W'], f['H'], 1))   # the same downscale as load_pub
+    tol, used = 0.1 * f['W'], set()
+    for b, k, _ in keep:
+        cx, cy = (b[0] + b[2]) / 2 / sc, (b[1] + b[3]) / 2 / sc
+        best = min(((abs(cx - c[0]) + abs(cy - c[1]), j) for j, (c, kind) in enumerate(f['centres'])
+                    if j not in used and kind == KIND[k]), default=None)
+        if best is None or best[0] > tol:
+            return False
+        used.add(best[1])
+    return True
 
 
 class Mixed(torch.utils.data.Dataset):
@@ -145,6 +187,7 @@ if __name__ == '__main__':
     ams_tr = [i for i in ids if tdet.split_of(i) == 'train']; ams_va = [i for i in ids if tdet.split_of(i) == 'val']
     print(f'DVD figures with a reading: pool {len(pool)}, eval {len(ev)}', flush=True)
     m = new_model(); m.load_state_dict(torch.load(f'{ROOT}/models/{START}.pt', map_location='cpu', weights_only=True)); m.to(dev)
+    m.transform.min_size, m.transform.max_size = (SIZE,), max(1333, SIZE * 5 // 3)
     log = []
     for r in range(ROUNDS + 1):
         de = detect(m, ev)
@@ -167,6 +210,6 @@ if __name__ == '__main__':
                 loss = sum(m([x.to(dev) for x in xs], [{k: v.to(dev) for k, v in t.items()} for t in ts]).values())
                 o.zero_grad(); loss.backward(); o.step(); sched.step(); tot += loss.item()
             print(f'  epoch {ep + 1}: loss {tot / len(dl):.3f}', flush=True)
-        torch.save(m.state_dict(), f'{ROOT}/models/detector-st{r + 1}.pt')
-    json.dump(log, open(f'{ROOT}/models/self-train.json', 'w'), indent=1)
+        torch.save(m.state_dict(), f'{ROOT}/models/detector-{TAG}{r + 1}.pt')
+    json.dump(log, open(f'{ROOT}/models/{TAG}.json', 'w'), indent=1)
     print('done')

@@ -160,7 +160,9 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
 - PROCHAINE ÉTAPE : session RAG sollicitée pour `boites` sur les 13 562 figures DVD de pub-raw (de nuit). Ensuite :
   (1) jeu de mesure = figures des papiers mis de côté où les deux lectures s'accordent ; (2) filtre pseudo-étiquettes
   = accord des deux lectures + appariement un à un des centres Ornith (tolérance 10 % de la largeur) ; relancer
-  self-train depuis st3.
+  self-train depuis st3. PRÊT : `python3 tools/judge/self-train.py --boxes --start detector-st3 --tag sb --size 1200`
+  (testé à vide sur les 3 000 premières boîtes : 134 figures de mesure, 1 229 du pool). Passe RAG `rag-boites-liste`
+  programmée à 22 h le 4 oct. ; filtrer sur les clés de pub-raw (le fichier contient aussi d'autres figures).
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
