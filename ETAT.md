@@ -118,7 +118,7 @@ en n'utilisant les DVD que comme distribution de référence, ou détecter les c
 
 ## DÉCISION D'ERIC (2026-10-04) : juge v2 = piste (2) puis (3) — détecteur de composants, puis positions relatives
 
-Plan (étape 1 commencée : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_1.0/`, format des boîtes établi) :
+Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_1.0/`, format des boîtes établi ; détecteur `tools/judge/train-detector.py` en entraînement → `/AI/datasets/judge/models/detector-v1.pt`, journal `/AI/datasets/judge/detector-train.log`, précision/rappel par classe dans `detector-v1.metrics.json`) :
 1. Détecteur de composants entraîné sur **AMSNet** (734 circuits : image d'origine + boîtes dessinées à la main + netlist ;
    GPL, usage privé OK). Archive : `/AI/datasets/netlists/ams.net.github.io/amsnet_1.0-*.zip`, par circuit
    `<id>.jpg`, `<id>_bbox.json` (clés `<classe>_<rotation>` → listes **`[y0,x0,y1,x1]` (ligne, colonne ; vérifié à l'œil, l'ordre x,y ne tient pas pour 480 circuits)** ; classes : nmos, pmos,
