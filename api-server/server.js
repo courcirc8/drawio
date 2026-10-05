@@ -270,6 +270,8 @@ app.post('/structures', wrap(async (req, res) => {
 // vision netlist to confirm, fix or reject; batches by tools/dvd-rf-batch.mjs
 const { mountCorrect } = await import('./lib/correct.js');
 mountCorrect(app, wrap);
+const { mountCompare } = await import('./lib/compare.js');
+mountCompare(app, wrap);
 
 // Motif registry (lib/motifs.js): every recognised analogue motif of a
 // netlist, the macro-blocks they induce and the components NO motif covers.

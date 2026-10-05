@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lequel est le plus lisible ?</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #f4f4f4; }
+  header { padding: 10px 12px; font-size: 15px; display: flex; justify-content: space-between; }
+  .pair { display: flex; flex-direction: column; gap: 10px; padding: 0 8px; }
+  @media (orientation: landscape) { .pair { flex-direction: row; } .pair button { flex: 1; } }
+  .pair button { border: 3px solid #ccc; border-radius: 8px; background: #fff; padding: 4px; cursor: pointer; }
+  .pair button:active { border-color: #2a7; }
+  .pair img { width: 100%; max-height: 42vh; object-fit: contain; display: block; }
+  @media (orientation: landscape) { .pair img { max-height: 80vh; } }
+  .eq { display: block; margin: 12px auto; padding: 12px 40px; font-size: 17px; border-radius: 8px; border: 1px solid #999; background: #fff; }
+  .msg { padding: 40px 16px; text-align: center; font-size: 18px; }
+</style>
+</head>
+<body>
+<header><span>Touchez le schéma le plus lisible</span><span id="prog"></span></header>
+<div id="main"></div>
+<script>
+const batch = new URLSearchParams(location.search).get('batch') || 'rules-1';
+const main = document.getElementById('main'), prog = document.getElementById('prog');
+let cur = null, busy = false;
+async function next() {
+  const r = await (await fetch(`compare/api/next?batch=${encodeURIComponent(batch)}`)).json();
+  if (r.finished) { prog.textContent = `${r.done}/${r.total}`; main.innerHTML = '<div class="msg">Terminé, merci !</div>'; return; }
+  cur = r.n; prog.textContent = `${r.done + 1}/${r.total}`;
+  const src = (s) => `compare/img/${encodeURIComponent(batch)}/${r.n}-${s}.png`;
+  main.innerHTML = `<div class="pair"><button data-c="L"><img src="${src('L')}" alt="A"></button>`
+    + `<button data-c="R"><img src="${src('R')}" alt="B"></button></div>`
+    + `<button class="eq" data-c="equal">Égal</button>`;
+  main.querySelectorAll('[data-c]').forEach((b) => b.onclick = () => answer(b.dataset.c));
+}
+async function answer(choice) {
+  if (busy) return; busy = true;
+  try {
+    await fetch('compare/api/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch, n: cur, choice }) });
+    await next();
+  } finally { busy = false; }
+}
+next();
+</script>
+</body>
+</html>
