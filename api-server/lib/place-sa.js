@@ -95,27 +95,55 @@ export async function importNetlistSA(model, parsed, opts = {}) {
       pairs.push({ i, j, lp });
     }
   }
+  // global flow: level 0 at VDD, 1 at ground, by graph distance through parts
+  // (humans draw the supply on top, ground at the bottom: the strongest convention)
+  const isSup = (n) => RAIL.test(n) && n !== '0' && !/^(gnd|vss|vee|avss|dvss|agnd|dgnd|vgnd)$/i.test(n);
+  const isGnd = (n) => n === '0' || /^(gnd|vss|vee|avss|dvss|agnd|dgnd|vgnd)$/i.test(n);
+  const dist = (seed) => {
+    const d = new Array(parts.length).fill(Infinity); const q = [];
+    parts.forEach((p, i) => { if (p.pc.nodes.some(seed)) { d[i] = 0; q.push(i); } });
+    while (q.length) { const i = q.shift(); for (let j = 0; j < parts.length; j++) if (d[j] === Infinity && parts[i].pc.nodes.some((n) => !RAIL.test(n) && parts[j].pc.nodes.includes(n))) { d[j] = d[i] + 1; q.push(j); } }
+    return d;
+  };
+  const dV = dist(isSup), dG = dist(isGnd);
+  const level = parts.map((_, i) => (dV[i] === Infinity && dG[i] === Infinity ? 0.5 : dV[i] === Infinity ? 1 : dG[i] === Infinity ? 0 : dV[i] / (dV[i] + dG[i])));
+  // one row: differential pairs (same source, non-rail) and mirrors (same gate and source)
+  const rows = [];
+  for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+    const a = parts[i].pc, b = parts[j].pc;
+    if (a.prefix !== 'M' || b.prefix !== 'M' || parts[i].kind !== parts[j].kind) continue;
+    if ((a.nodes[2] === b.nodes[2] && !RAIL.test(a.nodes[2]) && a.nodes[1] !== b.nodes[1]) || (a.nodes[1] === b.nodes[1] && a.nodes[2] === b.nodes[2])) rows.push([i, j]);
+  }
+  // a pair or mirror shares one level (its two halves can sit at different graph depths)
+  for (const [i, j] of rows) { const m = (level[i] + level[j]) / 2; level[i] = level[j] = m; }
+  const order = [];
+  for (let i = 0; i < parts.length; i++) for (let j = 0; j < parts.length; j++) if (level[i] < level[j] - 0.2) order.push([i, j]);
   const nets = new Map();
   parts.forEach((p, i) => p.pc.nodes.forEach((n) => { if (!RAIL.test(n)) { if (!nets.has(n)) nets.set(n, new Set()); nets.get(n).add(i); } }));
   const netList = [...nets.values()].filter((s) => s.size > 1).map((s) => [...s]);
   const box = (p) => {   // part + its symbols, with a margin
     let x0 = p.x, y0 = p.y, x1 = p.x + p.w, y1 = p.y + p.h;
     for (const t of p.taps) { x0 = Math.min(x0, p.x + t.ox); y0 = Math.min(y0, p.y + t.oy); x1 = Math.max(x1, p.x + t.ox + t.cell.w); y1 = Math.max(y1, p.y + t.oy + t.cell.h); }
-    const m = u * 0.25; return [x0 - m, y0 - m, x1 + m, y1 + m];
+    const m = u * (opts.saMargin ?? 0.6); return [x0 - m, y0 - m, x1 + m, y1 + m];
   };
   const cx = (p) => p.x + p.w / 2, cy = (p) => p.y + p.h / 2;
   const pairCost = (q) => {
     const a = parts[q.i], b = parts[q.j];
     const ix = Math.round(((cx(b) - cx(a)) / u + R) / B), iy = Math.round(((cy(b) - cy(a)) / u + R) / B);
-    return (ix < 0 || iy < 0 || ix >= NB || iy >= NB) ? -Math.min(...q.lp) + 1 : -q.lp[iy * NB + ix];
+    if (ix >= 0 && iy >= 0 && ix < NB && iy < NB) return -q.lp[iy * NB + ix];
+    // beyond the learned range the cost keeps growing, so a stray part is pulled back
+    const ex = Math.max(0, Math.abs((cx(b) - cx(a)) / u) - R) + Math.max(0, Math.abs((cy(b) - cy(a)) / u) - R);
+    return (q.lpMin ??= -Math.min(...q.lp)) + 1 + ex;
   };
   const overlap = (a, b) => { const A = box(a), Bx = box(b); const w = Math.min(A[2], Bx[2]) - Math.max(A[0], Bx[0]), h = Math.min(A[3], Bx[3]) - Math.max(A[1], Bx[1]); return w > 0 && h > 0 ? (w * h) / (u * u) : 0; };
   const hpwl = (s) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const i of s) { x0 = Math.min(x0, cx(parts[i])); x1 = Math.max(x1, cx(parts[i])); y0 = Math.min(y0, cy(parts[i])); y1 = Math.max(y1, cy(parts[i])); } return (x1 - x0 + y1 - y0) / u; };
-  const OV = 30, WL = opts.saWL ?? 1.5, PULL = opts.saPull ?? 0.15;
+  const OV = 30, WL = opts.saWL ?? 1.5, PULL = opts.saPull ?? 0.15, LV = opts.saLevel ?? 3, ROW = opts.saRow ?? 8;
   const cost = () => {
     let c = 0; for (const q of pairs) c += pairCost(q);
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) c += OV * overlap(parts[i], parts[j]);
     for (const s of netList) c += WL * hpwl(s);
+    for (const [i, j] of order) { const d = (cy(parts[i]) - cy(parts[j])) / u; if (d > -0.5) c += LV * (d + 0.5); }   // i must sit above j
+    for (const [i, j] of rows) c += ROW * Math.abs(cy(parts[i]) - cy(parts[j])) / u;
     // compaction: every part is pulled towards the centroid (no stray parts)
     let mx = 0, my = 0; for (const p of parts) { mx += cx(p); my += cy(p); } mx /= parts.length; my /= parts.length;
     for (const p of parts) c += PULL * (Math.abs(cx(p) - mx) + Math.abs(cy(p) - my)) / u;
@@ -141,6 +169,17 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     else { p.x = ox; p.y = oy; if (q) { q.x = qx; q.y = qy; } }
     T = T0 * Math.pow(0.002, (it + 1) / iters);
   }
+  // snap: parts almost on one row (column) share it exactly — mirrors, pairs
+  // and stacks become straight lines (centres within 0.35 u)
+  const snap = (key, set) => {
+    const order = [...parts].sort((a, b) => key(a) - key(b));
+    let grp = [order[0]];
+    const flush = () => { if (grp.length > 1) { const v = grp.map(key).sort((a, b) => a - b)[Math.floor(grp.length / 2)]; for (const p of grp) set(p, v); } };
+    for (const p of order.slice(1)) { if (key(p) - key(grp[grp.length - 1]) < 0.35 * u) grp.push(p); else { flush(); grp = [p]; } }
+    flush();
+  };
+  snap(cy, (p, v) => { p.y = Math.round(v - p.h / 2); });
+  snap(cx, (p, v) => { p.x = Math.round(v - p.w / 2); });
   // mirror source-coupled pairs: gates outwards
   for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
     const a = parts[i], b = parts[j];
