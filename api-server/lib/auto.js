@@ -3,6 +3,8 @@
  * AUTO_CANDIDATES × AUTO_SPACINGS (lib/place4.js) and keep the drawing with
  * the fewest check.js errors (rule 30 aside), then the best published-convention
  * score (lib/conventions.js), then the earlier candidate.
+ * AUTO_RULES=1 (measurement only, not adopted): between the error count and the
+ * conventions, prefer the higher published-layout-rules score (lib/layout-rules.js).
  * Shared by server.js (POST …/netlist/import?engine=auto) and the bench tools,
  * so what is measured is exactly what is served.
  */
@@ -12,6 +14,7 @@ import { importNetlist4, AUTO_CANDIDATES, AUTO_SPACINGS } from './place4.js';
 import { routePage } from './route.js';
 import { checkDocument } from './check.js';
 import { conventionReport } from './conventions.js';
+import { layoutRulesScore } from './layout-rules.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 
@@ -31,14 +34,24 @@ async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   if (!lvsOk) return { eng, restMode, sp, extra, doc, placed, errs: Infinity, conv: 0, lvsFailed: true };
   const errs = checkDocument(m).violations.filter((v) => v.severity === 'error' && v.rule !== '30').length;
   let conv = 0; try { conv = conventionReport(m, parsed).score ?? 0; } catch { /* no geometry */ }
-  return { eng, restMode, sp, extra, doc, placed, errs, conv };
+  let rules = null;
+  if (process.env.AUTO_RULES === '1') { try { rules = layoutRulesScore(m).score; } catch { /* no geometry */ } }
+  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules };
 }
+
+// rules scores closer than this count as equal (then conventions decide)
+const RULES_EPS = 0.02;
+const better = (b, a) => {
+  if (b.errs !== a.errs) return b.errs < a.errs;
+  if (b.rules != null && a.rules != null && Math.abs(b.rules - a.rules) > RULES_EPS) return b.rules > a.rules;
+  return b.conv > a.conv + 1e-9;
+};
 
 /** Returns {doc, placed, label, trials:{label:{errors, conventions}}} or throws
  *  when every candidate failed. */
 export async function autoPlace(parsed) {
   const trials = await Promise.all(AUTO_SPACINGS.flatMap((sp) => AUTO_CANDIDATES.map(([eng, mode, extra]) => trial(parsed, eng, mode, sp, extra || {}))));
-  let win = trials.reduce((a, b) => (b.errs < a.errs || (b.errs === a.errs && b.conv > a.conv + 1e-9) ? b : a));
+  let win = trials.reduce((a, b) => (better(b, a) ? b : a));
   // STACK-FIRST BAND (experiment, AUTO_BAND=N): among candidates within N
   // check.py-like errors of the best, prefer the branch-column drawings
   // (v2+branches, then v2) — one error decided a scatter of islands over a
@@ -56,5 +69,5 @@ export async function autoPlace(parsed) {
     if (!any) { const e = new Error('auto: every engine failed: ' + trials.map((t) => t.error).join(' | ')); e.status = 422; throw e; }
     return { doc: any.doc, placed: any.placed, label: candidateLabel(any), trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed }])) };
   }
-  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed }])) };
+  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules }])) };
 }

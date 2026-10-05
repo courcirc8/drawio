@@ -131,6 +131,13 @@ for size in ('3-6', '7-12', '13-25', '26+'):
     rules, where, n = rules_for('__none__', size)
     print(f'  {where:22s} n={n:5d}  ' + '  '.join(f'{k} {lv:.2f}/{bl:.2f}' for k, (lv, bl) in rules.items()))
 
+if '--export' in args:   # size-only strata (auto does not know the circuit family): numbers only, safe for git
+    out = {size: {k: [round(lv, 3), round(bl, 3)] for k, (lv, bl) in rules_for('__none__', size)[0].items()}
+           for size in ('3-6', '7-12', '13-25', '26+')}
+    json.dump({'source': f'DVD 2001/2008 schematics, train+val papers, {MODEL} boxes, n={len(feat)}', 'rules': out},
+              open(os.path.join(HERE, '../../data/layout-rules.json'), 'w'), indent=1)
+    print('exported data/layout-rules.json'); sys.exit(0)
+
 # checks on our drawings (detector gd1 run on the renders)
 st = load('st', 'self-train.py')
 import torch                                     # noqa: E402
