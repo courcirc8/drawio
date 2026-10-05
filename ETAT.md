@@ -237,6 +237,15 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   familles réservées non utilisées pour régler quoi que ce soit (règles tirées des DVD seulement).
   PAS dans auto. Proposition à Eric : mesurer sur le banc par familles l'effet d'un critère « règles » en
   départage après les erreurs check.js (tune seulement), puis décider.
+- MESURE BANC (Eric : oui ; tune seulement ; runs `rules0-tune` / `rules1-tune`, AUTO_RULES=1, `lib/layout-rules.js`
+  sur la géométrie exacte, table `data/layout-rules.json` par taille seulement) : RÈGLES EN DÉPARTAGE = PIRE.
+    banque d'origine (1 214) : zéro erreur 57,7 → 55,6 %, > 3:1 6,8 → 7,5 %, croisements/c 5,4 → 5,7
+    open PDK (815)           : zéro erreur 34,4 → 32,9 %, > 3:1 13,3 → 19,1 %, croisements/c 41,8 → 42,4
+    choix changés (547/2 029, surtout v4:split → v2 : 198) : zéro erreur 59 → 52 %, > 3:1 3,7 → 14,1 %, crois. 7,8 → 9,2
+  Les règles récompensent rangées et alignements, que v2 donne au prix de dessins allongés ; l'élongation n'est pas
+  une règle. 1645 : départage sans effet (auto garde v4:one, 1 erreur contre 2). RECOMMANDATION : ne pas adopter tel
+  quel (AUTO_RULES reste éteint). Les mesures du banc (erreurs check.py, proportions, croisements) et les règles sont
+  deux mesures indirectes de la lisibilité qui se contredisent ; seul l'œil d'Eric peut trancher.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
