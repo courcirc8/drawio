@@ -223,6 +223,20 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   pas la disposition. Le juge v2 n'est PAS utilisable. Pistes (décision Eric) : (1) comparaison à contenu égal
   (statistiques DVD conditionnées par le type de circuit et la taille) ; (2) se reposer sur le jugement Ornith par paires
   (fiable en relatif selon l'audit RAG) + la page de correction d'Eric ; (3) arrêter le juge appris.
+- ERIC : option (1). JUGE v2b = `tools/judge/layout-rules.py` : règles lisibles à contenu égal (type de légende ×
+  taille 3-6/7-12/13-25/26+, repli sur la taille si < 30 figures), mesurées sur 8 878 figures DVD (papiers train+val,
+  boîtes gd1). Pour chaque trait (colonnes, rangées, paires MOS côte à côte, symétrie, empilement, vdd au-dessus,
+  gnd en dessous) : niveau publié = médiane DVD ; base = médiane après dispersion aléatoire des centres ; règle si
+  niveau − base > 0,05. Satisfaction UNILATÉRALE plafonnée au niveau publié (plus régulier que les scans n'est jamais
+  pénalisé) ; score = moyenne pondérée par niveau − base.
+  VALIDATION : témoin 1645 PASS (v2+branches 0,995 ; dispersion auto 0,462 : rangées 0, vdd au-dessus 0,38) ;
+  variantes : v2b préféré dans 2 575 circuits, auto 481, égalité 1 397 ; style |Δ| : échelle 0,019, scan 0,042,
+  trait épais 0,088 (31 % > 0,1 : point faible, la détection change avec le trait).
+  LIMITES : saturation vers 1 pour nos dessins réguliers (sert à repérer les dispersions, pas à départager deux
+  dessins propres) ; conçu après l'échec de v2 (risque de biais de conception, mais rien d'ajusté sur 1645) ;
+  familles réservées non utilisées pour régler quoi que ce soit (règles tirées des DVD seulement).
+  PAS dans auto. Proposition à Eric : mesurer sur le banc par familles l'effet d'un critère « règles » en
+  départage après les erreurs check.js (tune seulement), puis décider.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
