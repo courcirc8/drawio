@@ -277,6 +277,13 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   Les deux sont ACTIVÉS PAR DÉFAUT (AUTO_BASICS=0 / P4_POLARITY=0 pour revenir). Tests 274/0.
   Restent : coudes en excès (5,2/circuit origine, 13/circuit open PDK : le routeur) et pièces isolées (0,35 / 1,7).
   3. Série aveugle `compare/basics-1` (15 paires tune, ancien auto contre nouveau) prête pour Eric.
+- SÉRIE basics-1 : égal 10, nouveau 4, ancien 1. ERIC : « c'est mauvais… il faut envisager d'autres alternatives
+  d'algo ». Constat : tout le travail a porté sur JUGER/CHOISIR entre les dessins d'un placeur à règles ; on n'a
+  jamais APPRIS le placement sur des dessins humains. Données humaines disponibles (netlist + dessin) :
+  AMSNet 734 (images + boîtes + netlists), Masala-CHAI 1 815 images de manuels (netlists AnalogGenie = transcriptions),
+  DVD IEEE 13 562 figures (boîtes du détecteur gd1, lectures Ornith ; privé). Les .asc LTspice / .kicad_sch d'origine
+  n'ont pas été gardés (seulement les .net). Alternatives proposées à Eric : voir message du 5 oct. (placement par
+  l'exemple ; recuit simulé avec objectif appris des dessins humains ; placeur appris (GNN) ; LLM placeur).
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
