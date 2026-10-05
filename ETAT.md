@@ -207,6 +207,12 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   puis `self-train.py --boxes --gen-box` (fenêtres 1 600 px, moitié dégradées scan) ; mesure du rappel sur 10 % de nos
   rendus mis de côté. Ensuite : refaire detect-all (DVD + nos rendus) et layout-judge ; exiger rappel comparable des
   deux côtés AVANT de lire l'AUC.
+- Détecteur sur nos rendus : gb (2 634 rendus, 88 DVD) → rappel chez nous 0,93-1,0 mais DVD en recul (nmos 31 → 18 %) ;
+  gc (660 rendus/tour, DVD ×4) → DVD encore en recul (nmos 23 %, C 38 %) ; boîtes resserrées à l'encre : sans effet
+  (nos MOS incluent leurs pattes jusqu'au bord de cellule), abandonné. RETENU : gd1 = `--boxes --loose-pseudo --gen-box
+  --gen-n 400 --pseudo-rep 1` depuis sb3 (1 976 figures DVD pseudo-étiquetées) : DVD propre nmos 30 %, pmos 10 %,
+  R 61 %, C 56 % (≈ sb3), rappel chez nous 0,87-1,0. detect-all + layout-judge relancés avec gd1.
+  Repli si le juge reste biaisé : dégrader nos rendus en « scan » avant détection (mêmes erreurs des deux côtés).
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes

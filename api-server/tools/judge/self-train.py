@@ -44,6 +44,8 @@ ROUNDS, EPOCHS, GPU = opt('--rounds', 3), opt('--epochs', 6), opt('--gpu', 1)
 START = opt('--start', 'detector-v2')
 TAG, SIZE, BOXES = opt('--tag', 'st'), opt('--size', 800), '--boxes' in args
 GENBOX = '--gen-box' in args
+GEN_N, PSEUDO_REP = opt('--gen-n', 660), opt('--pseudo-rep', 4)
+LOOSE = '--loose-pseudo' in args   # with --boxes: clean eval, but pseudo-labels by the count filter only (more DVD figures)   # balance: our renders must not swamp the DVD
 KEEP, EXTRA, LOW = opt('--keep', 0.5), opt('--extra', 0.5), 0.2
 MAXSIDE = 1600
 ROOT = '/AI/datasets/judge'
@@ -128,7 +130,7 @@ def counts_match(figs, det, thr):
 
 def pseudo(f, dets):
     keep = []
-    if BOXES and f['cnt2'] != f['cnt']:
+    if BOXES and not LOOSE and f['cnt2'] != f['cnt']:
         return None
     for k in KIND:
         cand = sorted((d for d in dets if d[1] == k), key=lambda d: -d[2])
@@ -140,7 +142,7 @@ def pseudo(f, dets):
         for j in range(i + 1, len(keep)):
             if tdet.iou(keep[i][0], keep[j][0]) > 0.5:
                 return None
-    if BOXES and not centres_pair(f, keep):
+    if BOXES and not LOOSE and not centres_pair(f, keep):
         return None
     keep += [d for d in dets if d[1] in FREE and d[2] >= 0.7]
     return keep
@@ -258,7 +260,7 @@ if __name__ == '__main__':
         items = [(f['n'], p) for f in pool if (p := pseudo(f, dp[f['n']])) is not None and p]
         print(f'round {r + 1}: {len(items)} of {len(pool)} pool figures pseudo-labelled', flush=True)
         log[-1]['pseudo'] = len(items)
-        dl = torch.utils.data.DataLoader(Mixed(ams_tr, items, gb['train']), batch_size=4, shuffle=True, num_workers=6, collate_fn=lambda b: tuple(zip(*b)))
+        dl = torch.utils.data.DataLoader(Mixed(ams_tr, items * PSEUDO_REP, random.sample(gb['train'], min(GEN_N, len(gb['train'])))), batch_size=4, shuffle=True, num_workers=6, collate_fn=lambda b: tuple(zip(*b)))
         o = torch.optim.SGD([p for p in m.parameters() if p.requires_grad], lr=0.005, momentum=0.9, weight_decay=1e-4)
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(o, EPOCHS * len(dl))
         for ep in range(EPOCHS):
