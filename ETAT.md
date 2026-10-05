@@ -167,6 +167,15 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   un autre juge qu'Ornith avant de conclure. EN ATTENTE d'Eric : (a) auditeurs Opus sur ~40 figures DVD — images hors
   station, contraire à la règle, donc seulement sur accord explicite ; (b) Eric compte 30 figures sur page mobile ;
   (c) à défaut, concordance de 3 signaux et comparaisons relatives entre versions seulement.
+- DÉCISION ERIC (5 oct., relayée par l'orchestrateur puis confirmée directement à cette session) : option (a).
+  RÈGLE GÉNÉRALE : les audits par Claude sont autorisés sur des ÉCHANTILLONS (quelques centaines de figures au plus),
+  jamais sur le corpus entier, sans aucune copie conservée hors d'ai-station ; l'usage courant reste local (Ornith).
+  Exclure les 50 scellés et leurs variantes (ils viennent de la banque de netlists, pas des figures DVD).
+  Proposition pour le CLAUDE.md du projet (à valider par Eric, non appliquée) : « Corpus IEEE : rien ne sort
+  d'ai-station, sauf audits par Claude sur échantillon (≤ quelques centaines), sans copie conservée ailleurs. »
+- Jeu de contrôle : `/AI/datasets/judge/audit/control-40.json` (40 figures des papiers de mesure, 15 petites, 15 moyennes,
+  10 grandes). Le classifieur de permissions a bloqué 2 des 4 auditeurs : seules 20 figures (1-10, 21-30) sont auditées ;
+  les 20 autres restent à la main d'Eric (règle de permission à ajouter s'il veut les faire auditer).
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
