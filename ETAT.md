@@ -246,6 +246,16 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   une règle. 1645 : départage sans effet (auto garde v4:one, 1 erreur contre 2). RECOMMANDATION : ne pas adopter tel
   quel (AUTO_RULES reste éteint). Les mesures du banc (erreurs check.py, proportions, croisements) et les règles sont
   deux mesures indirectes de la lisibilité qui se contredisent ; seul l'œil d'Eric peut trancher.
+- SÉRIE ERIC `compare/rules-1` (15 paires aveugles, tune) : règles 6, actuel 3, égal 6. VERDICT D'ERIC : les 15 sont
+  « entre mauvais et très mauvais, plein de règles de base non suivies ». Le départage est secondaire : c'est le
+  moteur qui dessine mal, et check.py/check.js ne voient pas ces défauts (ces dessins ont 0 à 2 erreurs).
+  Défauts vus sur nos propres rendus (paires 5 et 10) : PMOS tête en bas (source en bas, VDD sous le transistor) ;
+  PMOS en bas de page sous les NMOS ; fil traversant un symbole ; symbole VDD posé sur un fil de net (paire 5, sous
+  M2/M3) ; étiquette de composant sur un fil ; extrémité de fil pendante ; fils superposés ; bancs de test (sources,
+  sondes) éparpillés au milieu du circuit ; connexions par étiquettes au lieu de fils pour des nets voisins ;
+  très longs fils traversant la page.
+  PROCHAINE ÉTAPE proposée : faire de ces règles de base des ERREURS de check.js/check.py (vérifiées sur les 15 paires),
+  puis corriger le moteur contre elles ; la note du banc n'a de sens qu'une fois ces règles dedans.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
