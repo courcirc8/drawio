@@ -19,7 +19,10 @@ its kind within 10 % of the image width, and the eval counts only the figures
 where both readings agree (the transistor counts of a single reading agree with
 a second reading only 14 % of the time: too noisy to measure against).
 Usage: python3 tools/judge/self-train.py [--rounds 3] [--epochs 6] [--gpu 1] [--start detector-v2]
-       [--boxes] [--tag st] [--size 1200]
+       [--boxes] [--tag st] [--size 1200] [--gen-box]
+--gen-box adds our own renders with their exact boxes (render-gen-boxes.mjs, train-split
+circuits; 10 % of them held out by id for a recall check), cropped to 1600 px windows
+(some of our drawings are 10 000 px wide), half of them scan-degraded like AMSNet.
 Writes /AI/datasets/judge/models/detector-<tag><r>.pt and <tag>.json."""
 import hashlib, json, os, random, sqlite3, sys
 import torch
@@ -40,6 +43,7 @@ opt = lambda k, d: type(d)(args[args.index(k) + 1]) if k in args else d
 ROUNDS, EPOCHS, GPU = opt('--rounds', 3), opt('--epochs', 6), opt('--gpu', 1)
 START = opt('--start', 'detector-v2')
 TAG, SIZE, BOXES = opt('--tag', 'st'), opt('--size', 800), '--boxes' in args
+GENBOX = '--gen-box' in args
 KEEP, EXTRA, LOW = opt('--keep', 0.5), opt('--extra', 0.5), 0.2
 MAXSIDE = 1600
 ROOT = '/AI/datasets/judge'
@@ -157,9 +161,51 @@ def centres_pair(f, keep):
     return True
 
 
+def gen_box_items():
+    out = {'train': [], 'val': []}
+    for f in sorted(os.listdir(f'{ROOT}/gen-box')):
+        if f.startswith('boxes-'):
+            for r in map(json.loads, open(f'{ROOT}/gen-box/{f}')):
+                if r['boxes']:
+                    h = int(hashlib.sha1(('gb:' + r['id']).encode()).hexdigest()[:8], 16) / 0xffffffff
+                    out['val' if h < 0.1 else 'train'].append(r)
+    return out
+
+
+def gen_window(r, win=1600):
+    """Our render, cropped to a random window (boxes whose centre falls inside, clipped)."""
+    im = Image.open(f'{ROOT}/gen-box/{r["file"]}').convert('RGB'); W, H = im.size
+    x0 = random.randint(0, max(0, W - win)); y0 = random.randint(0, max(0, H - win))
+    x1, y1 = min(W, x0 + win), min(H, y0 + win)
+    bx = [[max(b[0], x0) - x0, max(b[1], y0) - y0, min(b[2], x1) - x0, min(b[3], y1) - y0, b[4]] for b in r['boxes']
+          if x0 <= (b[0] + b[2]) / 2 < x1 and y0 <= (b[1] + b[3]) / 2 < y1]
+    return im.crop((x0, y0, x1, y1)), [b for b in bx if b[2] > b[0] + 1 and b[3] > b[1] + 1]
+
+
+def gen_recall(m, val, thr=0.5):
+    """Recall / precision per class at IoU >= 0.5 on held-out renders of ours (first window)."""
+    m.eval(); tp = {c: 0 for c in C[1:]}; fp = dict(tp); fn = dict(tp)
+    random.seed(7)
+    with torch.no_grad():
+        for r in val:
+            im, gt = gen_window(r)
+            if not gt:
+                continue
+            o = m([TF.to_tensor(im).to(dev)])[0]
+            pb = [(b.tolist(), C[int(l)]) for b, l, s in zip(o['boxes'].cpu(), o['labels'].cpu(), o['scores'].cpu()) if s >= thr]
+            used = set()
+            for bb, c in pb:
+                j = next((j for j, g in enumerate(gt) if j not in used and g[4] == c and tdet.iou(bb, g[:4]) >= 0.5), None)
+                if j is None: fp[c] += 1
+                else: tp[c] += 1; used.add(j)
+            for j, g in enumerate(gt):
+                if j not in used: fn[g[4]] += 1
+    return {c: (round(tp[c] / max(1, tp[c] + fn[c]), 2), round(tp[c] / max(1, tp[c] + fp[c]), 2), tp[c] + fn[c]) for c in C[1:] if tp[c] + fn[c]}
+
+
 class Mixed(torch.utils.data.Dataset):
-    def __init__(self, ams, pseudo_items):
-        self.items = [('a', i) for i in ams] + [('p', p) for p in pseudo_items]
+    def __init__(self, ams, pseudo_items, gen=()):
+        self.items = [('a', i) for i in ams] + [('p', p) for p in pseudo_items] + [('g', g) for g in gen]
     def __len__(self):
         return len(self.items)
     def __getitem__(self, k):
@@ -168,6 +214,12 @@ class Mixed(torch.utils.data.Dataset):
             im, b, l = tdet.load(it)
             if random.random() < 0.8:
                 im = tdet.scan_like(im)
+        elif src == 'g':
+            im, bx = gen_window(it)
+            if random.random() < 0.5:
+                im = tdet.scan_like(im)
+            b = torch.tensor([d[:4] for d in bx], dtype=torch.float32).reshape(-1, 4)
+            l = torch.tensor([C.index(d[4]) for d in bx], dtype=torch.int64)
         else:
             n, boxes = it
             im = load_pub(n)
@@ -188,12 +240,17 @@ if __name__ == '__main__':
     print(f'DVD figures with a reading: pool {len(pool)}, eval {len(ev)}', flush=True)
     m = new_model(); m.load_state_dict(torch.load(f'{ROOT}/models/{START}.pt', map_location='cpu', weights_only=True)); m.to(dev)
     m.transform.min_size, m.transform.max_size = (SIZE,), max(1333, SIZE * 5 // 3)
+    gb = gen_box_items() if GENBOX else {'train': [], 'val': []}
+    if GENBOX:
+        print(f'our renders with boxes: train {len(gb["train"])}, val {len(gb["val"])}', flush=True)
     log = []
     for r in range(ROUNDS + 1):
         de = detect(m, ev)
         rep = {'round': r, 'eval': {str(t): counts_match(ev, de, t) for t in (0.5, 0.7)}}
         if r:
             rep['amsnet_val'] = tdet.evaluate(m, ams_va)
+        if GENBOX:
+            rep['ours_val (recall, precision, n)'] = gen_recall(m, gb['val'])
         print(json.dumps(rep), flush=True); log.append(rep)
         if r == ROUNDS:
             break
@@ -201,7 +258,7 @@ if __name__ == '__main__':
         items = [(f['n'], p) for f in pool if (p := pseudo(f, dp[f['n']])) is not None and p]
         print(f'round {r + 1}: {len(items)} of {len(pool)} pool figures pseudo-labelled', flush=True)
         log[-1]['pseudo'] = len(items)
-        dl = torch.utils.data.DataLoader(Mixed(ams_tr, items), batch_size=4, shuffle=True, num_workers=6, collate_fn=lambda b: tuple(zip(*b)))
+        dl = torch.utils.data.DataLoader(Mixed(ams_tr, items, gb['train']), batch_size=4, shuffle=True, num_workers=6, collate_fn=lambda b: tuple(zip(*b)))
         o = torch.optim.SGD([p for p in m.parameters() if p.requires_grad], lr=0.005, momentum=0.9, weight_decay=1e-4)
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(o, EPOCHS * len(dl))
         for ep in range(EPOCHS):

@@ -197,6 +197,16 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
     det-sb3   nmos .65/1.1 pmos .72/1.0 R .72/2.5 C .78/1.1 mos .65/1.3
   Conclusion confirmée : détecteur auto-entraîné ≈ meilleure lecture Ornith (mieux en MOS), ≫ v2. Retenir sb3 (ou st3).
 - Eric (5 oct.) : forfait Claude serré → plus de sous-agents Claude sans demander ; déléguer à Ornith (lai-delegate).
+- JUGE v2, 1er essai (`detect-all.py` sb3 sur 13 562 DVD + 9 210 rendus à nous ; `layout-stats.py` : traits de disposition
+  tirés des seules boîtes ; `layout-judge.py` : régression logistique). Invariance au style bien meilleure que v1
+  (épais Δ 0,08 contre 0,31 ; scan 0,06 contre 0,20), MAIS invalide : le détecteur ne trouve qu'une médiane de 14 % des
+  composants de NOS dessins (masse : 1 détection en tout), seuls 4 620 sur 9 210 ont ≥ 3 pièces, le témoin 1645 « auto »
+  n'a rien de détecté ; l'AUC 0,82 mesure surtout « détecteur aveugle à notre style » (fuite de style par le détecteur).
+- CORRECTIF en cours : `render-gen-boxes.mjs` rend nos circuits (split train seulement) avec les boîtes exactes
+  (géométrie des cellules × mapping d'export ; points de jonction cachés exclus ; vérifié à l'œil sur un rendu à nous),
+  puis `self-train.py --boxes --gen-box` (fenêtres 1 600 px, moitié dégradées scan) ; mesure du rappel sur 10 % de nos
+  rendus mis de côté. Ensuite : refaire detect-all (DVD + nos rendus) et layout-judge ; exiger rappel comparable des
+  deux côtés AVANT de lire l'AUC.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
