@@ -176,6 +176,19 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
 - Jeu de contrôle : `/AI/datasets/judge/audit/control-40.json` (40 figures des papiers de mesure, 15 petites, 15 moyennes,
   10 grandes). Le classifieur de permissions a bloqué 2 des 4 auditeurs : seules 20 figures (1-10, 21-30) sont auditées ;
   les 20 autres restent à la main d'Eric (règle de permission à ajouter s'il veut les faire auditer).
+- self-train --boxes (filtre strict, 70 → 86 figures gardées) → `detector-sb3.pt`. Mesure sur les figures où les deux
+  lectures s'accordent : NMOS 26 → 31 %, PMOS 12 → 14 %, R 54 → 58 %, C 49 → 55 % ; plafond dès le tour 2.
+- AUDIT OPUS (20 figures, chiffres seuls dans /AI/datasets/judge/audit/opus-*.json ; `tools/judge/audit-compare.py`),
+  compte exact / écart moyen :
+    ornith-1  nmos .65/.7  pmos .80/.3  R .80/2.6  C .85/.3  mos .60/1.0
+    ornith-2  nmos .60/.9  pmos .60/1.4 R .55/2.4  C .65/.6  mos .55/1.7
+    det-v2    nmos .60/1.1 pmos .55/1.2 R .75/2.8  C .70/1.1 mos .40/2.0
+    det-st3   nmos .60/1.5 pmos .70/1.0 R .90/2.1  C .80/.5  mos .75/1.0
+    det-sb3   nmos .65/1.4 pmos .75/1.3 R .90/2.1  C .85/.5  mos .65/1.5
+  (mos = nmos+pmos, vérité incluant les MOS de polarité indécidable : 26 des 98 MOS comptés par Opus.)
+  Lecture : l'auto-apprentissage a amené le détecteur au niveau de la 1re lecture Ornith (mieux en R et en total MOS),
+  nettement au-dessus de v2. Échantillon minuscule : ordre de grandeur, pas chiffre. La polarité MOS sur scan est
+  souvent indécidable même pour Opus → pour le juge de disposition, raisonner en « MOS » plutôt qu'en nmos/pmos.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
