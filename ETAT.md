@@ -256,6 +256,17 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   très longs fils traversant la page.
   PROCHAINE ÉTAPE proposée : faire de ces règles de base des ERREURS de check.js/check.py (vérifiées sur les 15 paires),
   puis corriger le moteur contre elles ; la note du banc n'a de sens qu'une fois ces règles dedans.
+- Eric (précisions) : paires différentielles non montrées en miroir ; entrées avec des coudes inutiles ; composants
+  seuls dans un coin ; « très brouillon, ne ressemble pas à un schéma d'humain ».
+- `lib/basics.js` (règles de base, contrôles par instance) : mos-upside-down, pmos-below-nmos, pair-not-mirrored,
+  input-bends, isolated (pièce loin de toute pièce avec qui elle partage un net non-rail : > 3× la médiane et
+  > 4 hauteurs). Sur les 30 dessins revus : pmos-below-nmos 28, isolated 25, pair-not-mirrored 3, input-bends 1,
+  mos-upside-down 0 (vérifié : les PMOS ont bien la source en haut ; ma lecture visuelle de la paire 10 était fausse).
+  Accord avec Eric quand il a choisi un côté : 5 fois le côté préféré a moins de violations, 1 fois l'inverse, 3 égalités.
+  Plusieurs dessins jugés mauvais ont 0 violation (paires 4, 9, 13, 15) : règles incomplètes (désordre général,
+  coudes, étiquettes sur fils — ces deux derniers existent en AVERTISSEMENTS check.py, ignorés partout).
+  SUITE proposée : basics comme métrique du banc + critère d'auto (après les erreurs), puis corriger le moteur
+  d'abord sur pmos-below-nmos et isolated (les deux plus fréquents).
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
