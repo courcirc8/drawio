@@ -10,7 +10,10 @@ Checks printed (nothing is plugged into engine=auto by this script):
      scan-like, re-detected, re-scored: |Δscore|;
   3. witness bandgap analoggenie/1645: v2+branches must beat the auto scatter;
   4. variants of the same circuit: which variant the judge prefers.
-Usage: python3 tools/judge/layout-judge.py [--model detector-sb3] [--n 200] [--gpu 1]
+--reliable keeps only the DVD figures whose detected MOS/R/C counts equal BOTH Ornith
+readings (reliable-dvd-keys.json): detector noise on scans made messy layouts look
+"published" (first gd1 run failed the 1645 witness).
+Usage: python3 tools/judge/layout-judge.py [--model detector-sb3] [--n 200] [--gpu 1] [--reliable]
 Writes /AI/datasets/judge/models/layout-judge-v2.json (weights, mean, std)."""
 import json, os, random, sys
 import importlib.util
@@ -20,6 +23,7 @@ HERE = os.path.dirname(__file__)
 args = sys.argv
 MODEL = args[args.index('--model') + 1] if '--model' in args else 'detector-sb3'
 N = int(args[args.index('--n') + 1]) if '--n' in args else 200
+RELIABLE = set(json.load(open('/AI/datasets/judge/reliable-dvd-keys.json'))) if '--reliable' in args else None
 
 
 def load(name, path):
@@ -41,6 +45,8 @@ X, y, sp, fam, keys = [], [], [], [], []
 for side, lab in (('dvd', 1), ('gen', 0)):
     for l in open(f'{ROOT}/layout-{side}.jsonl'):
         r = json.loads(l)
+        if lab and RELIABLE is not None and r['key'] not in RELIABLE:
+            continue
         if lab:
             s = split_of('pub:' + r['key'].split('|')[0]); fm = PUB_FAM.get(pub_type.get(r['n']), 'other')
         else:

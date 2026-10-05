@@ -213,6 +213,16 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   --gen-n 400 --pseudo-rep 1` depuis sb3 (1 976 figures DVD pseudo-étiquetées) : DVD propre nmos 30 %, pmos 10 %,
   R 61 %, C 56 % (≈ sb3), rappel chez nous 0,87-1,0. detect-all + layout-judge relancés avec gd1.
   Repli si le juge reste biaisé : dégrader nos rendus en « scan » avant détection (mêmes erreurs des deux côtés).
+- JUGE v2 avec gd1 : ÉCHEC DE VALIDATION. Traits présents des deux côtés (DVD 9 871, nous 8 956), AUC 0,865, invariance
+  au style bonne (épais Δ 0,08, scan 0,03, échelle 0,02-0,03) ; MAIS témoin 1645 : v2+branches 0,08 < dispersion auto
+  0,30 → FAIL ; préfère auto dans 3 142 circuits contre 1 311. Il pénalise la régularité (nos rangées 0,85 contre 0,68,
+  paires MOS côte à côte 0,62 contre 0,24) : le bruit de détection sur scan rend les DVD « désordonnées ».
+  Variante `--reliable` (719 figures DVD où détecteur = les deux lectures Ornith) : AUC 0,907, témoin encore FAIL
+  (0,005 contre 0,10), auto préféré 2 899 contre 1 554 ; ce sous-ensemble est biaisé vers les petits circuits (peu de MOS).
+  DIAGNOSTIC : le cadrage « publié contre nous » apprend les différences de contenu des circuits et de bruit de détection,
+  pas la disposition. Le juge v2 n'est PAS utilisable. Pistes (décision Eric) : (1) comparaison à contenu égal
+  (statistiques DVD conditionnées par le type de circuit et la taille) ; (2) se reposer sur le jugement Ornith par paires
+  (fiable en relatif selon l'audit RAG) + la page de correction d'Eric ; (3) arrêter le juge appris.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
