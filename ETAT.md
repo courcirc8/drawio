@@ -189,6 +189,14 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   Lecture : l'auto-apprentissage a amené le détecteur au niveau de la 1re lecture Ornith (mieux en R et en total MOS),
   nettement au-dessus de v2. Échantillon minuscule : ordre de grandeur, pas chiffre. La polarité MOS sur scan est
   souvent indécidable même pour Opus → pour le juge de disposition, raisonner en « MOS » plutôt qu'en nmos/pmos.
+- AUDIT COMPLET 40 figures (Eric a ajouté la règle Read pour pub-raw) :
+    ornith-1  nmos .57/1.8 pmos .70/.8  R .75/1.9 C .78/.5  mos .60/1.2
+    ornith-2  nmos .50/2.1 pmos .57/1.2 R .53/1.9 C .62/1.2 mos .45/2.2
+    det-v2    nmos .50/1.4 pmos .53/1.4 R .53/3.3 C .68/1.6 mos .35/2.7
+    det-st3   nmos .60/1.2 pmos .65/.9  R .70/2.5 C .72/.8  mos .68/1.1
+    det-sb3   nmos .65/1.1 pmos .72/1.0 R .72/2.5 C .78/1.1 mos .65/1.3
+  Conclusion confirmée : détecteur auto-entraîné ≈ meilleure lecture Ornith (mieux en MOS), ≫ v2. Retenir sb3 (ou st3).
+- Eric (5 oct.) : forfait Claude serré → plus de sous-agents Claude sans demander ; déléguer à Ornith (lai-delegate).
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
