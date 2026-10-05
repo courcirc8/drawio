@@ -32,7 +32,7 @@ import { newDocument, getPage, normalizeOrigin, allCells, cellInfo, addWire, por
 import { importNetlist2 } from './place2.js';
 import { routePage, pinAbs } from './route.js';
 import { detectMotifs } from './motifs.js';
-import { detectStructures } from './patterns.js';
+import { detectStructures, isPmosLike } from './patterns.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES } from './components.js';
 import { getPin } from './stencils.js';
 import { preserveElectricalData } from './electrical-data.js';
@@ -300,8 +300,26 @@ export async function importNetlist4(model, parsed, opts = {}) {
   }
   let maxRank = Math.max(...rank.values());
   for (const b of blocks) if (!rank.has(b.id)) rank.set(b.id, ++maxRank);
+  // POLARITY (default on; P4_POLARITY=0 disables. Measured 2026-10-05 after Eric's review: PMOS drawn
+  // below the NMOS of their own branch): level 0 = PMOS block, 2 = NMOS block;
+  // a PMOS block sharing a drain net with an NMOS block joins that block's
+  // column, and every column is ordered supply-side first.
+  // tune bench with basics selection: PMOS-below-NMOS 1.11 -> 0.61 per circuit
+  // (original bank), 3.15 -> 1.06 (open PDK); zero-error 58.3 -> 59.8 %, LVS 100 %.
+  const POLARITY = process.env.P4_POLARITY !== '0';
+  const comp = new Map(parsed.components.map((c) => [c.ref, c]));
+  const mosOf = (b) => b.refs.map((r) => comp.get(r)).filter((c) => c && c.prefix === 'M');
+  const level = (b) => { const m = mosOf(b); if (!m.length) return 1; const np = m.filter((c) => isPmosLike(c)).length; return np * 2 > m.length ? 0 : np * 2 < m.length ? 2 : 1; };
+  if (POLARITY) {
+    for (const p of blocks) for (const q of blocks) {
+      if (p === q || level(p) !== 0 || level(q) !== 2) continue;
+      const pd = new Set(mosOf(p).filter((c) => isPmosLike(c)).map((c) => c.nodes[0]));
+      if (mosOf(q).some((c) => !isPmosLike(c) && pd.has(c.nodes[0]))) rank.set(p.id, rank.get(q.id));
+    }
+  }
   const byRank = [];
   for (const b of blocks) { const r = rank.get(b.id); (byRank[r] = byRank[r] || []).push(b); }
+  if (POLARITY) for (const col of byRank) if (col) col.sort((a, b2) => level(a) - level(b2));
   // at most ROWS blocks per column: a rank with six BJT stages stacked
   // vertically made a 2 800 px sheet with 1 500 px inter-block wires
   const ROWS = 2;
@@ -314,7 +332,7 @@ export async function importNetlist4(model, parsed, opts = {}) {
     if (ci > 0) {
       col.sort((a, b2) => {
         const bary = (blk) => { const prev = [...adj.get(blk.id)].filter(([nb]) => rank.get(nb) === ci - 1); return prev.length ? prev.reduce((s, [nb]) => s + rowOf.get(nb), 0) / prev.length : 1e9; };
-        return bary(a) - bary(b2);
+        return (POLARITY ? (level(a) - level(b2)) * 1e12 : 0) + bary(a) - bary(b2);
       });
     }
     col.forEach((blk, i) => rowOf.set(blk.id, i));

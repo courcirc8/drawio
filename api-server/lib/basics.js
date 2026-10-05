@@ -12,6 +12,7 @@
  *   pair-not-mirrored a differential pair whose two devices are not on one row,
  *                     or whose gates do not face outwards (mirror image)
  *   input-bends       a wire from an input port with more than one bend
+ *   excess-bends      any wire with more than two bends (a detour)
  *   isolated          a part far from every part it is wired to (nearest part
  *                     sharing a non-rail net > 3x the median of that distance
  *                     over the page, and > 4 part heights): alone in a corner,
@@ -76,6 +77,12 @@ export function basicsReport(model, parsed) {
     if (roles[net] !== 'input' && roles[net.toLowerCase()] !== 'input') continue;
     const pl = polylineOf(e, byId);
     if (pl && pl.length - 2 > 1) add('input-bends', [net], `${pl.length - 2} bends`);
+  }
+  // detours: any wire with more than two bends
+  for (const e of cells) {
+    if (e.kind !== 'edge' || e.source == null || e.target == null) continue;
+    const pl = polylineOf(e, byId);
+    if (pl && pl.length - 2 > 2) add('excess-bends', [e.id], `${pl.length - 2} bends`);
   }
   // isolated parts: far from every part they share a (non-rail) net with
   const rails = new Set(['0', ...Object.keys(roles).filter((n) => roles[n] === 'supply' || roles[n] === 'ground')]);

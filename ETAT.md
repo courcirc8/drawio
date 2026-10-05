@@ -267,6 +267,16 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   coudes, étiquettes sur fils — ces deux derniers existent en AVERTISSEMENTS check.py, ignorés partout).
   SUITE proposée : basics comme métrique du banc + critère d'auto (après les erreurs), puis corriger le moteur
   d'abord sur pmos-below-nmos et isolated (les deux plus fréquents).
+- Eric : « fais 1, 2 puis 3 ». FAIT (tune seulement) :
+  1. basics dans le banc (colonnes basics/c, clean) et dans auto (après les erreurs) + règle excess-bends (> 2 coudes) ;
+  2. place4 POLARITY : un bloc PMOS relié par ses drains à un bloc NMOS rejoint sa colonne, colonnes triées PMOS en haut.
+  Runs basics0 (avant) / basics1 (sélection basics) / basics2 (+ polarité) :
+    origine  : propres 21,7 → 25,8 → 26,4 % ; basics/c 7,68 → 7,02 → 6,43 ; pmos-below 1,33 → 1,11 → 0,61 ;
+               zéro erreur 57,7 → 58,3 → 59,8 % ; > 3:1 6,8 → 6,5 → 5,8 % ; LVS 100 %
+    open PDK : propres 6,9 → 10,2 → 11,0 % ; pmos-below 3,34 → 3,15 → 1,06 ; zéro erreur 34,4 → 34,1 → 34,4 %
+  Les deux sont ACTIVÉS PAR DÉFAUT (AUTO_BASICS=0 / P4_POLARITY=0 pour revenir). Tests 274/0.
+  Restent : coudes en excès (5,2/circuit origine, 13/circuit open PDK : le routeur) et pièces isolées (0,35 / 1,7).
+  3. Série aveugle `compare/basics-1` (15 paires tune, ancien auto contre nouveau) prête pour Eric.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
