@@ -284,6 +284,19 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   DVD IEEE 13 562 figures (boîtes du détecteur gd1, lectures Ornith ; privé). Les .asc LTspice / .kicad_sch d'origine
   n'ont pas été gardés (seulement les .net). Alternatives proposées à Eric : voir message du 5 oct. (placement par
   l'exemple ; recuit simulé avec objectif appris des dessins humains ; placeur appris (GNN) ; LLM placeur).
+- ERIC : « essaye 1 et 2 ».
+  DONNÉES HUMAINES : `tools/human/amsnet-layouts.py` → /AI/datasets/human-layouts/amsnet.jsonl : 733/734 schémas AMSNet
+  avec position, orientation, miroir de chaque composant RELIÉ à sa référence de netlist (numérotation reproduite
+  depuis le carnet AMSNet `reformat_names` ; vérifié à l'œil sur amsnet/233). Couverture « circuit entier »
+  (empreinte WL identique) : analoggenie 40/905, openpdk 1/824 → l'option 1 ne servira qu'au niveau des blocs.
+  STATISTIQUES : `tools/human/learn-relpos.py` → relpos.json (9 138 paires connectées, 129 couples de rôles) ;
+  contrôles : PMOS au-dessus du NMOS de même drain 98 % (323), NMOS à source commune sur une rangée 95 % (352).
+  PLACEUR RECUIT `lib/place-sa.js` (moteur « sa ») : part de place2, regroupe symboles et étiquettes avec leur pièce,
+  supprime fils et points, recuit sur grille (−log P humain des paires connectées + chevauchement + longueur +
+  rappel au centre), paires à source commune en miroir, recâblage MST par net + routePage. Sur les 15 circuits
+  revus : LVS 15/15, pmos-below 2, isolés 0 (v4 : 14-25 et 18), mais erreurs check 48 et coudes 96. Paire 10 :
+  moitié droite lisible (paire d'entrée en bas, cascodes au-dessus, VDD en haut) ; polarisation à gauche brouillonne.
+  Banc tune `sa1-tune` en cours.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes

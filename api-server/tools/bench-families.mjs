@@ -16,7 +16,7 @@
  * wire, published-convention score, check.py error rules. One JSON line per circuit.
  *
  * Usage:
- *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all] [--sources a,b] [--exclude-source a,b]
+ *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4|sa] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all] [--sources a,b] [--exclude-source a,b]
  *   node tools/bench-families.mjs sum  DIR [DIR2]       (DIR2: compare two runs)
  */
 import fs from 'node:fs';
@@ -32,6 +32,7 @@ import { compare } from '../lib/lvs.js';
 import { autoPlace } from '../lib/auto.js';
 import { conventionReport } from '../lib/conventions.js';
 import { basicsReport } from '../lib/basics.js';
+import { importNetlistSA } from '../lib/place-sa.js';
 import { assertNotSealed, bankExclusions } from '../lib/sealed.js';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
@@ -92,7 +93,7 @@ async function run() {
       const parsed = parseSpice(text);
       let doc, m, chosen = engine;
       if (engine === 'auto') { const a = await autoPlace(parsed); doc = a.doc; chosen = a.label; }
-      else { doc = newDocument(); const mm = getPage(doc); if (engine === 'v2') { const p = importNetlist2(mm, parsed); await routePage(mm, p.wires, {}); normalizeOrigin(mm); } else await importNetlist4(mm, parsed); }
+      else { doc = newDocument(); const mm = getPage(doc); if (engine === 'v2') { const p = importNetlist2(mm, parsed); await routePage(mm, p.wires, {}); normalizeOrigin(mm); } else if (engine === 'sa') await importNetlistSA(mm, parsed); else await importNetlist4(mm, parsed); }
       m = getPage(doc);
       row.chosen = chosen;
       row.lvs = compare(extractNetlist(m), parsed).match;
