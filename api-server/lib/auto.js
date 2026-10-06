@@ -20,16 +20,18 @@ import { checkDocument } from './check.js';
 import { conventionReport } from './conventions.js';
 import { layoutRulesScore } from './layout-rules.js';
 import { basicsReport } from './basics.js';
+import { importNetlistSA } from './place-sa.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 
-export const candidateLabel = (t) => (t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
+export const candidateLabel = (t) => (t.eng === 'sa' ? 'sa' : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
 
 async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   const doc = newDocument(); const m = getPage(doc);
   let placed;
   try {
     if (eng === 'v4') placed = await importNetlist4(m, parsed, { restMode, ...sp, ...extra });
+    else if (eng === 'sa') placed = await importNetlistSA(m, parsed, { ...sp, ...extra });
     else { placed = importNetlist2(m, parsed, { ...sp, ...extra }); await routePage(m, placed.wires, {}); normalizeOrigin(m); }
   } catch (e) { return { eng, restMode, sp, extra, errs: Infinity, error: String(e.message || e) }; }
   // a candidate that does not draw the netlist (LVS) is never chosen: a
@@ -59,6 +61,9 @@ const better = (b, a) => {
  *  when every candidate failed. */
 export async function autoPlace(parsed) {
   const trials = await Promise.all(AUTO_SPACINGS.flatMap((sp) => AUTO_CANDIDATES.map(([eng, mode, extra]) => trial(parsed, eng, mode, sp, extra || {}))));
+  // AUTO_SA=1 (measurement): the annealing engine (lib/place-sa.js) as one more
+  // candidate, circuits up to 40 parts (its cost is quadratic)
+  if (process.env.AUTO_SA === '1' && parsed.components.length <= 40) trials.push(await trial(parsed, 'sa', null, {}, {}));
   let win = trials.reduce((a, b) => (better(b, a) ? b : a));
   // STACK-FIRST BAND (experiment, AUTO_BAND=N): among candidates within N
   // check.py-like errors of the best, prefer the branch-column drawings

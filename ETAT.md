@@ -319,6 +319,11 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   circuits (> 3:1 1,9 → 5,8 %) ; source dégénérée (corrigé : l'élément du bas de chaque branche va dans la
   rangée) ; colonnes alignées → fils de nets différents superposés (règle 22 : 11 → 26 sur les 15).
   Colonnes sur fil drain-source codées (place-sa.js), pas encore au banc.
+- AUTO_SA=1 (recuit comme candidat d'auto, ≤ 40 composants ; run `autosa-tune`) : choisi 111 fois / 1 153 ;
+  quasi neutre (propres 24,3 → 25,4 %, pmos-dessous 0,64 → 0,57, zéro erreur 60,1 → 59,7 %). Laissé ÉTEINT.
+  CONCLUSION : le goulot est le CÂBLAGE du recuit (MST par net + libavoid sur des broches alignées → superpositions,
+  traversées). Piste : câblage dédié à la grille (fils verticaux droits dans les colonnes, rails horizontaux,
+  grilles par couloirs), ou placeur constructif « grille des manuels » (rangées rails + colonnes de branches).
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
