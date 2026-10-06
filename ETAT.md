@@ -324,6 +324,15 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   CONCLUSION : le goulot est le CÂBLAGE du recuit (MST par net + libavoid sur des broches alignées → superpositions,
   traversées). Piste : câblage dédié à la grille (fils verticaux droits dans les colonnes, rails horizontaux,
   grilles par couloirs), ou placeur constructif « grille des manuels » (rangées rails + colonnes de branches).
+- Légalisation (composants empilés par l'accrochage) : 15 circuits erreurs 42 → 23 (règle 22 26 → 8). Banc `sa7-tune` :
+  zéro erreur 29,7 % (auto 60,1 %), err/c 5,2 (1,4), > 3:1 7,3 % (4,7), crois. 9,2 (5,4), pmos-dessous 0,06 (0,64).
+  > 12 composants : zéro erreur 9 % contre 36 %.
+- JUGEMENT PAR PAIRES ORNITH auto contre sa7 (`tools/judge-pairs.mjs --a auto --b sa`, 103 circuits tune, 8/famille,
+  deux ordres) : cohérent 66 % ; sa préféré 43, auto 25. Par famille : power sa 8/0, comparator 4/0, opamp 5/2,
+  amplifier 4/1 ; filter auto 5/1. Réserve : la consigne cite les conventions que sa applique exprès.
+  BILAN des trois instruments : Eric (sa-1) égalité 5/6/4 ; Ornith favorise sa ; le vérificateur favorise
+  nettement auto. Recommandation : auto reste le défaut ; sa disponible comme moteur à part ; poursuivre le câblage
+  de sa jusqu'à rejoindre auto au vérificateur avant toute bascule.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes

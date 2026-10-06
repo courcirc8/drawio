@@ -12,7 +12,7 @@
  * anything. Our own renders only: no corpus image is sent.
  *
  * Usage: node tools/judge-pairs.mjs --a v2 --b auto --out FILE [--split tune] [--per-family 15] [--families f1,f2]
- *   engines: v2 | v4 | auto (anything lib/auto.js / place2 / place4 produce)
+ *   engines: v2 | v4 | auto | sa (anything lib/auto.js / place2 / place4 produce)
  * Output: one JSON line per circuit {id, family, a, b, ab, ba, prefers}, and a
  * summary: order consistency, preference per family.
  */
@@ -23,6 +23,7 @@ import { parseSpice } from '../lib/netlist.js';
 import { importNetlist2 } from '../lib/place2.js';
 import { importNetlist4 } from '../lib/place4.js';
 import { routePage } from '../lib/route.js';
+import { importNetlistSA } from '../lib/place-sa.js';
 import { autoPlace } from '../lib/auto.js';
 import { exportDocument } from '../lib/render.js';
 import { assertNotSealed, bankExclusions } from '../lib/sealed.js';
@@ -47,6 +48,7 @@ async function draw(parsed, engine) {
   let doc = newDocument(); const m = getPage(doc);
   if (engine === 'auto') doc = (await autoPlace(parsed)).doc;
   else if (engine === 'v2') { const p = importNetlist2(m, parsed); await routePage(m, p.wires, {}); normalizeOrigin(m); }
+  else if (engine === 'sa') await importNetlistSA(m, parsed);
   else await importNetlist4(m, parsed);
   const png = await exportDocument(doc, getPage(doc), { format: 'png', scale: 1 });
   return png.buffer.toString('base64');   // exportDocument -> {buffer, contentType}
@@ -61,7 +63,9 @@ async function ask(a, b) {
 }
 
 const ex = bankExclusions(BANK);
-const man = new Map(fs.readFileSync(`${BANK}/manifest.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).map((r) => [r.id, r]));
+// every manifest of the bank (manifest-openpdk.jsonl too: its circuits crashed the run)
+const man = new Map(fs.readdirSync(BANK).filter((f) => /^manifest.*\.jsonl$/.test(f))
+  .flatMap((f) => fs.readFileSync(`${BANK}/${f}`, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))).map((r) => [r.id, r]));
 const inv = fs.readFileSync(`${BANK}/inventory.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
   .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && !r.familyWeak && r.family !== 'misc' && splitOf(r) === SPLIT && (!FAMS || FAMS.includes(famOf(r))));
 const byFam = new Map();
