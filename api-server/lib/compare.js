@@ -22,6 +22,18 @@ const readJsonl = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().s
 
 export function mountCompare(app, wrap) {
   app.get('/compare', (req, res) => res.sendFile(PAGE));
+  // gallery: every pair of a batch, LABELLED (examples to look at, nothing recorded)
+  app.get('/compare/gallery', wrap(async (req, res) => {
+    const batch = req.query.batch;
+    const items = readJsonl(path.join(batchDir(batch), 'items.jsonl'));
+    const name = { base: 'auto (actuel)', sa: 'recuit (sa)', new: 'auto (nouveau)', rules: 'auto + règles' };
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    const rows = items.map((it) => `<h3>${it.n}. ${esc(it.family)} — ${it.parts} composants</h3>` + ['L', 'R'].map((sd) =>
+      `<figure><figcaption>${esc(name[it.sides[sd]] || it.sides[sd])}</figcaption><img src="img/${encodeURIComponent(batch)}/${it.n}-${sd}.png"></figure>`).join('')).join('');
+    res.type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Exemples</title>
+<style>body{font-family:system-ui,sans-serif;margin:8px;background:#f4f4f4}figure{margin:6px 0 14px;background:#fff;border:1px solid #ccc;border-radius:6px;padding:4px}figcaption{font-weight:600;margin:2px 4px}img{width:100%;display:block}</style>
+<h2>Exemples : auto actuel et recuit (sa)</h2>${rows}`);
+  }));
   // next unanswered pair; the side mapping is never sent to the page (blind)
   app.get('/compare/api/next', wrap(async (req, res) => {
     const dir = batchDir(req.query.batch);
