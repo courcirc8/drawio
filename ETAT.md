@@ -297,6 +297,14 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   revus : LVS 15/15, pmos-below 2, isolés 0 (v4 : 14-25 et 18), mais erreurs check 48 et coudes 96. Paire 10 :
   moitié droite lisible (paire d'entrée en bas, cascodes au-dessus, VDD en haut) ; polarisation à gauche brouillonne.
   Banc tune `sa1-tune` en cours.
+- sa v3 (accrochage rangées/colonnes, pénalité croissante hors plage apprise, ordre VDD→masse par distance de graphe,
+  paires et miroirs sur une rangée ; commit sur motif-templates). Banc `sa3-tune` (manuels, 1 153 circuits) :
+    auto : zéro erreur 60,1 %, err/c 1,39, > 3:1 4,7 %, crois. 5,4, pmos-dessous 0,64, isolés 0,34, coudes 5,3
+    sa3  : zéro erreur 29,9 %, err/c 4,12, > 3:1 1,9 %, crois. 8,7, pmos-dessous 0,04, isolés 0,10, coudes 6,2
+  → conventions humaines tenues, câblage (traversées, croisements) moins bon.
+- Série aveugle `compare/sa-1` (15 circuits de manuels jamais montrés, auto contre sa, LVS vérifié) : DERNIÈRE série
+  demandée à Eric avant les 50 notes finales (décision Eric 6 oct.). Ensuite : trancher avec le banc par famille +
+  jugement par paires d'Ornith (relatif), sans solliciter Eric. Écrire en français.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
