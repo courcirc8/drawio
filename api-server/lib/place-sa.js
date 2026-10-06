@@ -114,10 +114,30 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     if (a.prefix !== 'M' || b.prefix !== 'M' || parts[i].kind !== parts[j].kind) continue;
     if ((a.nodes[2] === b.nodes[2] && !RAIL.test(a.nodes[2]) && a.nodes[1] !== b.nodes[1]) || (a.nodes[1] === b.nodes[1] && a.nodes[2] === b.nodes[2])) rows.push([i, j]);
   }
+  // Eric's rules (2026-10-06, from his practice): every transistor whose SOURCE is
+  // on ground shares one row; every transistor whose source is on the supply
+  // shares one row (straight rails, straight source connections, fewer bends).
+  // Strong term in the annealing, then imposed exactly (opts.saRailRows=false disables).
+  const RAILROWS = opts.saRailRows ?? (process.env.SA_RAIL_ROWS !== '0');
+  const srcOf = (p) => (p.pc.prefix === 'M' ? p.pc.nodes[2] : p.pc.prefix === 'Q' ? p.pc.nodes[2] : null);
+  const railRows = RAILROWS ? [parts.map((p, i) => (srcOf(p) != null && isGnd(srcOf(p)) ? i : -1)).filter((i) => i >= 0),
+    parts.map((p, i) => (srcOf(p) != null && isSup(srcOf(p)) ? i : -1)).filter((i) => i >= 0)].filter((g) => g.length > 1) : [];
   // a pair or mirror shares one level (its two halves can sit at different graph depths)
   for (const [i, j] of rows) { const m = (level[i] + level[j]) / 2; level[i] = level[j] = m; }
   const order = [];
   for (let i = 0; i < parts.length; i++) for (let j = 0; j < parts.length; j++) if (level[i] < level[j] - 0.2) order.push([i, j]);
+  // pin alignment (Eric: fewer bends): for every non-rail net with 2-4 pins, the
+  // pins of different parts should share a horizontal or a vertical line, so
+  // the wire between them can be straight (an aligned pair costs 0, else
+  // min(|dx|, |dy|) in units, capped at 1.5)
+  const pinOff = parts.map((p) => p.pins.map((pin) => { const a = pinAbs(p.cell, pin); return { x: a.x - p.cell.x, y: a.y - p.cell.y }; }));
+  const pinPairs = [];
+  const byNet = new Map();
+  parts.forEach((p, i) => p.pins.forEach((_, k) => { const n = pinNet(p, i === undefined ? 0 : k); if (n == null || RAIL.test(n)) return; if (!byNet.has(n)) byNet.set(n, []); byNet.get(n).push([i, k]); }));
+  for (const ps of byNet.values()) {
+    if (ps.length < 2 || ps.length > 4) continue;
+    for (let a = 0; a < ps.length; a++) for (let b = a + 1; b < ps.length; b++) if (ps[a][0] !== ps[b][0]) pinPairs.push([ps[a], ps[b]]);
+  }
   const nets = new Map();
   parts.forEach((p, i) => p.pc.nodes.forEach((n) => { if (!RAIL.test(n)) { if (!nets.has(n)) nets.set(n, new Set()); nets.get(n).add(i); } }));
   const netList = [...nets.values()].filter((s) => s.size > 1).map((s) => [...s]);
@@ -137,13 +157,19 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   };
   const overlap = (a, b) => { const A = box(a), Bx = box(b); const w = Math.min(A[2], Bx[2]) - Math.max(A[0], Bx[0]), h = Math.min(A[3], Bx[3]) - Math.max(A[1], Bx[1]); return w > 0 && h > 0 ? (w * h) / (u * u) : 0; };
   const hpwl = (s) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const i of s) { x0 = Math.min(x0, cx(parts[i])); x1 = Math.max(x1, cx(parts[i])); y0 = Math.min(y0, cy(parts[i])); y1 = Math.max(y1, cy(parts[i])); } return (x1 - x0 + y1 - y0) / u; };
-  const OV = 30, WL = opts.saWL ?? 1.5, PULL = opts.saPull ?? 0.15, LV = opts.saLevel ?? 3, ROW = opts.saRow ?? 8;
+  const OV = 30, WL = opts.saWL ?? 1.5, PULL = opts.saPull ?? 0.15, LV = opts.saLevel ?? 3, ROW = opts.saRow ?? 8, RR = opts.saRailRow ?? 10, AL = opts.saAlign ?? (process.env.SA_ALIGN != null ? Number(process.env.SA_ALIGN) : 2);
   const cost = () => {
     let c = 0; for (const q of pairs) c += pairCost(q);
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) c += OV * overlap(parts[i], parts[j]);
     for (const s of netList) c += WL * hpwl(s);
     for (const [i, j] of order) { const d = (cy(parts[i]) - cy(parts[j])) / u; if (d > -0.5) c += LV * (d + 0.5); }   // i must sit above j
     for (const [i, j] of rows) c += ROW * Math.abs(cy(parts[i]) - cy(parts[j])) / u;
+    for (const [[i, k], [j, l]] of pinPairs) {
+      const a = pinOff[i][k], b = pinOff[j][l];
+      const dx = Math.abs(parts[i].x + a.x - parts[j].x - b.x), dy = Math.abs(parts[i].y + a.y - parts[j].y - b.y);
+      c += AL * Math.min(1.5, Math.min(dx, dy) / u);
+    }
+    for (const g of railRows) { const m = g.reduce((s2, i) => s2 + cy(parts[i]), 0) / g.length; for (const i of g) c += RR * Math.abs(cy(parts[i]) - m) / u; }
     // compaction: every part is pulled towards the centroid (no stray parts)
     let mx = 0, my = 0; for (const p of parts) { mx += cx(p); my += cy(p); } mx /= parts.length; my /= parts.length;
     for (const p of parts) c += PULL * (Math.abs(cx(p) - mx) + Math.abs(cy(p) - my)) / u;
@@ -179,6 +205,13 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     flush();
   };
   snap(cy, (p, v) => { p.y = Math.round(v - p.h / 2); });
+  // impose the rail rows exactly (median centre of each group)
+  for (const g of railRows) { const ys = g.map((i) => cy(parts[i])).sort((a, b) => a - b); const m = ys[Math.floor(ys.length / 2)]; for (const i of g) parts[i].y = Math.round(m - parts[i].h / 2); }
+  // two parts forced onto one row must not overlap: spread them along the row
+  for (const g of railRows) {
+    const ps = g.map((i) => parts[i]).sort((a, b) => a.x - b.x);
+    for (let k = 1; k < ps.length; k++) { const prev = ps[k - 1]; const minX = prev.x + prev.w + u * 0.8; if (ps[k].x < minX) ps[k].x = Math.round(minX); }
+  }
   snap(cx, (p, v) => { p.x = Math.round(v - p.w / 2); });
   // mirror source-coupled pairs: gates outwards
   for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {

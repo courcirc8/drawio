@@ -395,6 +395,10 @@
 
 		try { router.setRoutingParameter(Avoid.RoutingParameter.shapeBufferDistance, buffer); } catch (e) {}
 		try { router.setRoutingParameter(Avoid.RoutingParameter.idealNudgingDistance, nudge); } catch (e) {}
+		// bend and crossing costs (libavoid: cost of each extra segment, of each crossing);
+		// optional, unset keeps libavoid's defaults
+		if (opts && opts.segmentPenalty != null) { try { router.setRoutingParameter(Avoid.RoutingParameter.segmentPenalty, opts.segmentPenalty); } catch (e) {} }
+		if (opts && opts.crossingPenalty != null) { try { router.setRoutingParameter(Avoid.RoutingParameter.crossingPenalty, opts.crossingPenalty); } catch (e) {} }
 
 		var bounds = Object.create(null);
 		var shapeRefs = Object.create(null);
