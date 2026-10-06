@@ -99,14 +99,20 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   // (humans draw the supply on top, ground at the bottom: the strongest convention)
   const isSup = (n) => RAIL.test(n) && n !== '0' && !/^(gnd|vss|vee|avss|dvss|agnd|dgnd|vgnd)$/i.test(n);
   const isGnd = (n) => n === '0' || /^(gnd|vss|vee|avss|dvss|agnd|dgnd|vgnd)$/i.test(n);
+  // terminals that carry current: the bulk (4th MOS node, often tied to a rail)
+  // must not make a transistor count as "on the supply"
+  const termNets = (p) => (p.pc.prefix === 'M' || p.pc.prefix === 'Q' ? p.pc.nodes.slice(0, 3) : p.pc.nodes);
   const dist = (seed) => {
     const d = new Array(parts.length).fill(Infinity); const q = [];
-    parts.forEach((p, i) => { if (p.pc.nodes.some(seed)) { d[i] = 0; q.push(i); } });
-    while (q.length) { const i = q.shift(); for (let j = 0; j < parts.length; j++) if (d[j] === Infinity && parts[i].pc.nodes.some((n) => !RAIL.test(n) && parts[j].pc.nodes.includes(n))) { d[j] = d[i] + 1; q.push(j); } }
+    parts.forEach((p, i) => { if (termNets(p).some(seed)) { d[i] = 0; q.push(i); } });
+    while (q.length) { const i = q.shift(); for (let j = 0; j < parts.length; j++) if (d[j] === Infinity && termNets(parts[i]).some((n) => !RAIL.test(n) && termNets(parts[j]).includes(n))) { d[j] = d[i] + 1; q.push(j); } }
     return d;
   };
   const dV = dist(isSup), dG = dist(isGnd);
-  const level = parts.map((_, i) => (dV[i] === Infinity && dG[i] === Infinity ? 0.5 : dV[i] === Infinity ? 1 : dG[i] === Infinity ? 0 : dV[i] / (dV[i] + dG[i])));
+  // no path to ground: lower the further from the supply (and symmetrically);
+  // a folded cascode with external current terminals had everything at level 0
+  const level = parts.map((_, i) => (dV[i] === Infinity && dG[i] === Infinity ? 0.5
+    : dG[i] === Infinity ? dV[i] / (dV[i] + 1) : dV[i] === Infinity ? 1 - dG[i] / (dG[i] + 1) : dV[i] / (dV[i] + dG[i])));
   // one row: differential pairs (same source, non-rail) and mirrors (same gate and source)
   const rows = [];
   for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
@@ -136,9 +142,15 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   parts.forEach((p) => dcNets(p).forEach((n) => dcDeg.set(n, (dcDeg.get(n) || 0) + 1)));
   const uf = parts.map((_, i) => i);
   const find = (i) => (uf[i] === i ? i : (uf[i] = find(uf[i])));
+  // a net is NOT a series link when it joins two sources (a differential pair:
+  // the current divides there) or carries an external terminal (a port injects
+  // or draws current) — found on a folded cascode drawn as one single column
+  const srcCount = new Map();
+  parts.forEach((p) => { if ((p.pc.prefix === 'M' || p.pc.prefix === 'Q') && p.pc.nodes[2] != null) srcCount.set(p.pc.nodes[2], (srcCount.get(p.pc.nodes[2]) || 0) + 1); });
+  const ported = new Set(taps.filter((t) => t.cls.role === 'port').map((t) => String(t.net).toLowerCase()));
   const lastOn = new Map();
   parts.forEach((p, i) => dcNets(p).forEach((n) => {
-    if (RAIL.test(n) || dcDeg.get(n) !== 2) return;
+    if (RAIL.test(n) || dcDeg.get(n) !== 2 || (srcCount.get(n) || 0) >= 2 || ported.has(String(n).toLowerCase())) return;
     if (lastOn.has(n)) uf[find(i)] = find(lastOn.get(n)); else lastOn.set(n, i);
   }));
   const chains = new Map();
@@ -267,7 +279,9 @@ export async function importNetlistSA(model, parsed, opts = {}) {
       if (i === j) continue;
       // real bodies (no margin), a small clearance
       const a = parts[i], b = parts[j], cl = u * 0.1;
-      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) + cl, oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) + cl;
+      const body = (p) => { let x0 = p.x, y0 = p.y, x1 = p.x + p.w, y1 = p.y + p.h; for (const t of p.taps) { x0 = Math.min(x0, p.x + t.ox); y0 = Math.min(y0, p.y + t.oy); x1 = Math.max(x1, p.x + t.ox + t.cell.w); y1 = Math.max(y1, p.y + t.oy + t.cell.h); } return [x0, y0, x1, y1]; };
+      const A = body(a), Bb = body(b);
+      const ox = Math.min(A[2], Bb[2]) - Math.max(A[0], Bb[0]) + cl, oy = Math.min(A[3], Bb[3]) - Math.max(A[1], Bb[1]) + cl;
       if (ox <= 0 || oy <= 0) continue;
       const ch = chainOf.get(j); const same = ch != null && ch === chainOf.get(i);
       if (same) {   // one branch column: push the lower part down
