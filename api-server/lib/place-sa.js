@@ -257,6 +257,30 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     }
   }
   snap(cx, (p, v) => { p.x = Math.round(v - p.w / 2); });
+  // legalise: snapping and imposed rows/columns can stack two parts on one spot
+  // (found: two gates at the same point, wires of two nets overlapping). While two
+  // parts (with their symbols) overlap, shift the right-hand one (with its whole
+  // branch column) to the right, keeping rows and columns.
+  for (let round = 0; round < 200; round++) {
+    let moved = false;
+    for (let i = 0; i < parts.length && !moved; i++) for (let j = 0; j < parts.length && !moved; j++) {
+      if (i === j) continue;
+      // real bodies (no margin), a small clearance
+      const a = parts[i], b = parts[j], cl = u * 0.1;
+      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) + cl, oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) + cl;
+      if (ox <= 0 || oy <= 0) continue;
+      const ch = chainOf.get(j); const same = ch != null && ch === chainOf.get(i);
+      if (same) {   // one branch column: push the lower part down
+        if (cy(b) < cy(a) || (cy(b) === cy(a) && j < i)) continue;
+        b.y += Math.ceil(oy + 1);
+      } else {      // otherwise push the right-hand part (and its column) right
+        if (cx(b) < cx(a) || (cx(b) === cx(a) && j < i)) continue;
+        for (const k of ch != null ? columns[ch] : [j]) parts[k].x += Math.ceil(ox + 1);
+      }
+      moved = true;
+    }
+    if (!moved) break;
+  }
   // mirror source-coupled pairs: gates outwards
   for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
     const a = parts[i], b = parts[j];
