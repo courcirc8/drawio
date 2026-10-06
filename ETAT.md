@@ -333,6 +333,12 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   BILAN des trois instruments : Eric (sa-1) égalité 5/6/4 ; Ornith favorise sa ; le vérificateur favorise
   nettement auto. Recommandation : auto reste le défaut ; sa disponible comme moteur à part ; poursuivre le câblage
   de sa jusqu'à rejoindre auto au vérificateur avant toute bascule.
+- Galerie étiquetée `/compare/gallery?batch=exemples-1` (6 circuits, auto et sa côte à côte) pour Eric.
+  Défauts révélés (exemple 1, cascode replié) et corrigés : branches DC fusionnées à travers une paire différentielle
+  (couper aux nœuds joignant deux sources et aux nets portant une borne externe) ; légalisation sans les symboles
+  (deux résistances superposées) ; niveau faussé par le substrat des PMOS et par l'absence de chemin vers la masse.
+  Banc `sa8-tune` : zéro erreur 33,7 % (sa7 29,7 ; auto 60,1) ; ≤ 12 composants 53,8 % (46,5 ; auto 79,6) ;
+  > 12 : 9,1 % inchangé (auto 36,2) — croisements 17,7 contre 10,9 : chantier suivant = grands circuits.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
