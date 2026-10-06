@@ -159,6 +159,11 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   // the wire between them can be straight (an aligned pair costs 0, else
   // min(|dx|, |dy|) in units, capped at 1.5)
   const pinOff = parts.map((p) => p.pins.map((pin) => { const a = pinAbs(p.cell, pin); return { x: a.x - p.cell.x, y: a.y - p.cell.y }; }));
+  // x of the DC line inside each part: transistors carry their current along the
+  // drain-source (collector-emitter) lead on one side of the symbol, not at the
+  // centre (human drawings align these leads: 83 % of AMSNet branches, chance 18 %)
+  const dcOff = parts.map((p, i) => (p.pc.prefix === 'M' || p.pc.prefix === 'Q') && pinOff[i][0] && pinOff[i][2] ? (pinOff[i][0].x + pinOff[i][2].x) / 2 : p.w / 2);
+  const lx = (i) => parts[i].x + dcOff[i];
   const pinPairs = [];
   const byNet = new Map();
   parts.forEach((p, i) => p.pins.forEach((_, k) => { const n = pinNet(p, i === undefined ? 0 : k); if (n == null || RAIL.test(n)) return; if (!byNet.has(n)) byNet.set(n, []); byNet.get(n).push([i, k]); }));
@@ -197,7 +202,7 @@ export async function importNetlistSA(model, parsed, opts = {}) {
       const dx = Math.abs(parts[i].x + a.x - parts[j].x - b.x), dy = Math.abs(parts[i].y + a.y - parts[j].y - b.y);
       c += AL * Math.min(1.5, Math.min(dx, dy) / u);
     }
-    for (const g of columns) { const m = g.reduce((s2, i) => s2 + cx(parts[i]), 0) / g.length; for (const i of g) c += CL * Math.abs(cx(parts[i]) - m) / u; }
+    for (const g of columns) { const m = g.reduce((s2, i) => s2 + lx(i), 0) / g.length; for (const i of g) c += CL * Math.abs(lx(i) - m) / u; }
     for (const g of railRows) { const m = g.reduce((s2, i) => s2 + cy(parts[i]), 0) / g.length; for (const i of g) c += RR * Math.abs(cy(parts[i]) - m) / u; }
     // compaction: every part is pulled towards the centroid (no stray parts)
     let mx = 0, my = 0; for (const p of parts) { mx += cx(p); my += cy(p); } mx /= parts.length; my /= parts.length;
@@ -237,7 +242,7 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   // impose the rail rows exactly (median centre of each group)
   for (const g of railRows) { const ys = g.map((i) => cy(parts[i])).sort((a, b) => a - b); const m = ys[Math.floor(ys.length / 2)]; for (const i of g) parts[i].y = Math.round(m - parts[i].h / 2); }
   // impose the branch columns exactly (median centre of each branch)
-  for (const g of columns) { const xs = g.map((i) => cx(parts[i])).sort((a, b) => a - b); const m = xs[Math.floor(xs.length / 2)]; for (const i of g) parts[i].x = Math.round(m - parts[i].w / 2); }
+  for (const g of columns) { const xs = g.map((i) => lx(i)).sort((a, b) => a - b); const m = xs[Math.floor(xs.length / 2)]; for (const i of g) parts[i].x = Math.round(m - dcOff[i]); }
   // parts forced onto one row must not overlap: spread them along the row,
   // moving a part's whole branch column with it
   for (const g of railRows) {
@@ -258,7 +263,11 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     if (a.pc.prefix !== 'M' || b.pc.prefix !== 'M' || a.kind !== b.kind) continue;
     if (a.pc.nodes[2] !== b.pc.nodes[2] || RAIL.test(a.pc.nodes[2]) || Math.abs(cy(a) - cy(b)) > u * 0.3) continue;
     const [L, Rt] = cx(a) <= cx(b) ? [a, b] : [b, a];
-    const flip = (p, want) => { p.flipStyle = `flipH=${want ? 1 : 0};`; };
+    const flip = (p, want) => {
+      const was = String(p.cell.style.map.get('flipH') || '0') === '1';
+      p.flipStyle = `flipH=${want ? 1 : 0};`;
+      if (was !== want) { const k = parts.indexOf(p); p.x = Math.round(p.x + 2 * dcOff[k] - p.w); }   // the drain-source lead stays where it was
+    };
     // stencil gate pin is on the left (W): the right device is flipped
     flip(L, false); flip(Rt, true);
   }

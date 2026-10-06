@@ -305,6 +305,20 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
 - Série aveugle `compare/sa-1` (15 circuits de manuels jamais montrés, auto contre sa, LVS vérifié) : DERNIÈRE série
   demandée à Eric avant les 50 notes finales (décision Eric 6 oct.). Ensuite : trancher avec le banc par famille +
   jugement par paires d'Ornith (relatif), sans solliciter Eric. Écrire en français.
+- sa-1 (réponses enregistrées) : auto 6, sa 5, égal 4 ; sa gagne sur les circuits moyens/grands (≈ 16 composants),
+  auto sur les petits (≈ 9). Eric : « légèrement mieux ».
+- Pénalités libavoid coude/croisement exposées (`segmentPenalty`, `crossingPenalty`, env ROUTE_*) : AUCUN effet
+  mesuré (1,30 coude/fil) → les coudes viennent de la géométrie des broches, pas du routeur.
+- RÈGLES D'ERIC (1 sources-masse en rangée, 2 sources-VDD en rangée, 3 même courant DC en colonne) :
+  mesurées EXACTEMENT sur AMSNet (`tools/human/rules-amsnet.py`) : R1 70 % des dessins (hasard 16 %), R2 89 % (15 %),
+  R3 83 % des branches (18 %) — mesurée sur le fil drain-source, pas sur le centre (centre : 17 %).
+  Sur les figures DVD par structure (`tools/human/rules-dvd.py`, listes RAG, boîtes gd1, hasard uniforme ;
+  /AI/datasets/judge/rules-dvd.txt) : R1 39 % (hasard 6 %), R2 31 % (6 %) ; R3 non mesurable sans connectivité.
+  Placeur sa : sa4 (R1-R2), sa5 (+ alignement des broches), sa6 (+ R3 sur centres) : zéro erreur 33 / 31 / 30 %
+  contre 60 % pour auto ; err/c 4,8 / 4,6 / 6,2 contre 1,4. Conflits : rangée unique trop longue sur les grands
+  circuits (> 3:1 1,9 → 5,8 %) ; source dégénérée (corrigé : l'élément du bas de chaque branche va dans la
+  rangée) ; colonnes alignées → fils de nets différents superposés (règle 22 : 11 → 26 sur les 15).
+  Colonnes sur fil drain-source codées (place-sa.js), pas encore au banc.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
