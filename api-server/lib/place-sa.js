@@ -120,8 +120,36 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   // Strong term in the annealing, then imposed exactly (opts.saRailRows=false disables).
   const RAILROWS = opts.saRailRows ?? (process.env.SA_RAIL_ROWS !== '0');
   const srcOf = (p) => (p.pc.prefix === 'M' ? p.pc.nodes[2] : p.pc.prefix === 'Q' ? p.pc.nodes[2] : null);
-  const railRows = RAILROWS ? [parts.map((p, i) => (srcOf(p) != null && isGnd(srcOf(p)) ? i : -1)).filter((i) => i >= 0),
-    parts.map((p, i) => (srcOf(p) != null && isSup(srcOf(p)) ? i : -1)).filter((i) => i >= 0)].filter((g) => g.length > 1) : [];
+  // generalised (conflict found on a degenerated source: the resistor between a
+  // source and ground fell below the ground row): the BOTTOM element of every DC
+  // branch — whatever it is (transistor source, resistor, current source) — joins
+  // the ground row, the top element the supply row. Computed below with the branches.
+  let railRows = [];
+  // Eric's rule 3: parts carrying the SAME DC current share one column. DC
+  // elements: MOS drain-source, BJT collector-emitter, R, L, I (gates, bases and
+  // capacitors carry no DC). A branch is a chain of DC elements joined through
+  // non-rail nets touched by exactly two DC terminals; the chain is cut at the
+  // rails and wherever the current divides (3+ DC terminals on a net).
+  const COLS = opts.saColumns ?? (process.env.SA_COLUMNS !== '0');
+  const dcNets = (p) => (p.pc.prefix === 'M' || p.pc.prefix === 'Q' ? [p.pc.nodes[0], p.pc.nodes[2]] : ['R', 'L', 'I'].includes(p.pc.prefix) ? p.pc.nodes.slice(0, 2) : []);
+  const dcDeg = new Map();
+  parts.forEach((p) => dcNets(p).forEach((n) => dcDeg.set(n, (dcDeg.get(n) || 0) + 1)));
+  const uf = parts.map((_, i) => i);
+  const find = (i) => (uf[i] === i ? i : (uf[i] = find(uf[i])));
+  const lastOn = new Map();
+  parts.forEach((p, i) => dcNets(p).forEach((n) => {
+    if (RAIL.test(n) || dcDeg.get(n) !== 2) return;
+    if (lastOn.has(n)) uf[find(i)] = find(lastOn.get(n)); else lastOn.set(n, i);
+  }));
+  const chains = new Map();
+  parts.forEach((p, i) => { if (dcNets(p).length) { const r = find(i); if (!chains.has(r)) chains.set(r, []); chains.get(r).push(i); } });
+  if (RAILROWS) {
+    const dcOn = (p, test) => (p.pc.prefix === 'M' || p.pc.prefix === 'Q' ? test(p.pc.nodes[2]) : ['R', 'L', 'I'].includes(p.pc.prefix) && p.pc.nodes.slice(0, 2).some(test));
+    railRows = [parts.map((p, i) => (dcOn(p, isGnd) && !dcOn(p, isSup) ? i : -1)).filter((i) => i >= 0),
+      parts.map((p, i) => (dcOn(p, isSup) && !dcOn(p, isGnd) ? i : -1)).filter((i) => i >= 0)].filter((g) => g.length > 1);
+  }
+  const columns = COLS ? [...chains.values()].filter((g) => g.length > 1) : [];
+  const chainOf = new Map(); columns.forEach((g, k) => g.forEach((i) => chainOf.set(i, k)));
   // a pair or mirror shares one level (its two halves can sit at different graph depths)
   for (const [i, j] of rows) { const m = (level[i] + level[j]) / 2; level[i] = level[j] = m; }
   const order = [];
@@ -157,7 +185,7 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   };
   const overlap = (a, b) => { const A = box(a), Bx = box(b); const w = Math.min(A[2], Bx[2]) - Math.max(A[0], Bx[0]), h = Math.min(A[3], Bx[3]) - Math.max(A[1], Bx[1]); return w > 0 && h > 0 ? (w * h) / (u * u) : 0; };
   const hpwl = (s) => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const i of s) { x0 = Math.min(x0, cx(parts[i])); x1 = Math.max(x1, cx(parts[i])); y0 = Math.min(y0, cy(parts[i])); y1 = Math.max(y1, cy(parts[i])); } return (x1 - x0 + y1 - y0) / u; };
-  const OV = 30, WL = opts.saWL ?? 1.5, PULL = opts.saPull ?? 0.15, LV = opts.saLevel ?? 3, ROW = opts.saRow ?? 8, RR = opts.saRailRow ?? 10, AL = opts.saAlign ?? (process.env.SA_ALIGN != null ? Number(process.env.SA_ALIGN) : 2);
+  const OV = 30, WL = opts.saWL ?? 1.5, PULL = opts.saPull ?? 0.15, LV = opts.saLevel ?? 3, ROW = opts.saRow ?? 8, RR = opts.saRailRow ?? 10, CL = opts.saColumn ?? 10, AL = opts.saAlign ?? (process.env.SA_ALIGN != null ? Number(process.env.SA_ALIGN) : 2);
   const cost = () => {
     let c = 0; for (const q of pairs) c += pairCost(q);
     for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) c += OV * overlap(parts[i], parts[j]);
@@ -169,6 +197,7 @@ export async function importNetlistSA(model, parsed, opts = {}) {
       const dx = Math.abs(parts[i].x + a.x - parts[j].x - b.x), dy = Math.abs(parts[i].y + a.y - parts[j].y - b.y);
       c += AL * Math.min(1.5, Math.min(dx, dy) / u);
     }
+    for (const g of columns) { const m = g.reduce((s2, i) => s2 + cx(parts[i]), 0) / g.length; for (const i of g) c += CL * Math.abs(cx(parts[i]) - m) / u; }
     for (const g of railRows) { const m = g.reduce((s2, i) => s2 + cy(parts[i]), 0) / g.length; for (const i of g) c += RR * Math.abs(cy(parts[i]) - m) / u; }
     // compaction: every part is pulled towards the centroid (no stray parts)
     let mx = 0, my = 0; for (const p of parts) { mx += cx(p); my += cy(p); } mx /= parts.length; my /= parts.length;
@@ -207,10 +236,20 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   snap(cy, (p, v) => { p.y = Math.round(v - p.h / 2); });
   // impose the rail rows exactly (median centre of each group)
   for (const g of railRows) { const ys = g.map((i) => cy(parts[i])).sort((a, b) => a - b); const m = ys[Math.floor(ys.length / 2)]; for (const i of g) parts[i].y = Math.round(m - parts[i].h / 2); }
-  // two parts forced onto one row must not overlap: spread them along the row
+  // impose the branch columns exactly (median centre of each branch)
+  for (const g of columns) { const xs = g.map((i) => cx(parts[i])).sort((a, b) => a - b); const m = xs[Math.floor(xs.length / 2)]; for (const i of g) parts[i].x = Math.round(m - parts[i].w / 2); }
+  // parts forced onto one row must not overlap: spread them along the row,
+  // moving a part's whole branch column with it
   for (const g of railRows) {
-    const ps = g.map((i) => parts[i]).sort((a, b) => a.x - b.x);
-    for (let k = 1; k < ps.length; k++) { const prev = ps[k - 1]; const minX = prev.x + prev.w + u * 0.8; if (ps[k].x < minX) ps[k].x = Math.round(minX); }
+    const order2 = g.map((i) => i).sort((a, b) => parts[a].x - parts[b].x);
+    for (let k = 1; k < order2.length; k++) {
+      const prev = parts[order2[k - 1]], cur2 = parts[order2[k]];
+      const shift = Math.round(prev.x + prev.w + u * 0.8 - cur2.x);
+      if (shift <= 0) continue;
+      const ch = chainOf.get(order2[k]);
+      const moved = ch != null ? columns[ch] : [order2[k]];
+      for (const i of moved) parts[i].x += shift;
+    }
   }
   snap(cx, (p, v) => { p.x = Math.round(v - p.w / 2); });
   // mirror source-coupled pairs: gates outwards
