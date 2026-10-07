@@ -373,6 +373,17 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   de la bande du dessus). Puis correctif : un miroir à deux qui partage sa source avec un 3e transistor était défait
   par la règle « paire » (règle 28 : 38 → 8 sur les 71 cas allongés ; 150 grands circuits : err/c 1,29 → 1,15).
   À FAIRE : croisements entre bandes, coudes, familles power / référence.
+- SUITE DU 7 OCT. (après PR #10) : (1) fils droits figés SANS point milieu (`edgeStyle=none`) : le point milieu était un
+  sommet, un autre net qui croisait pile là se lisait comme un contact (22-contact) ; (2) rangées des paires et miroirs
+  imposées exactement (règle 14 : 21 → 5 sur 150 grands) ; (3) dipôle vertical dont les deux nets partent du même côté
+  placé à côté d'eux (wrap-around 32 → 21). Banc `sa11-tune` (fils droits seulement, avant 2 et 3) :
+    | | zéro erreur | ≤ 12 | > 12 | err/c | > 3:1 | crois./c | propres |
+    | auto | 60,1 % | 79,6 % | 36,2 % | 1,39 | 4,7 % | 5,4 | 20,6 % |
+    | sa11 | 62,5 % | 75,8 % | 46,2 % | 0,85 | 2,3 % | 9,2 | 10,1 % |
+  sa DÉPASSE auto au vérificateur pour la première fois (zéro erreur, err/c, allongement) ; reste derrière sur les petits
+  circuits, les croisements et les règles de base (coudes en excès 6,5/c contre 5,3 : tracés à 3-4 coudes choisis
+  seulement quand aucun à 2 coudes n'existe — pénalité plus forte sans effet, c'est le placement). Puis (2)+(3) sur les
+  150 grands du jeu de contrôle : zéro erreur 58 → 66 %, err/c 0,91 → 0,75 ; 150 petits : 81 → 82 %.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
