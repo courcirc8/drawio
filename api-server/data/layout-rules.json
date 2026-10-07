@@ -1,0 +1,93 @@
+{
+ "source": "DVD 2001/2008 schematics, train+val papers, detector-gd1 boxes, n=8878",
+ "rules": {
+  "3-6": {
+   "row_share": [
+    0.667,
+    0.4
+   ],
+   "vdd_above": [
+    0.909,
+    0.5
+   ],
+   "gnd_below": [
+    1.0,
+    0.5
+   ]
+  },
+  "7-12": {
+   "col_share": [
+    0.5,
+    0.364
+   ],
+   "row_share": [
+    0.778,
+    0.455
+   ],
+   "mos_pair_row": [
+    0.4,
+    0.222
+   ],
+   "vdd_above": [
+    1.0,
+    0.5
+   ],
+   "gnd_below": [
+    1.0,
+    0.5
+   ]
+  },
+  "13-25": {
+   "col_share": [
+    0.615,
+    0.462
+   ],
+   "row_share": [
+    0.88,
+    0.636
+   ],
+   "mos_pair_row": [
+    0.529,
+    0.25
+   ],
+   "mos_mirror_sym": [
+    0.089,
+    0.0
+   ],
+   "vdd_above": [
+    1.0,
+    0.5
+   ],
+   "gnd_below": [
+    1.0,
+    0.5
+   ]
+  },
+  "26+": {
+   "col_share": [
+    0.712,
+    0.593
+   ],
+   "row_share": [
+    0.933,
+    0.769
+   ],
+   "mos_pair_row": [
+    0.647,
+    0.308
+   ],
+   "mos_mirror_sym": [
+    0.1,
+    0.0
+   ],
+   "vdd_above": [
+    0.939,
+    0.5
+   ],
+   "gnd_below": [
+    1.0,
+    0.5
+   ]
+  }
+ }
+}

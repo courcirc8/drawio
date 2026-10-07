@@ -16,7 +16,7 @@
  * wire, published-convention score, check.py error rules. One JSON line per circuit.
  *
  * Usage:
- *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all] [--sources a,b] [--exclude-source a,b]
+ *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4|sa] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all] [--sources a,b] [--exclude-source a,b] [--ids a,b] [--min-parts N]
  *   node tools/bench-families.mjs sum  DIR [DIR2]       (DIR2: compare two runs)
  */
 import fs from 'node:fs';
@@ -31,6 +31,8 @@ import { routePage, pinAbs } from '../lib/route.js';
 import { compare } from '../lib/lvs.js';
 import { autoPlace } from '../lib/auto.js';
 import { conventionReport } from '../lib/conventions.js';
+import { basicsReport } from '../lib/basics.js';
+import { importNetlistSA } from '../lib/place-sa.js';
 import { assertNotSealed, bankExclusions } from '../lib/sealed.js';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
@@ -74,8 +76,9 @@ async function run() {
   const ex = bankExclusions(BANK);
   const man = new Map(fs.readdirSync(BANK).filter((f) => /^manifest.*\.jsonl$/.test(f))
     .flatMap((f) => fs.readFileSync(`${BANK}/${f}`, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))).map((r) => [r.id, r]));
+  const onlyIds = arg('--ids') ? new Set(arg('--ids').split(',')) : null, minParts = Number(arg('--min-parts', 0));
   const inv = fs.readFileSync(`${BANK}/inventory.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
-    .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && (wantSplit === 'all' || splitOf(r) === wantSplit) && (!onlySrc || onlySrc.includes(r.source)) && !exSrc.includes(r.source))
+    .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && (wantSplit === 'all' || splitOf(r) === wantSplit) && (!onlySrc || onlySrc.includes(r.source)) && !exSrc.includes(r.source) && (!onlyIds || onlyIds.has(r.id)) && r.parts >= minParts)
     .filter((_, i) => i % sk === si).slice(0, limit);
   // --resume: skip circuits already measured in this output directory
   const done = new Set();
@@ -91,7 +94,7 @@ async function run() {
       const parsed = parseSpice(text);
       let doc, m, chosen = engine;
       if (engine === 'auto') { const a = await autoPlace(parsed); doc = a.doc; chosen = a.label; }
-      else { doc = newDocument(); const mm = getPage(doc); if (engine === 'v2') { const p = importNetlist2(mm, parsed); await routePage(mm, p.wires, {}); normalizeOrigin(mm); } else await importNetlist4(mm, parsed); }
+      else { doc = newDocument(); const mm = getPage(doc); if (engine === 'v2') { const p = importNetlist2(mm, parsed); await routePage(mm, p.wires, {}); normalizeOrigin(mm); } else if (engine === 'sa') await importNetlistSA(mm, parsed); else await importNetlist4(mm, parsed); }
       m = getPage(doc);
       row.chosen = chosen;
       row.lvs = compare(extractNetlist(m), parsed).match;
@@ -102,6 +105,7 @@ async function run() {
       for (const v of j.violations || []) if (v.severity === 'error') row.rules[v.rule] = (row.rules[v.rule] || 0) + 1;
       Object.assign(row, geometry(m, parsed));
       try { row.conv = conventionReport(m, parsed).score; } catch { row.conv = null; }
+      try { const b = basicsReport(m, parsed); row.basics = b.count; row.basics_rules = b.byRule; } catch { row.basics = null; }
     } catch (e) { row.failed = String(e.message || e).slice(0, 160); }
     fs.writeSync(fd, JSON.stringify(row) + '\n');
   }
@@ -119,7 +123,8 @@ function table(rows) {
     const ok = rs.filter((r) => !r.failed);
     out[k] = { n: rs.length, failed: rs.length - ok.length, lvs: ok.filter((r) => r.lvs).length / Math.max(1, ok.length),
       zero: ok.filter((r) => r.errors === 0).length / Math.max(1, ok.length), wide: ok.filter((r) => r.aspect > 3).length / Math.max(1, ok.length),
-      conv: med(ok.map((r) => r.conv)), long: ok.reduce((s, r) => s + r.long_wires, 0) / Math.max(1, ok.length), cross: ok.reduce((s, r) => s + r.crossings, 0) / Math.max(1, ok.length) };
+      conv: med(ok.map((r) => r.conv)), long: ok.reduce((s, r) => s + r.long_wires, 0) / Math.max(1, ok.length), cross: ok.reduce((s, r) => s + r.crossings, 0) / Math.max(1, ok.length),
+      basics: ok.reduce((s, r) => s + (r.basics || 0), 0) / Math.max(1, ok.length), clean: ok.filter((r) => r.basics === 0).length / Math.max(1, ok.length) };
   }
   return out;
 }
@@ -127,11 +132,11 @@ function sum() {
   const [d1, d2] = argv.slice(1);
   const t1 = table(load(d1)), t2 = d2 ? table(load(d2)) : null;
   const pct = (x) => (x == null ? '  - ' : (100 * x).toFixed(0).padStart(3) + '%');
-  console.log('kind split          family                 n  fail  LVS  zero-err  >3:1  conv  long/c  cross/c' + (t2 ? '   | zero-err  >3:1  conv (run 2)' : ''));
+  console.log('kind split          family                 n  fail  LVS  zero-err  >3:1  conv  long/c  cross/c  basics/c clean' + (t2 ? '   | zero-err  >3:1  cross/c basics/c clean (run 2)' : ''));
   for (const [k, v] of Object.entries(t1)) {
     const w = t2 && t2[k];
-    console.log(`${k.padEnd(40)} ${String(v.n).padStart(4)} ${String(v.failed).padStart(4)}  ${pct(v.lvs)}    ${pct(v.zero)}   ${pct(v.wide)}  ${v.conv == null ? ' -  ' : v.conv.toFixed(2)}  ${v.long.toFixed(1).padStart(5)}  ${v.cross.toFixed(1).padStart(6)}` +
-      (w ? `   |    ${pct(w.zero)}   ${pct(w.wide)}  ${w.conv == null ? ' - ' : w.conv.toFixed(2)}` : ''));
+    console.log(`${k.padEnd(40)} ${String(v.n).padStart(4)} ${String(v.failed).padStart(4)}  ${pct(v.lvs)}    ${pct(v.zero)}   ${pct(v.wide)}  ${v.conv == null ? ' -  ' : v.conv.toFixed(2)}  ${v.long.toFixed(1).padStart(5)}  ${v.cross.toFixed(1).padStart(6)}  ${v.basics.toFixed(1).padStart(6)}  ${pct(v.clean)}` +
+      (w ? `   |    ${pct(w.zero)}   ${pct(w.wide)}  ${w.cross.toFixed(1).padStart(6)}  ${w.basics.toFixed(1).padStart(6)}  ${pct(w.clean)}` : ''));
   }
 }
 if (argv[0] === 'run') await run(); else if (argv[0] === 'sum') sum(); else { console.error('usage: run|sum (see header)'); process.exit(1); }
