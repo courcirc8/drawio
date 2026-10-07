@@ -365,6 +365,14 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   power 0 → 20 %). RESTE : feuilles > 3:1 sur les grands circuits (13,7 % contre 4,1 % : rangées de rails trop longues,
   écart 0,5 u), croisements, coudes en excès (couloirs), « propres » deux fois moins qu'auto ; power et référence faibles.
   Auto reste le défaut ; aucune bascule sans accord d'Eric.
+- REPLI EN BANDES (7 oct., commit 2e0… voir git log) : sur les grands circuits les rangées de rails donnaient une bande
+  très longue (sa9 : 13,7 % de feuilles > 3:1 au-delà de 12 composants). Si largeur > 2,5 × hauteur, le dessin est
+  coupé en k bandes empilées ; unités insécables = colonne de branche, paire, miroir à deux ; coupe où le moins de nets
+  traversent ; trous resserrés (SA_FOLD=0 pour couper). Banc `sa10-tune` : > 3:1 8,6 → 2,3 % (auto 4,7 %), zéro erreur
+  55,4 → 54,6 %, croisements > 12 composants 14,9 → 19,4, pmos-dessous 0,09 → 0,31 (une bande de PMOS sous les NMOS
+  de la bande du dessus). Puis correctif : un miroir à deux qui partage sa source avec un 3e transistor était défait
+  par la règle « paire » (règle 28 : 38 → 8 sur les 71 cas allongés ; 150 grands circuits : err/c 1,29 → 1,15).
+  À FAIRE : croisements entre bandes, coudes, familles power / référence.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes

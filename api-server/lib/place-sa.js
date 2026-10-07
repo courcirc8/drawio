@@ -336,7 +336,10 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     // stencil gate pin is on the left (W)
     if (a.pc.nodes[1] === b.pc.nodes[1]) { if (MIRROR && mirrorSize.get(mirrorKey(a)) === 2) { flip(L, true); flip(Rt, false); } continue; }
     if (RAIL.test(a.pc.nodes[2])) continue;
-    flip(L, false); flip(Rt, true);   // a pair: the right device is flipped
+    // a pair: exactly two transistors on that source, neither already turned as
+    // a mirror half (a mirror sharing its source with a third device was undone)
+    if (parts.filter((q) => q.pc.prefix === 'M' && q.kind === a.kind && q.pc.nodes[2] === a.pc.nodes[2]).length !== 2 || a.flipStyle || b.flipStyle) continue;
+    flip(L, false); flip(Rt, true);   // the right device is flipped
   }
   // any other transistor turns its gate (base) towards what drives it: the mean
   // x of the other parts and ports on its gate net
