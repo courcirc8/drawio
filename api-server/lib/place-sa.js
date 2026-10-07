@@ -301,6 +301,16 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   snap(cy, (p, v) => { p.y = Math.round(v - p.h / 2); });
   // impose the rail rows exactly (median centre of each group)
   for (const g of railRows) { const ys = g.map((i) => cy(parts[i])).sort((a, b) => a - b); const m = ys[Math.floor(ys.length / 2)]; for (const i of g) parts[i].y = Math.round(m - parts[i].h / 2); }
+  // impose the pair / mirror rows exactly (check.py rules 14 and 26), unless a
+  // half is already held by a rail row
+  if (opts.saPairRow ?? (process.env.SA_PAIR_ROW !== '0')) {
+    const inRail = new Set(railRows.flat());
+    for (const [i, j] of rows) {
+      if (inRail.has(i) && inRail.has(j)) continue;
+      const m = inRail.has(i) ? cy(parts[i]) : inRail.has(j) ? cy(parts[j]) : (cy(parts[i]) + cy(parts[j])) / 2;
+      for (const k of [i, j]) if (!inRail.has(k)) parts[k].y = Math.round(m - parts[k].h / 2);
+    }
+  }
   // impose the branch columns exactly (median centre of each branch)
   for (const g of columns) { const xs = g.map((i) => lx(i)).sort((a, b) => a - b); const m = xs[Math.floor(xs.length / 2)]; for (const i of g) parts[i].x = Math.round(m - dcOff[i]); }
   // parts forced onto one row must not overlap: spread them along the row,
