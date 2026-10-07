@@ -392,6 +392,33 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     }
     if (!moved) break;
   }
+  // a vertical two-terminal part whose two nets both lead to the same side
+  // (both above or both below: a resistor across a transistor's drain and
+  // source drawn under it) moves beside them, at their height, when the spot
+  // is free: otherwise one pin must turn back round the body (check.py wrap-around)
+  if (opts.saBeside ?? (process.env.SA_BESIDE !== '0')) for (const [k, p] of parts.entries()) {
+    if (['M', 'Q'].includes(p.pc.prefix) || p.pins.length !== 2 || p.bh <= p.bw || p.taps.length) continue;
+    const dest = (m) => {
+      const net = pinNet(p, m); if (RAIL.test(net)) return null;
+      let best = null;
+      parts.forEach((q, j) => { if (j !== k) q.pins.forEach((_, mm) => { if (pinNet(q, mm) === net) { const pt = { x: q.x + pinOff[j][mm].x, y: q.y + pinOff[j][mm].y }; const d = Math.abs(pt.x - p.x - pinOff[k][m].x) + Math.abs(pt.y - p.y - pinOff[k][m].y); if (!best || d < best.d) best = { d, pt }; } }); });
+      return best && best.pt;
+    };
+    const d0 = dest(0), d1 = dest(1);
+    if (!d0 || !d1) continue;
+    const top = p.y + p.by, bot = top + p.bh;
+    const above = d0.y < top && d1.y < top, below = d0.y > bot && d1.y > bot;
+    if (!above && !below) continue;
+    const yc = (d0.y + d1.y) / 2, xs = [Math.max(d0.x, d1.x) + 0.8 * u, Math.min(d0.x, d1.x) - 0.8 * u - p.bw];
+    const ox = p.x, oy = p.y;
+    for (const x of xs) {
+      p.x = Math.round(x - p.bx); p.y = Math.round(yc - p.by - p.bh / 2);
+      const A = [p.x + p.bx - 0.3 * u, p.y + p.by - 0.3 * u, p.x + p.bx + p.bw + 0.3 * u, p.y + p.by + p.bh + 0.3 * u];
+      const hit = parts.some((q, j) => { if (j === k) return false; let x0 = q.x + q.bx, y0 = q.y + q.by, x1 = x0 + q.bw, y1 = y0 + q.bh; for (const t of q.taps) { x0 = Math.min(x0, q.x + t.ox); y0 = Math.min(y0, q.y + t.oy); x1 = Math.max(x1, q.x + t.ox + t.cell.w); y1 = Math.max(y1, q.y + t.oy + t.cell.h); } return A[0] < x1 && x0 < A[2] && A[1] < y1 && y0 < A[3]; });
+      if (!hit) break;
+      p.x = ox; p.y = oy;
+    }
+  }
   // fold (2026-10-07): on large circuits the rail rows and branch columns give
   // one very long strip (sheets > 3:1). Cut it between columns, where the
   // fewest nets cross, into k bands stacked top to bottom; each band keeps its
