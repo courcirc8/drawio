@@ -1,6 +1,6 @@
 # ÉTAT du chantier « qualité de la génération » — fork drawio (api-server)
 
-Mis à jour le 2026-10-03 au soir. Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
+Mis à jour le 2026-10-07 (reprise après le redémarrage d'ai-station ; branche et données vérifiées intactes). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
 Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 
 ## Contraintes fermes d'Eric (plan qualité validé)
@@ -339,6 +339,30 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   (deux résistances superposées) ; niveau faussé par le substrat des PMOS et par l'absence de chemin vers la masse.
   Banc `sa8-tune` : zéro erreur 33,7 % (sa7 29,7 ; auto 60,1) ; ≤ 12 composants 53,8 % (46,5 ; auto 79,6) ;
   > 12 : 9,1 % inchangé (auto 36,2) — croisements 17,7 contre 10,9 : chantier suivant = grands circuits.
+- CÂBLAGE SUR GRILLE (7 oct., commit e24bd2c, `place-sa.js` étape 4) : chaque liaison de l'arbre d'un net reçoit un
+  tracé FIGÉ (`drawioApiFixedRoute` + `drawioApiGridRoute`) quand il en existe un propre — droit, en L, ou échappée de
+  la broche + couloir horizontal/vertical — vérifié contre les corps (2 px de marge), les broches étrangères (8 px),
+  les fils figés des autres nets (ni parallèle à < 12 px ni contact), les flancs de MOS (channel-hug) et les
+  parallèles du même net (règle 29) ; coût = longueur + 2,5/coude + 4 au-delà de 2 coudes ; le reste va à libavoid.
+  Corrections trouvées en route : (1) les retournements de sa n'ont JAMAIS été appliqués (style passé en texte →
+  clés parasites `0=f;1=l…`, la pièce était quand même décalée) ; (2) boîtes des pièces tournées (résistance à −90 :
+  100×20 au lieu de 20×100) dans le chevauchement et la légalisation ; (3) `polishJogs` (route.js) réécrivait les
+  tracés figés (détour vérifié → ligne à travers un port) : il saute désormais `drawioApiGridRoute`.
+  Ajouts : miroirs à 2 transistors grilles face à face (règle 28), autres transistors grille vers leur commande,
+  dipôles verticaux sur rail tournés (masse en bas, VDD en haut), dipôles tournés/miroités vers leurs nets,
+  symboles de rail et ports dans l'axe de leur broche, étiquettes de nom sous leur pièce (à gauche d'un dipôle
+  vertical), écart minimal 0,5 u entre voisins (SA_GAP), liaison diode grille-drain en dernier recours.
+  Interrupteurs : SA_GRID, SA_LANES, SA_MIRROR_FLIP, SA_RAIL_TURN, SA_DIPOLE_TURN, SA_GATE_FACE, SA_RAIL_SYMBOLS (=0).
+  Banc `sa9-tune` (1 153 circuits réels, mêmes que sa8 / auto) :
+    | | zéro erreur | err/c | crois./c | > 3:1 | basics/c | propres |
+    | auto (basics2) | 60,1 % | 1,39 | 5,4 | 4,7 % | 6,7 | 20,6 % |
+    | sa8 | 33,7 % | 4,60 | 8,8 | 7,1 % | 7,3 | 10,4 % |
+    | sa9 | 55,4 % | 1,12 | 7,4 | 8,6 % | 7,5 | 10,1 % |
+  ≤ 12 composants : sa9 73,4 % (auto 79,6) ; > 12 : 33,3 % (auto 36,2 ; sa8 9,1), err/c 2,02 (auto 2,64).
+  Toutes les familles progressent en zéro erreur (ex. opamp 29 → 56 %, comparateur 10 → 55 %, référence 8 → 22 %,
+  power 0 → 20 %). RESTE : feuilles > 3:1 sur les grands circuits (13,7 % contre 4,1 % : rangées de rails trop longues,
+  écart 0,5 u), croisements, coudes en excès (couloirs), « propres » deux fois moins qu'auto ; power et référence faibles.
+  Auto reste le défaut ; aucune bascule sans accord d'Eric.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
