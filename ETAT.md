@@ -32,6 +32,7 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 | Catalogue du RAG | `/AI/datasets/IEEE/derived/figures.sqlite` (lecture seule), `FIGURES-README.md` |
 | Étiquettes livrées au RAG | `/AI/datasets/IEEE/derived/etiquettes-recognize.jsonl` (version recognize-2) |
 | Index motifs IEEE | `/AI/datasets/IEEE/derived/motif-index.json` |
+| Sauvegarde | `/AI/datasets/{judge,evals,netlists,training}` sauvegardés chaque jour à 6 h vers `/AI/models/backup-rag` (ai-station seulement ; mis en place par la session RAG, 7 oct.) |
 
 Outils (dans `api-server/tools/`) : `import-corpora.py`, `inventory-bank.mjs`, `seal-eval.mjs`, `bench-families.mjs`
 (`run` / `sum`, options `--split`, `--engine`, `--sources`, `--exclude-source`), `crawl-openpdk.py`
