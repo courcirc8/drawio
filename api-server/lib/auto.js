@@ -7,6 +7,7 @@
  * fewer basic-rule violations (lib/basics.js: PMOS above NMOS, mirrored pairs,
  * bends, isolated parts). Tune bench: clean drawings 21.7 -> 25.8 % (original
  * bank), errors and aspect unchanged or better.
+ * SA (default on since 2026-10-07; AUTO_SA=0 disables): the annealing engine is one more candidate.
  * AUTO_RULES=1 (measurement only, not adopted): between the error count and the
  * conventions, prefer the higher published-layout-rules score (lib/layout-rules.js).
  * Shared by server.js (POST …/netlist/import?engine=auto) and the bench tools,
@@ -61,9 +62,9 @@ const better = (b, a) => {
  *  when every candidate failed. */
 export async function autoPlace(parsed) {
   const trials = await Promise.all(AUTO_SPACINGS.flatMap((sp) => AUTO_CANDIDATES.map(([eng, mode, extra]) => trial(parsed, eng, mode, sp, extra || {}))));
-  // AUTO_SA=1 (measurement): the annealing engine (lib/place-sa.js) as one more
-  // candidate, circuits up to 40 parts (its cost is quadratic)
-  if (process.env.AUTO_SA === '1' && parsed.components.length <= 40) trials.push(await trial(parsed, 'sa', null, {}, {}));
+  // the annealing engine (lib/place-sa.js) as one more candidate (Eric
+  // 2026-10-07; AUTO_SA=0 disables, AUTO_SA_MAX=N limits it to N parts)
+  if (process.env.AUTO_SA !== '0' && parsed.components.length <= Number(process.env.AUTO_SA_MAX ?? Infinity)) trials.push(await trial(parsed, 'sa', null, {}, {}));
   let win = trials.reduce((a, b) => (better(b, a) ? b : a));
   // STACK-FIRST BAND (experiment, AUTO_BAND=N): among candidates within N
   // check.py-like errors of the best, prefer the branch-column drawings
