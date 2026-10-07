@@ -32,6 +32,7 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 | Catalogue du RAG | `/AI/datasets/IEEE/derived/figures.sqlite` (lecture seule), `FIGURES-README.md` |
 | Étiquettes livrées au RAG | `/AI/datasets/IEEE/derived/etiquettes-recognize.jsonl` (version recognize-2) |
 | Index motifs IEEE | `/AI/datasets/IEEE/derived/motif-index.json` |
+| Service web | `drawio-api.service` (systemd utilisateur, activé, survit au redémarrage) : `node server.js --port 8770` depuis CE clone (`api-server/`), 127.0.0.1 seulement ; portail https://ai-station.tail10543b.ts.net/drawio/ (accueil, /correct, /compare, /editor/). Changer de branche dans ce clone change le service : `systemctl --user restart drawio-api` après une mise à jour. Unité : `~/.config/systemd/user/drawio-api.service` |
 | Sauvegarde | `/AI/datasets/{judge,evals,netlists,training}` sauvegardés chaque jour à 6 h vers `/AI/models/backup-rag` (ai-station seulement ; mis en place par la session RAG, 7 oct.) |
 
 Outils (dans `api-server/tools/`) : `import-corpora.py`, `inventory-bank.mjs`, `seal-eval.mjs`, `bench-families.mjs`
@@ -379,6 +380,5 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
    Familles « par nom » : PLL 271, ADC 206, opamp 192, comparateur 101, DAC 97, référence 89, oscillateur 51, régulateur 42…
    Licences : Apache-2.0 688, MIT 222, sans licence déclarée 688 (usage privé d'évaluation seulement).
    ADC/DAC → famille `data-converter` = JAMAIS VUE : mesure seulement. Mesure séparée : `--sources openpdk`.
-3. **Page de correction** `/correct` prête (lot rf-1). Eric doit lancer une fois
-   `sudo tailscale serve --bg --https=8443 http://127.0.0.1:8770`, puis `tools/correct-session.sh` ;
-   URL https://ai-station.tail10543b.ts.net:8443/correct?batch=rf-1 ; fin : `correct-session.sh --stop` puis `sudo tailscale serve --https=8443 off`.
+3. **Page de correction** `/correct` prête (lot rf-1), servie en permanence par le portail :
+   https://ai-station.tail10543b.ts.net/drawio/correct?batch=rf-1 (l'ancien accès :8443 et `correct-session.sh` ne servent plus).
