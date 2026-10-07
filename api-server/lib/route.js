@@ -1482,6 +1482,7 @@ function polishJogs(model, obstacles, tol) {
   for (const c of cells) {
     if (c.kind !== 'edge' || c.points == null || c.points.length === 0) continue;
     if (c.style.map.get('edgeStyle') === 'none') continue;
+    if (c.style.map.has('drawioApiGridRoute')) continue;   // engine sa: checked path, the jog avoids a body
     const src = byId2.get(c.source), tgt = byId2.get(c.target);
     if (src == null || tgt == null || src.x == null || tgt.x == null) continue;
     const anchor = (pref, cell) => {

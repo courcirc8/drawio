@@ -13,14 +13,20 @@
  *      P_human: /AI/datasets/human-layouts/relpos.json, learned on the AMSNet
  *      human drawings (tools/human/learn-relpos.py: PMOS above the NMOS sharing
  *      its drain in 98 % of 323 cases, source-coupled NMOS on one row in 95 %).
- *   3. Each net is rewired as a Manhattan minimum spanning tree over its pins,
- *      routed by routePage. Source-coupled pairs are mirrored (gates outwards).
+ *   3. Each net is rewired as a Manhattan minimum spanning tree over its pins.
+ *      Source-coupled pairs are mirrored (gates outwards), two-transistor
+ *      mirrors face each other, other transistors turn their gate to its driver,
+ *      two-terminal parts turn their pins towards their nets.
+ *   4. Grid wiring (2026-10-07): every link of the tree gets a FIXED path when a
+ *      clean one exists — straight line, L, or escape + horizontal / vertical
+ *      corridor — checked against bodies, foreign pins and the fixed wires of
+ *      other nets; only the rest goes to routePage (libavoid).
  * The caller's LVS gate decides whether the result is usable.
  */
 import fs from 'node:fs';
 import { allCells, cellInfo, addWire, normalizeOrigin, deleteCell, updateCell } from './model.js';
 import { importNetlist2 } from './place2.js';
-import { routePage, pinAbs } from './route.js';
+import { routePage, pinAbs, rotatedAabb } from './route.js';
 import { classify, activePins } from './components.js';
 import { isPmosLike } from './patterns.js';
 
@@ -51,19 +57,41 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     const pc = comps.get(String(c.refdes || c.id));
     if (!pc) continue;
     const pins = activePins(cls);
-    parts.push({ cell: c, cls, pc, pins, x: c.x, y: c.y, w: c.w, h: c.h, taps: [], kind: kindOf(pc), roles: rolesOf(pc) });
+    const rb = rotatedAabb(c);   // a rotated part (resistor at -90) spans its rotated box
+    parts.push({ cell: c, cls, pc, pins, x: c.x, y: c.y, w: c.w, h: c.h, bx: rb.x - c.x, by: rb.y - c.y, bw: rb.w, bh: rb.h, taps: [], kind: kindOf(pc), roles: rolesOf(pc) });
+  }
+  // a vertical two-terminal part on a rail turns its rail pin towards the rail
+  // (ground pin at the bottom, supply pin on top): place2 can draw it upside
+  // down, and the ground symbol then hangs beside the part with a wire round it
+  const isGndN = (n) => /^(0|gnd|vss|vee|avss|dvss|agnd|dgnd|vgnd)$/i.test(n), isSupN = (n) => RAIL.test(n) && !isGndN(n);
+  if (opts.saRailTurn ?? (process.env.SA_RAIL_TURN !== '0')) for (const p of parts) {
+    if (['M', 'Q'].includes(p.pc.prefix) || p.pins.length !== 2 || p.bh <= p.bw) continue;
+    const ya = pinAbs(p.cell, p.pins[0]).y, yb = pinAbs(p.cell, p.pins[1]).y, [na, nb] = p.pc.nodes;
+    const bad = (isGndN(na) && !isGndN(nb) && ya < yb) || (isGndN(nb) && !isGndN(na) && yb < ya)
+      || (isSupN(na) && !RAIL.test(nb) && ya > yb) || (isSupN(nb) && !RAIL.test(na) && yb > ya);
+    if (!bad) continue;
+    const rot = (((p.cell.rotation || 0) + 180) % 360 + 360) % 360;
+    updateCell(model, p.cell.id, { rotation: rot });
+    p.cell = cellInfo(allCells(model).find((n) => cellInfo(n).id === p.cell.id));
   }
   if (parts.length < 3) { await routePage(model, placed.wires, {}); normalizeOrigin(model); return placed; }
   const pinNet = (p, i) => p.pc.nodes[i];
   // symbols: grouped with the closest part pin on their net
   const taps = [];
+  const RAILSYM = opts.saRailSymbols ?? (process.env.SA_RAIL_SYMBOLS !== '0');
+  const pinOffOf = (p, i) => { const a = pinAbs(p.cell, p.pins[i]); return { x: a.x - p.cell.x, y: a.y - p.cell.y }; };
+  const pinDir = (p, o) => { const d = [[o.x - p.bx, -1, 0], [p.bx + p.bw - o.x, 1, 0], [o.y - p.by, 0, -1], [p.by + p.bh - o.y, 0, 1]].sort((x, y) => x[0] - y[0])[0]; return { x: d[1], y: d[2] }; };
   for (const c of cells) {
     if (c.kind !== 'vertex' || c.x == null) continue;
     const cls = classify(c);
     if (cls.role === 'other' && String(c.value || '').trim()) {   // a text label (refdes, value): follows the closest part
-      let bp = null, bd = Infinity;
-      for (const p of parts) { const d = Math.hypot(p.x + p.w / 2 - (c.x + c.w / 2), p.y + p.h / 2 - (c.y + c.h / 2)); if (d < bd) { bd = d; bp = p; } }
-      if (bp) bp.labels = [...(bp.labels || []), { cell: c, ox: c.x - bp.x, oy: c.y - bp.y }];
+      let bp = parts.find((p) => c.id === `LBL_${p.cell.id}` || c.id === `LBL_${p.pc.ref}`) || null, bd = bp ? 0 : Infinity;
+      if (!bp) for (const p of parts) { const d = Math.hypot(p.x + p.w / 2 - (c.x + c.w / 2), p.y + p.h / 2 - (c.y + c.h / 2)); if (d < bd) { bd = d; bp = p; } }
+      // a refdes label sits centred under its own part (place2's spot can be next to another one)
+      const own = bp && bd === 0;
+      if (bp) bp.labels = [...(bp.labels || []), { cell: c, ...(own && bp.bh > bp.bw * 1.5 && !['M', 'Q'].includes(bp.pc.prefix)   // a vertical two-terminal part: label on its left
+        ? { ox: Math.round(bp.bx - c.w - 6), oy: Math.round(bp.by + (bp.bh - c.h) / 2) }
+        : { ox: own ? Math.round(bp.bx + (bp.bw - c.w) / 2) : c.x - bp.x, oy: own ? bp.by + bp.bh + 4 : c.y - bp.y }) }];
       continue;
     }
     if (!['power', 'ground', 'port'].includes(cls.role)) continue;
@@ -75,7 +103,27 @@ export async function importNetlistSA(model, parsed, opts = {}) {
       if (!best || d < best.d) best = { d, p, i };
     });
     const t = { cell: c, cls, net, pin: activePins(cls)[0], owner: best ? best.p : null, ox: 0, oy: 0 };
-    if (best) { t.ox = c.x - best.p.x; t.oy = c.y - best.p.y; best.p.taps.push(t); }
+    if (best) {
+      t.ox = c.x - best.p.x; t.oy = c.y - best.p.y; best.p.taps.push(t);
+      // supply and ground symbols sit straight on their pin's line: ground below
+      // a pin facing down (or beside it, then below), supply above a pin facing up
+      const pin0 = pinOffOf(best.p, best.i), tp = t.pin && { x: t.pin.x * c.w, y: t.pin.y * c.h };
+      if (RAILSYM && tp && (cls.role === 'ground' || cls.role === 'power')) {
+        const d = pinDir(best.p, pin0), down = cls.role === 'ground';
+        let px = pin0.x, py = pin0.y;
+        if (d.y === (down ? 1 : -1)) py += down ? 20 : -20;
+        else if (d.x !== 0) { px += d.x * 30; py += down ? 20 : -20; }
+        else px = null;   // pin facing away from its rail: keep place2's spot
+        if (px != null) { t.ox = Math.round(px - tp.x); t.oy = Math.round(py - tp.y); }
+      }
+      // a port sits on its pin's line, outside the part (place2's spot can be
+      // in the middle of the circuit once the parts have moved)
+      if (RAILSYM && tp && cls.role === 'port') {
+        const d = pinDir(best.p, pin0);
+        // only when the port's own pin faces the part (its body then extends outwards)
+        if ((d.x > 0 && tp.x < c.w / 2) || (d.x < 0 && tp.x > c.w / 2)) { t.ox = Math.round(pin0.x + d.x * 40 - tp.x); t.oy = Math.round(pin0.y - tp.y); }
+      }
+    }
     taps.push(t);
   }
   // drop wires and junction dots: every net is rewired after placement
@@ -187,7 +235,7 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   parts.forEach((p, i) => p.pc.nodes.forEach((n) => { if (!RAIL.test(n)) { if (!nets.has(n)) nets.set(n, new Set()); nets.get(n).add(i); } }));
   const netList = [...nets.values()].filter((s) => s.size > 1).map((s) => [...s]);
   const box = (p) => {   // part + its symbols, with a margin
-    let x0 = p.x, y0 = p.y, x1 = p.x + p.w, y1 = p.y + p.h;
+    let x0 = p.x + p.bx, y0 = p.y + p.by, x1 = x0 + p.bw, y1 = y0 + p.bh;
     for (const t of p.taps) { x0 = Math.min(x0, p.x + t.ox); y0 = Math.min(y0, p.y + t.oy); x1 = Math.max(x1, p.x + t.ox + t.cell.w); y1 = Math.max(y1, p.y + t.oy + t.cell.h); }
     const m = u * (opts.saMargin ?? 0.6); return [x0 - m, y0 - m, x1 + m, y1 + m];
   };
@@ -261,7 +309,7 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     const order2 = g.map((i) => i).sort((a, b) => parts[a].x - parts[b].x);
     for (let k = 1; k < order2.length; k++) {
       const prev = parts[order2[k - 1]], cur2 = parts[order2[k]];
-      const shift = Math.round(prev.x + prev.w + u * 0.8 - cur2.x);
+      const shift = Math.round(prev.x + prev.bx + prev.bw + u * 0.8 - cur2.x - cur2.bx);
       if (shift <= 0) continue;
       const ch = chainOf.get(order2[k]);
       const moved = ch != null ? columns[ch] : [order2[k]];
@@ -269,17 +317,53 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     }
   }
   snap(cx, (p, v) => { p.x = Math.round(v - p.w / 2); });
+  // mirror source-coupled pairs: gates outwards; two-transistor current
+  // mirrors (same gate and source): gates face to face (check.py rule 28)
+  const mirrorKey = (p) => `${p.kind}|${p.pc.nodes[1]}|${p.pc.nodes[2]}`;
+  const mirrorSize = new Map();
+  for (const p of parts) if (p.pc.prefix === 'M') mirrorSize.set(mirrorKey(p), (mirrorSize.get(mirrorKey(p)) || 0) + 1);
+  const flip = (p, want) => {
+    const was = String(p.cell.style.map.get('flipH') || '0') === '1';
+    p.flipStyle = { flipH: want ? 1 : null };   // an object: a string was split into garbage keys and never flipped
+    if (was !== want) { const k = parts.indexOf(p); p.x = Math.round(p.x + 2 * dcOff[k] - p.w); }   // the drain-source lead stays where it was
+  };
+  const MIRROR = opts.saMirrorFlip ?? (process.env.SA_MIRROR_FLIP !== '0');
+  for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+    const a = parts[i], b = parts[j];
+    if (a.pc.prefix !== 'M' || b.pc.prefix !== 'M' || a.kind !== b.kind) continue;
+    if (a.pc.nodes[2] !== b.pc.nodes[2] || Math.abs(cy(a) - cy(b)) > u * 0.3) continue;
+    const [L, Rt] = cx(a) <= cx(b) ? [a, b] : [b, a];
+    // stencil gate pin is on the left (W)
+    if (a.pc.nodes[1] === b.pc.nodes[1]) { if (MIRROR && mirrorSize.get(mirrorKey(a)) === 2) { flip(L, true); flip(Rt, false); } continue; }
+    if (RAIL.test(a.pc.nodes[2])) continue;
+    flip(L, false); flip(Rt, true);   // a pair: the right device is flipped
+  }
+  // any other transistor turns its gate (base) towards what drives it: the mean
+  // x of the other parts and ports on its gate net
+  if (opts.saGateFace ?? (process.env.SA_GATE_FACE !== '0')) for (const p of parts) {
+    if (!['M', 'Q'].includes(p.pc.prefix) || p.flipStyle) continue;
+    const g = p.pc.nodes[1]; if (g == null || RAIL.test(g)) continue;
+    const xs = [];
+    for (const q of parts) if (q !== p && q.pc.nodes.includes(g)) xs.push(cx(q));
+    for (const t of taps) if (t.owner && String(t.net).toLowerCase() === String(g).toLowerCase()) xs.push(t.owner.x + t.ox + t.cell.w / 2);
+    if (!xs.length) continue;
+    const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+    if (Math.abs(m - cx(p)) < u * 0.3) continue;
+    flip(p, m > cx(p));   // stencil gate on the left: flipped faces right
+  }
   // legalise: snapping and imposed rows/columns can stack two parts on one spot
   // (found: two gates at the same point, wires of two nets overlapping). While two
   // parts (with their symbols) overlap, shift the right-hand one (with its whole
   // branch column) to the right, keeping rows and columns.
+  // clearance between neighbours: room for a couple of wire lanes (SA_GAP, in units)
+  const GAP = opts.saGap ?? (process.env.SA_GAP != null ? Number(process.env.SA_GAP) : 0.5);
   for (let round = 0; round < 200; round++) {
     let moved = false;
     for (let i = 0; i < parts.length && !moved; i++) for (let j = 0; j < parts.length && !moved; j++) {
       if (i === j) continue;
       // real bodies (no margin), a small clearance
-      const a = parts[i], b = parts[j], cl = u * 0.1;
-      const body = (p) => { let x0 = p.x, y0 = p.y, x1 = p.x + p.w, y1 = p.y + p.h; for (const t of p.taps) { x0 = Math.min(x0, p.x + t.ox); y0 = Math.min(y0, p.y + t.oy); x1 = Math.max(x1, p.x + t.ox + t.cell.w); y1 = Math.max(y1, p.y + t.oy + t.cell.h); } return [x0, y0, x1, y1]; };
+      const a = parts[i], b = parts[j], cl = u * GAP;
+      const body = (p) => { let x0 = p.x + p.bx, y0 = p.y + p.by, x1 = x0 + p.bw, y1 = y0 + p.bh; for (const t of p.taps) { x0 = Math.min(x0, p.x + t.ox); y0 = Math.min(y0, p.y + t.oy); x1 = Math.max(x1, p.x + t.ox + t.cell.w); y1 = Math.max(y1, p.y + t.oy + t.cell.h); } return [x0, y0, x1, y1]; };
       const A = body(a), Bb = body(b);
       const ox = Math.min(A[2], Bb[2]) - Math.max(A[0], Bb[0]) + cl, oy = Math.min(A[3], Bb[3]) - Math.max(A[1], Bb[1]) + cl;
       if (ox <= 0 || oy <= 0) continue;
@@ -295,23 +379,33 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     }
     if (!moved) break;
   }
-  // mirror source-coupled pairs: gates outwards
-  for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
-    const a = parts[i], b = parts[j];
-    if (a.pc.prefix !== 'M' || b.pc.prefix !== 'M' || a.kind !== b.kind) continue;
-    if (a.pc.nodes[2] !== b.pc.nodes[2] || RAIL.test(a.pc.nodes[2]) || Math.abs(cy(a) - cy(b)) > u * 0.3) continue;
-    const [L, Rt] = cx(a) <= cx(b) ? [a, b] : [b, a];
-    const flip = (p, want) => {
-      const was = String(p.cell.style.map.get('flipH') || '0') === '1';
-      p.flipStyle = `flipH=${want ? 1 : 0};`;
-      if (was !== want) { const k = parts.indexOf(p); p.x = Math.round(p.x + 2 * dcOff[k] - p.w); }   // the drain-source lead stays where it was
+  // two-terminal parts turn (180°) when that brings each pin nearer to the rest
+  // of its net (check.py wrap-around: a pin facing away from its destination);
+  // their symbols turn with them
+  if (opts.saDipoleTurn ?? (process.env.SA_DIPOLE_TURN !== '0')) for (let pass = 0; pass < 2; pass++) for (const [k, p] of parts.entries()) {
+    if (['M', 'Q'].includes(p.pc.prefix) || p.pins.length !== 2) continue;
+    const near = (net, pt) => {
+      if (RAIL.test(net)) return 0;
+      let b = Infinity;
+      parts.forEach((q, j) => { if (j !== k) q.pins.forEach((_, m) => { if (pinNet(q, m) === net) b = Math.min(b, Math.abs(q.x + pinOff[j][m].x - pt.x) + Math.abs(q.y + pinOff[j][m].y - pt.y)); }); });
+      for (const t of taps) if (t.owner && t.owner !== p && String(t.net).toLowerCase() === String(net).toLowerCase()) b = Math.min(b, Math.abs(t.owner.x + t.ox + t.cell.w / 2 - pt.x) + Math.abs(t.owner.y + t.oy + t.cell.h / 2 - pt.y));
+      return b === Infinity ? 0 : b;
     };
-    // stencil gate pin is on the left (W): the right device is flipped
-    flip(L, false); flip(Rt, true);
+    const at = (m, turned) => { const o = pinOff[k][m]; return turned ? { x: p.x + p.w - o.x, y: p.y + (p.bw >= p.bh ? o.y : p.h - o.y) } : { x: p.x + o.x, y: p.y + o.y }; };
+    const c0 = near(pinNet(p, 0), at(0, false)) + near(pinNet(p, 1), at(1, false));
+    const c1 = near(pinNet(p, 0), at(0, true)) + near(pinNet(p, 1), at(1, true));
+    if (c1 >= c0 - 1) continue;
+    if (p.bw >= p.bh) {   // horizontal: a mirror keeps its text upright
+      p.flipStyle = { flipH: String(p.cell.style.map.get('flipH') || '0') === '1' ? null : 1 };
+      p.cell.style.map.set('flipH', p.flipStyle.flipH ? '1' : '0');
+    } else { p.cell.rotation = (((p.cell.rotation || 0) + 180) % 360 + 360) % 360; p.turn = p.cell.rotation; }
+    const mirrorOnly = p.bw >= p.bh;
+    pinOff[k] = pinOff[k].map((o) => ({ x: p.w - o.x, y: mirrorOnly ? o.y : p.h - o.y }));
+    for (const t of p.taps) { t.ox = p.w - t.ox - t.cell.w; if (!mirrorOnly) t.oy = p.h - t.oy - t.cell.h; }
   }
   // apply positions
   for (const p of parts) {
-    updateCell(model, p.cell.id, { x: p.x, y: p.y, ...(p.flipStyle ? { style: p.flipStyle } : {}) });
+    updateCell(model, p.cell.id, { x: p.x, y: p.y, ...(p.flipStyle ? { style: p.flipStyle } : {}), ...(p.turn != null ? { rotation: p.turn } : {}) });
     for (const t of p.taps) updateCell(model, t.cell.id, { x: p.x + t.ox, y: p.y + t.oy });
     for (const l of p.labels || []) updateCell(model, l.cell.id, { x: p.x + l.ox, y: p.y + l.oy });
   }
@@ -321,21 +415,169 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   const addT = (net, id, pin) => { const k = String(net).toLowerCase(); if (!terms.has(k)) terms.set(k, []); const c = after.get(id); terms.get(k).push({ id, pin, at: pinAbs(c, pin) }); };
   for (const p of parts) p.pins.forEach((pin, i) => addT(pinNet(p, i), p.cell.id, pin));
   for (const t of taps) if (t.pin) addT(t.net, t.cell.id, t.pin);
+  // grid wiring (SA_GRID=0 disables): the placement puts DC branches in columns
+  // and pairs / mirrors on rows, so many connections are a straight vertical or
+  // horizontal line between two pins. Such a line is drawn as a FIXED straight
+  // wire when it crosses no body (its own two parts only next to their pins),
+  // passes no foreign pin and runs along or ends on no wire of another net; the
+  // spanning tree of each net prefers these lines. The rest goes to the router.
+  const GRID = opts.saGrid ?? (process.env.SA_GRID !== '0');
+  const bodies = [...after.values()].filter((c) => c.kind === 'vertex' && c.x != null && c.w >= 12 && classify(c).role !== 'junction' && classify(c).role !== 'other')
+    .map((c) => ({ id: c.id, ...rotatedAabb(c) }));
+  const netOfPin = [];   // every terminal, for the foreign-pin test
+  for (const [k, ts] of terms) for (const t of ts) netOfPin.push({ net: k, at: t.at });
+  const fixedSegs = [];  // {net, a, b} of the fixed wires already drawn
+  const segHitsRect = (a, b, r) => {   // axis-aligned segment against a rectangle: length inside
+    if (a.x === b.x) { if (a.x <= r.x || a.x >= r.x + r.w) return 0; return Math.max(0, Math.min(Math.max(a.y, b.y), r.y + r.h) - Math.max(Math.min(a.y, b.y), r.y)); }
+    if (a.y <= r.y || a.y >= r.y + r.h) return 0; return Math.max(0, Math.min(Math.max(a.x, b.x), r.x + r.w) - Math.max(Math.min(a.x, b.x), r.x));
+  };
+  const dPtSeg = (p, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy; const t = L ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L)) : 0; return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy); };
+  // outward direction of a pin: the side of its cell it sits on
+  const dirOf = (t) => {
+    const c = after.get(t.id); const r = rotatedAabb(c); const a = t.at;
+    const d = [[a.x - r.x, -1, 0], [r.x + r.w - a.x, 1, 0], [a.y - r.y, 0, -1], [r.y + r.h - a.y, 0, 1]].sort((x, y) => x[0] - y[0])[0];
+    return { x: d[1], y: d[2] };
+  };
+  // a polyline [A.at … B.at] is acceptable when every segment is axis-aligned,
+  // crosses no body (the end parts only next to their pin), passes no foreign
+  // pin, and neither runs along nor touches a fixed wire of another net;
+  // returns its crossings with other nets (allowed, but they cost)
+  const pathOk = (net, A, B, pts) => {
+    let crossings = 0;
+    for (let k = 0; k + 1 < pts.length; k++) {
+      const a2 = pts[k], b2 = pts[k + 1];
+      if (Math.abs(a2.x - b2.x) > 0.5 && Math.abs(a2.y - b2.y) > 0.5) return null;
+      if (Math.hypot(a2.x - b2.x, a2.y - b2.y) < 0.5) continue;
+      const vert = Math.abs(a2.x - b2.x) <= 0.5;
+      for (const r of bodies) {
+        const ownA = r.id === A.id && k === 0, ownB = r.id === B.id && k === pts.length - 2;
+        // a foreign body with a 2 px clearance (a wire on its edge reads as crossing it)
+        if (!ownA && !ownB) { if (segHitsRect(a2, b2, { x: r.x - 2, y: r.y - 2, w: r.w + 4, h: r.h + 4 }) > 0) return null; continue; }
+        const inside = segHitsRect(a2, b2, { x: r.x + 1, y: r.y + 1, w: r.w - 2, h: r.h - 2 });
+        if (inside <= 0) continue;
+        // its own part: only the lead next to its pin (check.py: 8 px)
+        const own = ownA ? a2 : b2, far = ownA ? b2 : a2;
+        const clip = { x: Math.max(r.x, Math.min(r.x + r.w, far.x)), y: Math.max(r.y, Math.min(r.y + r.h, far.y)) };
+        if (Math.hypot(clip.x - own.x, clip.y - own.y) > 6) return null;
+      }
+      // no wire along the flank of a body (check.py channel-hug / edge-hug)
+      for (const r of bodies) {
+        if (vert && r.h >= 60 && (Math.abs(a2.x - r.x) < 3 || Math.abs(a2.x - r.x - r.w) < 3)
+          && Math.min(Math.max(a2.y, b2.y), r.y + r.h) - Math.max(Math.min(a2.y, b2.y), r.y) > 12) return null;
+        if (!vert && r.h >= 60 && (Math.abs(a2.y - r.y) < 3 || Math.abs(a2.y - r.y - r.h) < 3)
+          && Math.min(Math.max(a2.x, b2.x), r.x + r.w) - Math.max(Math.min(a2.x, b2.x), r.x) > 24) return null;
+      }
+      for (const q of netOfPin) if (q.net !== net && dPtSeg(q.at, a2, b2) < 8) return null;
+      for (const f of fixedSegs) {
+        if (f.net === net) {   // same net: on top of it or well apart (check.py rule 29)
+          const fv = Math.abs(f.a.x - f.b.x) <= 0.5;
+          if (fv !== vert) continue;
+          const d = vert ? Math.abs(f.a.x - a2.x) : Math.abs(f.a.y - a2.y);
+          const lo = vert ? Math.max(Math.min(a2.y, b2.y), Math.min(f.a.y, f.b.y)) : Math.max(Math.min(a2.x, b2.x), Math.min(f.a.x, f.b.x));
+          const hi = vert ? Math.min(Math.max(a2.y, b2.y), Math.max(f.a.y, f.b.y)) : Math.min(Math.max(a2.x, b2.x), Math.max(f.a.x, f.b.x));
+          if (d >= 0.6 && d < 14 && hi - lo > 18) return null;
+          continue;
+        }
+        if (dPtSeg(a2, f.a, f.b) < 4 || dPtSeg(b2, f.a, f.b) < 4 || dPtSeg(f.a, a2, b2) < 4 || dPtSeg(f.b, a2, b2) < 4) return null;
+        const fv = Math.abs(f.a.x - f.b.x) <= 0.5;
+        if (fv !== vert) { crossings++; continue; }
+        const d = vert ? Math.abs(f.a.x - a2.x) : Math.abs(f.a.y - a2.y);
+        const lo = vert ? Math.max(Math.min(a2.y, b2.y), Math.min(f.a.y, f.b.y)) : Math.max(Math.min(a2.x, b2.x), Math.min(f.a.x, f.b.x));
+        const hi = vert ? Math.min(Math.max(a2.y, b2.y), Math.max(f.a.y, f.b.y)) : Math.min(Math.max(a2.x, b2.x), Math.max(f.a.x, f.b.x));
+        if (d < 12 && hi - lo > 0) return null;
+      }
+    }
+    // perpendicular crossings were counted on both segments of a crossing pair only once per fixed segment: an estimate
+    return { crossings };
+  };
+  const clean = (pts) => {   // drop repeated and collinear points
+    const o = [];
+    for (const q of pts) { if (o.length && Math.hypot(o[o.length - 1].x - q.x, o[o.length - 1].y - q.y) < 0.5) continue; o.push(q); }
+    for (let k = o.length - 2; k >= 1; k--) { const a2 = o[k - 1], b2 = o[k], c2 = o[k + 1]; if ((Math.abs(a2.x - b2.x) < 0.5 && Math.abs(b2.x - c2.x) < 0.5) || (Math.abs(a2.y - b2.y) < 0.5 && Math.abs(b2.y - c2.y) < 0.5)) o.splice(k, 1); }
+    return o;
+  };
+  const straightOk = (net, A, B) => {
+    const a = A.at, b = B.at;
+    if (Math.abs(a.x - b.x) > 0.5 && Math.abs(a.y - b.y) > 0.5) return false;
+    if (Math.hypot(a.x - b.x, a.y - b.y) < 1) return false;
+    const b2 = { ...b }; if (Math.abs(a.x - b.x) <= 0.5) b2.x = a.x; else b2.y = a.y;
+    const ok = pathOk(net, A, B, [a, b2]);
+    return ok && ok.crossings === 0 ? [a, b2] : false;
+  };
+  // candidate paths between two pins: L shapes, then escape from each pin along
+  // its outward direction and join through a horizontal or vertical lane
+  // (corridor) chosen near the two pins; the cheapest valid one is kept
+  const LANES = opts.saLanes ?? (process.env.SA_LANES !== '0');
+  const routeFixed = (net, A, B) => {
+    const a = A.at, b = B.at, cands = [];
+    cands.push([a, { x: a.x, y: b.y }, b], [a, { x: b.x, y: a.y }, b]);
+    if (LANES) {
+      const da = dirOf(A), db = dirOf(B);
+      for (const E of [14, 14 + G, 14 + 2 * G]) {
+        const ea = { x: a.x + da.x * E, y: a.y + da.y * E }, eb = { x: b.x + db.x * E, y: b.y + db.y * E };
+        const lo = Math.min(ea.y, eb.y), hi = Math.max(ea.y, eb.y), lx0 = Math.min(ea.x, eb.x), lx1 = Math.max(ea.x, eb.x);
+        const ys = [ea.y, eb.y], xs = [ea.x, eb.x];
+        for (let k = 1; k <= 8; k++) { ys.push(lo - k * G, hi + k * G, (lo + hi) / 2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * G); xs.push(lx0 - k * G, lx1 + k * G, (lx0 + lx1) / 2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * G); }
+        for (const Y of ys) cands.push([a, ea, { x: ea.x, y: Y }, { x: eb.x, y: Y }, eb, b], [a, { x: a.x, y: Y }, { x: b.x, y: Y }, b]);
+        for (const X of xs) cands.push([a, ea, { x: X, y: ea.y }, { x: X, y: eb.y }, eb, b], [a, { x: X, y: a.y }, { x: X, y: b.y }, b]);
+      }
+    }
+    let best = null;
+    for (const c0 of cands) {
+      const pts = clean(c0);
+      if (pts.length < 2) continue;
+      let len = 0; for (let k = 0; k + 1 < pts.length; k++) len += Math.abs(pts[k].x - pts[k + 1].x) + Math.abs(pts[k].y - pts[k + 1].y);
+      const cost0 = len / u + (opts.saBend ?? 2.5) * (pts.length - 2) + (pts.length - 2 > 2 ? 4 : 0);   // basics: > 2 bends is a detour
+      if (best && cost0 >= best.cost) continue;
+      const ok = pathOk(net, A, B, pts);
+      if (!ok) continue;
+      const cost = cost0 + 3 * ok.crossings;
+      if (!best || cost < best.cost) best = { cost, pts };
+    }
+    return best ? best.pts : null;
+  };
   const wires = [];
-  for (const ts of terms.values()) {
+  const FIXED = 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;jettySize=0;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiGridRoute=1;';
+  // spanning tree of each net (straight clear lines preferred), then: straight
+  // lines are fixed first (columns and rows claim their lines), then the other
+  // connections, shortest first, through L shapes and corridors; what finds no
+  // clean path goes to the router
+  const links = [];
+  const netOrder = [...terms.entries()].sort((x, y) => x[1].length - y[1].length);
+  for (const [net, ts] of netOrder) {
     if (ts.length < 2) continue;
     const inT = new Set([0]);
     while (inT.size < ts.length) {
       let best = null;
       for (const i of inT) for (let j = 0; j < ts.length; j++) {
         if (inT.has(j)) continue;
-        const d = Math.abs(ts[i].at.x - ts[j].at.x) + Math.abs(ts[i].at.y - ts[j].at.y);
-        if (!best || d < best.d) best = { d, i, j };
+        let d = Math.abs(ts[i].at.x - ts[j].at.x) + Math.abs(ts[i].at.y - ts[j].at.y);
+        const st = GRID && ts[i].id !== ts[j].id ? straightOk(net, ts[i], ts[j]) : false;
+        if (st) d *= 0.3;
+        if (ts[i].id === ts[j].id) d = d * 4 + 4 * u;
+        // a pin facing away from the other end makes the wire go round its body
+        for (const [p0, p1] of [[ts[i], ts[j]], [ts[j], ts[i]]]) { const dr = dirOf(p0); if (dr.x * (p1.at.x - p0.at.x) + dr.y * (p1.at.y - p0.at.y) < -u * 0.3) d += 2 * u; }   // a diode link (gate to its own drain) only as a last resort
+        if (!best || d < best.d) best = { d, i, j, st };
       }
       inT.add(best.j);
-      const a = ts[best.i], b = ts[best.j];
-      wires.push(addWire(model, { source: a.id, target: b.id, sourcePin: a.pin, targetPin: b.pin }).getAttribute('id'));
+      links.push({ net, a: ts[best.i], b: ts[best.j], st: best.st, len: best.d });
     }
+  }
+  const fix = (l, pts) => {
+    for (let k = 0; k + 1 < pts.length; k++) fixedSegs.push({ net: l.net, a: pts[k], b: pts[k + 1] });
+    const inner = pts.length > 2 ? pts.slice(1, -1) : [{ x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }];
+    wires.push(addWire(model, { source: l.a.id, target: l.b.id, sourcePin: l.a.pin, targetPin: l.b.pin, style: FIXED, points: inner }).getAttribute('id'));
+  };
+  const rest = [];
+  for (const l of links) {
+    const st = l.st && straightOk(l.net, l.a, l.b);
+    if (st) fix(l, st); else rest.push(l);
+  }
+  rest.sort((x, y) => x.len - y.len);
+  for (const l of rest) {
+    const pts = GRID ? routeFixed(l.net, l.a, l.b) : null;
+    if (pts) fix(l, pts);
+    else wires.push(addWire(model, { source: l.a.id, target: l.b.id, sourcePin: l.a.pin, targetPin: l.b.pin }).getAttribute('id'));
   }
   await routePage(model, wires, {});
   normalizeOrigin(model);
