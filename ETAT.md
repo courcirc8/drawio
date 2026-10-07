@@ -396,6 +396,25 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   sa devant auto partout au vérificateur. RESTE : croisements (9,2 contre 5,4 ; un coût plus fort sur les tracés figés
   est sans effet : ils viennent de l'arbre de chaque net et du placement), coudes en excès, cible d'Eric ≥ 80 % sans
   erreur pas encore atteinte (70,7 %).
+- CONTRÔLE DE SUR-AJUSTEMENT (7 oct., demande d'Eric ; code de la PR #12 ; runs `ovf-{auto,sa}-{test,holdout-family}`
+  sur la banque d'origine, `ovf-*-holdout-openpdk` ; 16 variantes de scellés refusées par lib/sealed.js, aucun échec LVS) :
+    | jeu | moteur | n | zéro erreur | ≤ 12 | > 12 | err/c | > 3:1 | crois./c |
+    | réglage | auto | 1153 | 60,1 % | 79,6 % | 36,2 % | 1,39 | 4,7 % | 5,4 |
+    | réglage | sa | 1153 | 70,7 % | 81,9 % | 56,9 % | 0,63 | 2,3 % | 9,2 |
+    | test | auto | 720 | 57,2 % | 79,4 % | 32,0 % | 1,87 | 6,4 % | 5,7 |
+    | test | sa | 720 | 71,0 % | 85,1 % | 54,9 % | 0,74 | 2,4 % | 9,8 |
+    | jamais vues | auto | 937 | 29,6 % | 68,8 % | 28,9 % | 2,89 | 2,3 % | 14,5 |
+    | jamais vues | sa | 937 | 33,9 % | 68,8 % | 33,3 % | 2,30 | 0,1 % | 26,6 |
+  Jamais vues par famille : sampler-sc (626) auto 35,6 / sa 36,4 % ; regulator (306) 17,3 / 28,8 %. Open PDK jamais
+  vues (345, surtout data-converter 303) : zéro erreur auto 35,1 / sa 43,8 %, MAIS err/c 38 / 63 (très grands
+  convertisseurs : sa y fait bien plus d'erreurs), > 3:1 12,5 / 3,8 %.
+  Écart réglage → test : avant (2 oct., auto) 45 % → 49 % ; aujourd'hui auto 60,1 → 57,2 %, sa 70,7 → 71,0 %.
+  CONCLUSION : pas de sur-ajustement visible sur le jeu de test (sa garde son niveau, +14 points sur auto). Sur les
+  familles jamais vues, le gain de sa fond (+4 points au lieu de +11/+14) et les très grands convertisseurs open PDK
+  sont mal dessinés : les réglages valent surtout pour les structures déjà vues.
+- Session RAG (7 oct.) : passe de nuit sur GPU 0 seulement (MinerU, lectures, descriptions, index des figures) ; GPU 1
+  reste à drawio. Rangs des figures « natif » changés dans figures.sqlite (37 883 avec cadre) ; nos étiquettes et
+  boites-ornith.jsonl non touchés ; ~6 400 nouveaux schémas DVD lisibles annoncés plus tard par l'orchestrateur.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
