@@ -384,6 +384,9 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   circuits, les croisements et les règles de base (coudes en excès 6,5/c contre 5,3 : tracés à 3-4 coudes choisis
   seulement quand aucun à 2 coudes n'existe — pénalité plus forte sans effet, c'est le placement). Puis (2)+(3) sur les
   150 grands du jeu de contrôle : zéro erreur 58 → 66 %, err/c 0,91 → 0,75 ; 150 petits : 81 → 82 %.
+- JUGEMENT ORNITH PAR PAIRES (relatif, observation seulement) auto contre sa actuel (PR #11), mêmes 103 circuits que
+  pour sa7 (`/AI/datasets/judge/pairs-auto-sa12.*`) : cohérent dans les deux ordres 64 % ; sa préféré 37, auto 29
+  (sa7 : 43 contre 25). Ornith préfère toujours sa, un peu moins qu'avant (repli en bandes ? bruit : 36 % incohérents).
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
