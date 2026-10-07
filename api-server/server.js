@@ -118,15 +118,17 @@ function wrapEditor(req, res, next) {
     if (!html.includes('</body>') || !html.includes('<head>')) {
       return next(new Error('index.html is not the shape this rewrite expects (<head> + </body>)'));
     }
-    const origin = `${req.protocol}://${req.get('host')}`;
+    // the server's base URL is computed IN THE BROWSER from the page address,
+    // so the editor also works behind a path prefix (ai-station portal:
+    // https://<host>/drawio/editor/, prefix stripped by tailscale serve)
     const inject = `<script>
-window.EDA_VALIDATE_SERVER = ${JSON.stringify(origin)};
+window.EDA_VALIDATE_SERVER = location.origin + location.pathname.replace(/\\/editor(\\/index\\.html|\\/)?$/, '');
 (function () {
   var iv = setInterval(function () {
     if (window.Draw && typeof window.Draw.loadPlugin === 'function') {
       clearInterval(iv);
       var s = document.createElement('script');
-      s.src = '/plugin/eda-validate.js';
+      s.src = window.EDA_VALIDATE_SERVER + '/plugin/eda-validate.js';
       document.body.appendChild(s);
     }
   }, 20);
@@ -139,7 +141,7 @@ window.EDA_VALIDATE_SERVER = ${JSON.stringify(origin)};
     // base tag index.html's relative asset paths (js/bootstrap.js, ...) resolve
     // under /editor/ whichever form the user typed.
     res.type('html').send(html
-      .replace('<head>', '<head>\n<base href="/editor/">')
+      .replace('<head>', `<head>\n<script>document.write('<base href="' + location.pathname.replace(/(\\/editor)(\\/index\\.html|\\/)?$/, '$1/') + '">');</script>`)
       .replace('</body>', inject));
   }).catch(next);
 }
@@ -272,6 +274,19 @@ const { mountCorrect } = await import('./lib/correct.js');
 mountCorrect(app, wrap);
 const { mountCompare } = await import('./lib/compare.js');
 mountCompare(app, wrap);
+
+// home page for the ai-station portal (https://<host>/drawio/ -> 127.0.0.1:8770/,
+// prefix stripped by tailscale serve): relative links only, shared bar optional
+app.get('/', (req, res) => res.type('html').send(`<!doctype html><html lang="fr"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>drawio — schémas</title>
+<link rel="stylesheet" href="/commun/style.css"><script src="/commun/menu.js" defer></script>
+<style>body{font-family:system-ui,sans-serif;margin:16px;max-width:40em}li{margin:.5em 0}</style>
+<h1>drawio — schémas électroniques</h1><ul>
+<li><a href="correct?batch=rf-1">Correction des netlists (lot rf-1)</a></li>
+<li><a href="compare">Comparaison à l'aveugle de deux dessins</a></li>
+<li><a href="compare/gallery?batch=exemples-1">Galerie d'exemples : auto et recuit (sa)</a></li>
+<li><a href="editor/">Éditeur drawio</a></li>
+<li><a href="health">État du serveur</a></li></ul>`));
 
 // Motif registry (lib/motifs.js): every recognised analogue motif of a
 // netlist, the macro-blocks they induce and the components NO motif covers.

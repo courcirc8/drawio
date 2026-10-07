@@ -43,19 +43,19 @@ const $ = (id) => document.getElementById(id);
 async function draw(netlist) {
   $('draw').removeAttribute('src');
   try {
-    const d = await (await fetch('/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
-    const r = await fetch(`/documents/${d.id}/netlist/import?engine=auto&force=1`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: netlist });
+    const d = await (await fetch('documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
+    const r = await fetch(`documents/${d.id}/netlist/import?engine=auto&force=1`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: netlist });
     if (!r.ok) { $('draw').alt = 'netlist non dessinable : ' + ((await r.json()).error || r.status); return; }
-    $('draw').src = `/documents/${d.id}/export?format=png&scale=0.8&t=${Date.now()}`;
+    $('draw').src = `documents/${d.id}/export?format=png&scale=0.8&t=${Date.now()}`;
   } catch (e) { $('draw').alt = 'erreur de dessin'; }
 }
 async function next() {
-  const j = await (await fetch(`/correct/api/next?batch=${batch}`)).json();
+  const j = await (await fetch(`correct/api/next?batch=${batch}`)).json();
   if (j.finished) { $('main').style.display = 'none'; $('done').style.display = 'block'; $('prog').textContent = `${j.done}/${j.total}`; return; }
   cur = j;
   $('type').textContent = j.type;
   $('prog').textContent = `${j.done + 1}/${j.total}`;
-  $('fig').src = `/correct/img/${batch}/${j.n}.png`;
+  $('fig').src = `correct/img/${batch}/${j.n}.png`;
   $('net').value = j.netlist;
   $('flags').textContent = j.flags.join(' · ');
   window.scrollTo(0, 0);
@@ -65,7 +65,7 @@ async function answer(verdict) {
   if (!cur) return;
   const edited = $('net').value !== cur.netlist;
   if (verdict === 'ok' && edited) verdict = 'fixed';      // edited then "Juste": keep the edit
-  const r = await (await fetch('/correct/api/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+  const r = await (await fetch('correct/api/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ batch, n: cur.n, verdict, netlist: $('net').value }) })).json();
   if (r.sealed) alert('Ce circuit recoupe un circuit scellé : il sera écarté.');
   next();
