@@ -199,7 +199,12 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   const lastOn = new Map();
   parts.forEach((p, i) => dcNets(p).forEach((n) => {
     if (RAIL.test(n) || dcDeg.get(n) !== 2 || (srcCount.get(n) || 0) >= 2 || ported.has(String(n).toLowerCase())) return;
-    if (lastOn.has(n)) uf[find(i)] = find(lastOn.get(n)); else lastOn.set(n, i);
+    if (!lastOn.has(n)) { lastOn.set(n, i); return; }
+    // two elements sharing BOTH terminals are in parallel, not in series (two
+    // mirror outputs tied together were stacked in one column)
+    const j = lastOn.get(n), a = dcNets(parts[i]), b = dcNets(parts[j]);
+    if (a.every((x) => b.includes(x)) && b.every((x) => a.includes(x))) return;
+    uf[find(i)] = find(j);
   }));
   const chains = new Map();
   parts.forEach((p, i) => { if (dcNets(p).length) { const r = find(i); if (!chains.has(r)) chains.set(r, []); chains.get(r).push(i); } });
@@ -304,11 +309,19 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   // impose the pair / mirror rows exactly (check.py rules 14 and 26), unless a
   // half is already held by a rail row
   if (opts.saPairRow ?? (process.env.SA_PAIR_ROW !== '0')) {
+    // whole groups (a 3-transistor mirror is three pairs: imposed pair by pair
+    // they pulled each other apart, rule 26 found on a small circuit)
     const inRail = new Set(railRows.flat());
-    for (const [i, j] of rows) {
-      if (inRail.has(i) && inRail.has(j)) continue;
-      const m = inRail.has(i) ? cy(parts[i]) : inRail.has(j) ? cy(parts[j]) : (cy(parts[i]) + cy(parts[j])) / 2;
-      for (const k of [i, j]) if (!inRail.has(k)) parts[k].y = Math.round(m - parts[k].h / 2);
+    const ufr = parts.map((_, i) => i), fr = (i) => (ufr[i] === i ? i : (ufr[i] = fr(ufr[i])));
+    for (const [i, j] of rows) ufr[fr(i)] = fr(j);
+    const grp = new Map();
+    for (const [i, j] of rows) for (const k of [i, j]) { const r = fr(k); if (!grp.has(r)) grp.set(r, new Set()); grp.get(r).add(k); }
+    for (const set of grp.values()) {
+      const g = [...set], held = g.filter((k) => inRail.has(k));
+      if (held.length && new Set(held.map((k) => Math.round(cy(parts[k])))).size > 1) continue;   // held by two different rows
+      const ys = (held.length ? held : g).map((k) => cy(parts[k])).sort((a, b) => a - b);
+      const m = ys[Math.floor(ys.length / 2)];
+      for (const k of g) if (!inRail.has(k)) parts[k].y = Math.round(m - parts[k].h / 2);
     }
   }
   // impose the branch columns exactly (median centre of each branch)
@@ -383,7 +396,11 @@ export async function importNetlistSA(model, parsed, opts = {}) {
       const ch = chainOf.get(j); const same = ch != null && ch === chainOf.get(i);
       if (same) {   // one branch column: push the lower part down
         if (cy(b) < cy(a) || (cy(b) === cy(a) && j < i)) continue;
-        b.y += Math.ceil(oy + 1);
+        // push b's whole row and everything below it, so rows stay straight
+        // (one pair half pushed alone broke rule 14)
+        const dy = Math.ceil(oy + 1), yb = cy(b) - 1;
+        if (cy(a) >= yb) b.y += dy;   // a on the same row: only b can move
+        else for (const q of parts) if (cy(q) >= yb) q.y += dy;
       } else {      // otherwise push the right-hand part (and its column) right
         if (cx(b) < cx(a) || (cx(b) === cx(a) && j < i)) continue;
         for (const k of ch != null ? columns[ch] : [j]) parts[k].x += Math.ceil(ox + 1);
@@ -508,6 +525,19 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     pinOff[k] = pinOff[k].map((o) => ({ x: p.w - o.x, y: mirrorOnly ? o.y : p.h - o.y }));
     for (const t of p.taps) { t.ox = p.w - t.ox - t.cell.w; if (!mirrorOnly) t.oy = p.h - t.oy - t.cell.h; }
   }
+  // two symbols of the same rail landing on one spot (two pins of one part on
+  // the supply): keep one, the net is rewired to it (check.py comp-overlap)
+  const dropped = new Set();
+  for (const p of parts) for (const t of p.taps) {
+    if (dropped.has(t) || !['power', 'ground'].includes(t.cls.role)) continue;
+    for (const q of parts) for (const t2 of q.taps) {
+      if (t2 === t || dropped.has(t2) || t2.cls.role !== t.cls.role || String(t2.net).toLowerCase() !== String(t.net).toLowerCase()) continue;
+      const ax = p.x + t.ox, ay = p.y + t.oy, bx2 = q.x + t2.ox, by2 = q.y + t2.oy;
+      if (ax < bx2 + t2.cell.w && bx2 < ax + t.cell.w && ay < by2 + t2.cell.h && by2 < ay + t.cell.h) dropped.add(t2);
+    }
+  }
+  for (const t of dropped) { try { deleteCell(model, t.cell.id); } catch { /* already gone */ } t.owner.taps = t.owner.taps.filter((x) => x !== t); }
+  for (let k = taps.length - 1; k >= 0; k--) if (dropped.has(taps[k])) taps.splice(k, 1);
   // apply positions
   for (const p of parts) {
     updateCell(model, p.cell.id, { x: p.x, y: p.y, ...(p.flipStyle ? { style: p.flipStyle } : {}), ...(p.turn != null ? { rotation: p.turn } : {}) });
