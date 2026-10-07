@@ -12,6 +12,6 @@
     "@anthropic-ai/sdk": "^0.126.0",
     "@xmldom/xmldom": "^0.9.6",
     "express": "^4.21.2",
-    "puppeteer-core": "^24.0.0"
+    "puppeteer-core": "^25.12.0"
   }
 }
