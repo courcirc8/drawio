@@ -301,6 +301,16 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   snap(cy, (p, v) => { p.y = Math.round(v - p.h / 2); });
   // impose the rail rows exactly (median centre of each group)
   for (const g of railRows) { const ys = g.map((i) => cy(parts[i])).sort((a, b) => a - b); const m = ys[Math.floor(ys.length / 2)]; for (const i of g) parts[i].y = Math.round(m - parts[i].h / 2); }
+  // impose the pair / mirror rows exactly (check.py rules 14 and 26), unless a
+  // half is already held by a rail row
+  if (opts.saPairRow ?? (process.env.SA_PAIR_ROW !== '0')) {
+    const inRail = new Set(railRows.flat());
+    for (const [i, j] of rows) {
+      if (inRail.has(i) && inRail.has(j)) continue;
+      const m = inRail.has(i) ? cy(parts[i]) : inRail.has(j) ? cy(parts[j]) : (cy(parts[i]) + cy(parts[j])) / 2;
+      for (const k of [i, j]) if (!inRail.has(k)) parts[k].y = Math.round(m - parts[k].h / 2);
+    }
+  }
   // impose the branch columns exactly (median centre of each branch)
   for (const g of columns) { const xs = g.map((i) => lx(i)).sort((a, b) => a - b); const m = xs[Math.floor(xs.length / 2)]; for (const i of g) parts[i].x = Math.round(m - dcOff[i]); }
   // parts forced onto one row must not overlap: spread them along the row,
@@ -381,6 +391,33 @@ export async function importNetlistSA(model, parsed, opts = {}) {
       moved = true;
     }
     if (!moved) break;
+  }
+  // a vertical two-terminal part whose two nets both lead to the same side
+  // (both above or both below: a resistor across a transistor's drain and
+  // source drawn under it) moves beside them, at their height, when the spot
+  // is free: otherwise one pin must turn back round the body (check.py wrap-around)
+  if (opts.saBeside ?? (process.env.SA_BESIDE !== '0')) for (const [k, p] of parts.entries()) {
+    if (['M', 'Q'].includes(p.pc.prefix) || p.pins.length !== 2 || p.bh <= p.bw || p.taps.length) continue;
+    const dest = (m) => {
+      const net = pinNet(p, m); if (RAIL.test(net)) return null;
+      let best = null;
+      parts.forEach((q, j) => { if (j !== k) q.pins.forEach((_, mm) => { if (pinNet(q, mm) === net) { const pt = { x: q.x + pinOff[j][mm].x, y: q.y + pinOff[j][mm].y }; const d = Math.abs(pt.x - p.x - pinOff[k][m].x) + Math.abs(pt.y - p.y - pinOff[k][m].y); if (!best || d < best.d) best = { d, pt }; } }); });
+      return best && best.pt;
+    };
+    const d0 = dest(0), d1 = dest(1);
+    if (!d0 || !d1) continue;
+    const top = p.y + p.by, bot = top + p.bh;
+    const above = d0.y < top && d1.y < top, below = d0.y > bot && d1.y > bot;
+    if (!above && !below) continue;
+    const yc = (d0.y + d1.y) / 2, xs = [Math.max(d0.x, d1.x) + 0.8 * u, Math.min(d0.x, d1.x) - 0.8 * u - p.bw];
+    const ox = p.x, oy = p.y;
+    for (const x of xs) {
+      p.x = Math.round(x - p.bx); p.y = Math.round(yc - p.by - p.bh / 2);
+      const A = [p.x + p.bx - 0.3 * u, p.y + p.by - 0.3 * u, p.x + p.bx + p.bw + 0.3 * u, p.y + p.by + p.bh + 0.3 * u];
+      const hit = parts.some((q, j) => { if (j === k) return false; let x0 = q.x + q.bx, y0 = q.y + q.by, x1 = x0 + q.bw, y1 = y0 + q.bh; for (const t of q.taps) { x0 = Math.min(x0, q.x + t.ox); y0 = Math.min(y0, q.y + t.oy); x1 = Math.max(x1, q.x + t.ox + t.cell.w); y1 = Math.max(y1, q.y + t.oy + t.cell.h); } return A[0] < x1 && x0 < A[2] && A[1] < y1 && y0 < A[3]; });
+      if (!hit) break;
+      p.x = ox; p.y = oy;
+    }
   }
   // fold (2026-10-07): on large circuits the rail rows and branch columns give
   // one very long strip (sheets > 3:1). Cut it between columns, where the
@@ -581,11 +618,11 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     cands.push([a, { x: a.x, y: b.y }, b], [a, { x: b.x, y: a.y }, b]);
     if (LANES) {
       const da = dirOf(A), db = dirOf(B);
-      for (const E of [14, 14 + G, 14 + 2 * G]) {
+      for (const E of [14, 14 + G, 14 + 2 * G, 14 + 4 * G]) {
         const ea = { x: a.x + da.x * E, y: a.y + da.y * E }, eb = { x: b.x + db.x * E, y: b.y + db.y * E };
         const lo = Math.min(ea.y, eb.y), hi = Math.max(ea.y, eb.y), lx0 = Math.min(ea.x, eb.x), lx1 = Math.max(ea.x, eb.x);
         const ys = [ea.y, eb.y], xs = [ea.x, eb.x];
-        for (let k = 1; k <= 8; k++) { ys.push(lo - k * G, hi + k * G, (lo + hi) / 2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * G); xs.push(lx0 - k * G, lx1 + k * G, (lx0 + lx1) / 2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * G); }
+        for (let k = 1; k <= 14; k++) { ys.push(lo - k * G, hi + k * G, (lo + hi) / 2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * G); xs.push(lx0 - k * G, lx1 + k * G, (lx0 + lx1) / 2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * G); }
         for (const Y of ys) cands.push([a, ea, { x: ea.x, y: Y }, { x: eb.x, y: Y }, eb, b], [a, { x: a.x, y: Y }, { x: b.x, y: Y }, b]);
         for (const X of xs) cands.push([a, ea, { x: X, y: ea.y }, { x: X, y: eb.y }, eb, b], [a, { x: X, y: a.y }, { x: X, y: b.y }, b]);
       }
@@ -605,6 +642,7 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     return best ? best.pts : null;
   };
   const wires = [];
+  const STRAIGHT = 'edgeStyle=none;rounded=0;html=1;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiGridRoute=1;';
   const FIXED = 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;jettySize=0;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiGridRoute=1;';
   // spanning tree of each net (straight clear lines preferred), then: straight
   // lines are fixed first (columns and rows claim their lines), then the other
@@ -633,8 +671,10 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   }
   const fix = (l, pts) => {
     for (let k = 0; k + 1 < pts.length; k++) fixedSegs.push({ net: l.net, a: pts[k], b: pts[k + 1] });
-    const inner = pts.length > 2 ? pts.slice(1, -1) : [{ x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }];
-    wires.push(addWire(model, { source: l.a.id, target: l.b.id, sourcePin: l.a.pin, targetPin: l.b.pin, style: FIXED, points: inner }).getAttribute('id'));
+    // a straight wire carries no waypoint (a midpoint is a vertex: another net
+    // crossing exactly there read as a contact, check.py 22-contact)
+    if (pts.length === 2) wires.push(addWire(model, { source: l.a.id, target: l.b.id, sourcePin: l.a.pin, targetPin: l.b.pin, style: STRAIGHT }).getAttribute('id'));
+    else wires.push(addWire(model, { source: l.a.id, target: l.b.id, sourcePin: l.a.pin, targetPin: l.b.pin, style: FIXED, points: pts.slice(1, -1) }).getAttribute('id'));
   };
   const rest = [];
   for (const l of links) {
