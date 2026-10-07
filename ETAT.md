@@ -396,6 +396,39 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   sa devant auto partout au vérificateur. RESTE : croisements (9,2 contre 5,4 ; un coût plus fort sur les tracés figés
   est sans effet : ils viennent de l'arbre de chaque net et du placement), coudes en excès, cible d'Eric ≥ 80 % sans
   erreur pas encore atteinte (70,7 %).
+- CONTRÔLE DE SUR-AJUSTEMENT (7 oct., demande d'Eric ; code de la PR #12 ; runs `ovf-{auto,sa}-{test,holdout-family}`
+  sur la banque d'origine, `ovf-*-holdout-openpdk` ; 16 variantes de scellés refusées par lib/sealed.js, aucun échec LVS) :
+    | jeu | moteur | n | zéro erreur | ≤ 12 | > 12 | err/c | > 3:1 | crois./c |
+    | réglage | auto | 1153 | 60,1 % | 79,6 % | 36,2 % | 1,39 | 4,7 % | 5,4 |
+    | réglage | sa | 1153 | 70,7 % | 81,9 % | 56,9 % | 0,63 | 2,3 % | 9,2 |
+    | test | auto | 720 | 57,2 % | 79,4 % | 32,0 % | 1,87 | 6,4 % | 5,7 |
+    | test | sa | 720 | 71,0 % | 85,1 % | 54,9 % | 0,74 | 2,4 % | 9,8 |
+    | jamais vues | auto | 937 | 29,6 % | 68,8 % | 28,9 % | 2,89 | 2,3 % | 14,5 |
+    | jamais vues | sa | 937 | 33,9 % | 68,8 % | 33,3 % | 2,30 | 0,1 % | 26,6 |
+  Jamais vues par famille : sampler-sc (626) auto 35,6 / sa 36,4 % ; regulator (306) 17,3 / 28,8 %. Open PDK jamais
+  vues (345, surtout data-converter 303) : zéro erreur auto 35,1 / sa 43,8 %, MAIS err/c 38 / 63 (très grands
+  convertisseurs : sa y fait bien plus d'erreurs), > 3:1 12,5 / 3,8 %.
+  Écart réglage → test : avant (2 oct., auto) 45 % → 49 % ; aujourd'hui auto 60,1 → 57,2 %, sa 70,7 → 71,0 %.
+  CONCLUSION : pas de sur-ajustement visible sur le jeu de test (sa garde son niveau, +14 points sur auto). Sur les
+  familles jamais vues, le gain de sa fond (+4 points au lieu de +11/+14) et les très grands convertisseurs open PDK
+  sont mal dessinés : les réglages valent surtout pour les structures déjà vues.
+- Session RAG (7 oct.) : passe de nuit sur GPU 0 seulement (MinerU, lectures, descriptions, index des figures) ; GPU 1
+  reste à drawio. Rangs des figures « natif » changés dans figures.sqlite (37 883 avec cadre) ; nos étiquettes et
+  boites-ornith.jsonl non touchés ; ~6 400 nouveaux schémas DVD lisibles annoncés plus tard par l'orchestrateur.
+- sa COMME CANDIDAT D'AUTO (demande d'Eric, 7 oct. ; `AUTO_SA` actif par défaut, `AUTO_SA=0` pour couper,
+  `AUTO_SA_MAX=N` pour limiter la taille ; runs `autosa2-*`, scellés refusés par lib/sealed.js : 49) :
+    | jeu | auto | sa | auto+sa (zéro erreur ; err/c ; propres) |
+    | réglage (1153) | 60,1 % ; 1,39 ; 20,6 % | 70,7 % ; 0,63 ; 10,4 % | 68,9 % ; 0,82 ; 23,8 % |
+    | test (720) | 57,2 % ; 1,87 ; 21,5 % | 71,0 % ; 0,74 ; 10,8 % | 66,2 % ; 0,94 ; 23,9 % |
+    | jamais vues (937) | 29,6 % ; 2,89 | 33,9 % ; 2,30 | 39,2 % ; 1,81 |
+    | conv./PDK jamais vus (345) | 35,1 % ; 38,4 | 43,8 % ; 62,9 | 46,1 % ; 24,6 |
+  auto+sa bat auto PARTOUT et sa sur les familles jamais vues, les convertisseurs, les dessins « propres » et les
+  croisements ; MAIS sa seul garde plus de dessins sans erreur sur réglage et test (−2 et −5 points). Cause : l'arbitre
+  interne d'auto (check.js) ne juge pas comme check.py — 216 circuits de réglage où auto préfère un candidat que
+  check.py juge pire que sa (170 l'inverse ; erreurs en cause : through, 29, 22-contact, pin-clearance) ; le départage
+  « règles de base » favorise aussi les autres candidats (sa a plus de coudes). auto+sa choisit sa dans 25-42 % des cas.
+  Temps (auto+sa) : médiane 0,6-1,9 s, 90e centile 4-6 s (52 s sur les PDK) ; sa seul : 45 s à 150 composants, le
+  maximum de 958 s vient des autres candidats d'auto. Piste : aligner check.js sur check.py, puis remesurer.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
