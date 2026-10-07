@@ -365,7 +365,7 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   power 0 → 20 %). RESTE : feuilles > 3:1 sur les grands circuits (13,7 % contre 4,1 % : rangées de rails trop longues,
   écart 0,5 u), croisements, coudes en excès (couloirs), « propres » deux fois moins qu'auto ; power et référence faibles.
   Auto reste le défaut ; aucune bascule sans accord d'Eric.
-- REPLI EN BANDES (7 oct., commit 2e0… voir git log) : sur les grands circuits les rangées de rails donnaient une bande
+- REPLI EN BANDES (7 oct., commit 5065e72) : sur les grands circuits les rangées de rails donnaient une bande
   très longue (sa9 : 13,7 % de feuilles > 3:1 au-delà de 12 composants). Si largeur > 2,5 × hauteur, le dessin est
   coupé en k bandes empilées ; unités insécables = colonne de branche, paire, miroir à deux ; coupe où le moins de nets
   traversent ; trous resserrés (SA_FOLD=0 pour couper). Banc `sa10-tune` : > 3:1 8,6 → 2,3 % (auto 4,7 %), zéro erreur
