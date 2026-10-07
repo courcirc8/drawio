@@ -336,7 +336,10 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     // stencil gate pin is on the left (W)
     if (a.pc.nodes[1] === b.pc.nodes[1]) { if (MIRROR && mirrorSize.get(mirrorKey(a)) === 2) { flip(L, true); flip(Rt, false); } continue; }
     if (RAIL.test(a.pc.nodes[2])) continue;
-    flip(L, false); flip(Rt, true);   // a pair: the right device is flipped
+    // a pair: exactly two transistors on that source, neither already turned as
+    // a mirror half (a mirror sharing its source with a third device was undone)
+    if (parts.filter((q) => q.pc.prefix === 'M' && q.kind === a.kind && q.pc.nodes[2] === a.pc.nodes[2]).length !== 2 || a.flipStyle || b.flipStyle) continue;
+    flip(L, false); flip(Rt, true);   // the right device is flipped
   }
   // any other transistor turns its gate (base) towards what drives it: the mean
   // x of the other parts and ports on its gate net
@@ -378,6 +381,71 @@ export async function importNetlistSA(model, parsed, opts = {}) {
       moved = true;
     }
     if (!moved) break;
+  }
+  // fold (2026-10-07): on large circuits the rail rows and branch columns give
+  // one very long strip (sheets > 3:1). Cut it between columns, where the
+  // fewest nets cross, into k bands stacked top to bottom; each band keeps its
+  // own rail rows (supply and ground symbols are per part). SA_FOLD=0 disables.
+  const FOLD = opts.saFold ?? (process.env.SA_FOLD !== '0');
+  const FOLD_AR = opts.saFoldAspect ?? 2.5;
+  if (FOLD && parts.length >= 8) {
+    const bx = parts.map((p) => { let x0 = p.x + p.bx, y0 = p.y + p.by, x1 = x0 + p.bw, y1 = y0 + p.bh; for (const t of p.taps) { x0 = Math.min(x0, p.x + t.ox); y0 = Math.min(y0, p.y + t.oy); x1 = Math.max(x1, p.x + t.ox + t.cell.w); y1 = Math.max(y1, p.y + t.oy + t.cell.h); } for (const l of p.labels || []) { x0 = Math.min(x0, p.x + l.ox); x1 = Math.max(x1, p.x + l.ox + l.cell.w); y1 = Math.max(y1, p.y + l.oy + l.cell.h); } return [x0, y0, x1, y1]; });
+    const X0 = Math.min(...bx.map((b) => b[0])), X1 = Math.max(...bx.map((b) => b[2])), Y0 = Math.min(...bx.map((b) => b[1])), Y1 = Math.max(...bx.map((b) => b[3]));
+    const W = X1 - X0, H = Y1 - Y0;
+    if (W > FOLD_AR * H) {
+      const k = Math.max(2, Math.round(Math.sqrt(W / (1.3 * H))));
+      // units that never split: a branch column, a pair, a two-transistor mirror
+      // (with their symbols); sorted by centre x and cut into k contiguous runs
+      const uf2 = parts.map((_, i) => i);
+      const f2 = (i) => (uf2[i] === i ? i : (uf2[i] = f2(uf2[i])));
+      const join = (g) => { for (const i of g.slice(1)) uf2[f2(i)] = f2(g[0]); };
+      columns.forEach(join); rows.forEach(join);
+      const byGate = new Map();
+      parts.forEach((p, i) => { if (p.pc.prefix === 'M' || p.pc.prefix === 'Q') { const key = `${p.kind}|${p.pc.nodes[1]}|${p.pc.nodes[2]}`; if (!byGate.has(key)) byGate.set(key, []); byGate.get(key).push(i); } });
+      for (const g of byGate.values()) if (g.length === 2) join(g);
+      const unitOf = new Map();
+      parts.forEach((_, i) => { const r = f2(i); if (!unitOf.has(r)) unitOf.set(r, []); unitOf.get(r).push(i); });
+      const units = [...unitOf.values()].map((g) => ({ g, c: g.reduce((t, i) => t + (bx[i][0] + bx[i][2]) / 2, 0) / g.length })).sort((x, y) => x.c - y.c);
+      const band = new Array(parts.length).fill(0);
+      const assign = (cutIdx) => { let bnd = 0; units.forEach((un, j) => { while (bnd < cutIdx.length && j >= cutIdx[bnd]) bnd++; for (const i of un.g) band[i] = bnd; }); };
+      const crossingNets = () => netList.filter((ns) => new Set(ns.map((i) => band[i])).size > 1).length;
+      // greedy cut indices near the targets, scored by balance and crossing nets
+      const cutIdx = [];
+      for (let b2 = 1; b2 < k; b2++) {
+        const target = X0 + (b2 * W) / k;
+        let best = null;
+        for (let j = 1; j < units.length; j++) {
+          if (cutIdx.some((c) => Math.abs(c - j) < 1) || (cutIdx.length && j <= cutIdx[cutIdx.length - 1])) continue;
+          const xc = (units[j - 1].c + units[j].c) / 2;
+          if (Math.abs(xc - target) > 0.6 * (W / k)) continue;
+          assign([...cutIdx, j]);
+          const sc = Math.abs(xc - target) / (W / k) * 4 + crossingNets() / Math.max(1, netList.length) * 3;
+          if (!best || sc < best.sc) best = { j, sc };
+        }
+        if (best) cutIdx.push(best.j);
+      }
+      if (process.env.SA_DEBUG) console.error('FOLD', JSON.stringify({ W, H, k, units: units.length, cutIdx }));
+      if (cutIdx.length) {
+        assign(cutIdx);
+        const gapY = 2.5 * u;
+        const minX = new Map();
+        parts.forEach((p, i) => minX.set(band[i], Math.min(minX.get(band[i]) ?? Infinity, bx[i][0])));
+        let yOff = 0;
+        for (let b2 = 0; b2 <= cutIdx.length; b2++) {
+          const idx = parts.map((_, i) => i).filter((i) => band[i] === b2);
+          if (!idx.length) continue;
+          const y0 = Math.min(...idx.map((i) => bx[i][1])), y1 = Math.max(...idx.map((i) => bx[i][3]));
+          // squeeze the holes left by the units moved to other bands: empty x runs
+          // of this band shrink to one gap (interleaving and rows are kept)
+          const iv2 = idx.map((i) => [bx[i][0], bx[i][2]]).sort((x, y) => x[0] - y[0]);
+          const merged = [];
+          for (const [x0, x1] of iv2) { if (merged.length && x0 <= merged[merged.length - 1][1]) merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], x1); else merged.push([x0, x1]); }
+          const shiftAt = (x) => { let sh = X0 - merged[0][0]; for (let m = 1; m < merged.length && merged[m][0] <= x; m++) sh -= Math.max(0, merged[m][0] - merged[m - 1][1] - u * GAP * 2); return sh; };
+          for (const i of idx) { parts[i].x += Math.round(shiftAt(bx[i][0])); parts[i].y += Math.round(Y0 + yOff - y0); }
+          yOff += y1 - y0 + gapY;
+        }
+      }
+    }
   }
   // two-terminal parts turn (180°) when that brings each pin nearer to the rest
   // of its net (check.py wrap-around: a pin facing away from its destination);
