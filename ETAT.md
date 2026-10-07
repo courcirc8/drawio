@@ -387,6 +387,15 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
 - JUGEMENT ORNITH PAR PAIRES (relatif, observation seulement) auto contre sa actuel (PR #11), mêmes 103 circuits que
   pour sa7 (`/AI/datasets/judge/pairs-auto-sa12.*`) : cohérent dans les deux ordres 64 % ; sa préféré 37, auto 29
   (sa7 : 43 contre 25). Ornith préfère toujours sa, un peu moins qu'avant (repli en bandes ? bruit : 36 % incohérents).
+- sa12 (7 oct., après PR #11) : rangées imposées par groupe entier (miroir à 3), éléments en parallèle (mêmes deux
+  bornes) plus pris pour une branche série, symboles de rail en double fusionnés, poussée de colonne qui garde les
+  rangées droites. Banc `sa12-tune` :
+    | | zéro erreur | ≤ 12 | > 12 | err/c | > 3:1 | crois./c | propres |
+    | auto | 60,1 % | 79,6 % | 36,2 % | 1,39 | 4,7 % | 5,4 | 20,6 % |
+    | sa12 | 70,7 % | 81,9 % | 56,9 % | 0,63 | 2,3 % | 9,2 | 10,4 % |
+  sa devant auto partout au vérificateur. RESTE : croisements (9,2 contre 5,4 ; un coût plus fort sur les tracés figés
+  est sans effet : ils viennent de l'arbre de chaque net et du placement), coudes en excès, cible d'Eric ≥ 80 % sans
+  erreur pas encore atteinte (70,7 %).
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
