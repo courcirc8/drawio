@@ -581,11 +581,11 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     cands.push([a, { x: a.x, y: b.y }, b], [a, { x: b.x, y: a.y }, b]);
     if (LANES) {
       const da = dirOf(A), db = dirOf(B);
-      for (const E of [14, 14 + G, 14 + 2 * G]) {
+      for (const E of [14, 14 + G, 14 + 2 * G, 14 + 4 * G]) {
         const ea = { x: a.x + da.x * E, y: a.y + da.y * E }, eb = { x: b.x + db.x * E, y: b.y + db.y * E };
         const lo = Math.min(ea.y, eb.y), hi = Math.max(ea.y, eb.y), lx0 = Math.min(ea.x, eb.x), lx1 = Math.max(ea.x, eb.x);
         const ys = [ea.y, eb.y], xs = [ea.x, eb.x];
-        for (let k = 1; k <= 8; k++) { ys.push(lo - k * G, hi + k * G, (lo + hi) / 2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * G); xs.push(lx0 - k * G, lx1 + k * G, (lx0 + lx1) / 2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * G); }
+        for (let k = 1; k <= 14; k++) { ys.push(lo - k * G, hi + k * G, (lo + hi) / 2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * G); xs.push(lx0 - k * G, lx1 + k * G, (lx0 + lx1) / 2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * G); }
         for (const Y of ys) cands.push([a, ea, { x: ea.x, y: Y }, { x: eb.x, y: Y }, eb, b], [a, { x: a.x, y: Y }, { x: b.x, y: Y }, b]);
         for (const X of xs) cands.push([a, ea, { x: X, y: ea.y }, { x: X, y: eb.y }, eb, b], [a, { x: X, y: a.y }, { x: X, y: b.y }, b]);
       }
@@ -605,6 +605,7 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     return best ? best.pts : null;
   };
   const wires = [];
+  const STRAIGHT = 'edgeStyle=none;rounded=0;html=1;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiGridRoute=1;';
   const FIXED = 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;jettySize=0;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiGridRoute=1;';
   // spanning tree of each net (straight clear lines preferred), then: straight
   // lines are fixed first (columns and rows claim their lines), then the other
@@ -633,8 +634,10 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   }
   const fix = (l, pts) => {
     for (let k = 0; k + 1 < pts.length; k++) fixedSegs.push({ net: l.net, a: pts[k], b: pts[k + 1] });
-    const inner = pts.length > 2 ? pts.slice(1, -1) : [{ x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }];
-    wires.push(addWire(model, { source: l.a.id, target: l.b.id, sourcePin: l.a.pin, targetPin: l.b.pin, style: FIXED, points: inner }).getAttribute('id'));
+    // a straight wire carries no waypoint (a midpoint is a vertex: another net
+    // crossing exactly there read as a contact, check.py 22-contact)
+    if (pts.length === 2) wires.push(addWire(model, { source: l.a.id, target: l.b.id, sourcePin: l.a.pin, targetPin: l.b.pin, style: STRAIGHT }).getAttribute('id'));
+    else wires.push(addWire(model, { source: l.a.id, target: l.b.id, sourcePin: l.a.pin, targetPin: l.b.pin, style: FIXED, points: pts.slice(1, -1) }).getAttribute('id'));
   };
   const rest = [];
   for (const l of links) {
