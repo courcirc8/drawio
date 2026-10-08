@@ -15,6 +15,7 @@ vm.runInThisContext(fs.readFileSync(path.join(LIB_DIR, 'libavoid.min.js'), 'utf8
 vm.runInThisContext(fs.readFileSync(path.join(LIB_DIR, 'libavoid-routing.js'), 'utf8'), { filename: 'libavoid-routing.js' });
 
 const ready = Promise.resolve(globalThis.__libavoidReady);
+ready.then(() => parentPort.postMessage({ ready: true }));   // le délai de la 1re requête ne compte pas le chargement
 parentPort.on('message', async (msg) => {
   await ready;
   try {

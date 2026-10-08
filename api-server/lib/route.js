@@ -30,57 +30,73 @@ function loadHelpers() {
 }
 
 // ---- worker de routage avec timeout (un solve pathologique est tué/relancé)
+// FILE D'ATTENTE (2026-10-08) : le worker résout une requête à la fois ; le
+// délai ne court que pendant le calcul de la requête en cours (avant : dès la
+// mise en file, si bien que les candidats d'auto lancés ensemble expiraient en
+// attendant leur tour, et chaque expiration faisait échouer toute la file).
+// Une expiration ou une erreur ne fait échouer QUE la requête en cours.
 let worker = null;
+let workerReady = false;
 let seq = 0;
-const pending = new Map();
+const queue = [];
+let inflight = null;
 const ROUTE_TIMEOUT_MS = 6000;
 
 let idleTimer = null;
 function armIdleKill() {
   if (idleTimer != null) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => { if (pending.size === 0) killWorker(); }, 2500);
+  idleTimer = setTimeout(() => { if (inflight == null && queue.length === 0) killWorker(); }, 2500);
   idleTimer.unref();
 }
 
 function getWorker() {
   if (worker == null) {
-    worker = new Worker(new URL('./route-worker.js', import.meta.url));
-    worker.unref();
-    if (worker.stdout) worker.stdout.unref?.();
-    if (worker.stderr) worker.stderr.unref?.();
-    worker.on('message', (msg) => {
-      const p = pending.get(msg.id);
-      if (p != null) { pending.delete(msg.id); clearTimeout(p.timer); p.resolve(msg); }
-      if (msg.error != null) {
-        // un abort Emscripten laisse le module MORT pour la session du
-        // worker (cf. docs/claude/libavoid-routing.md) : on relance
-        killWorker();
-      } else {
-        armIdleKill();
-      }
+    const w = new Worker(new URL('./route-worker.js', import.meta.url));
+    worker = w; workerReady = false;
+    w.unref();
+    if (w.stdout) w.stdout.unref?.();
+    if (w.stderr) w.stderr.unref?.();
+    w.on('message', (msg) => {
+      if (w !== worker) return;
+      if (msg.ready) { workerReady = true; pump(); return; }
+      const p = inflight;
+      if (p == null || p.id !== msg.id) return;
+      inflight = null; clearTimeout(p.timer); p.resolve(msg);
+      // un abort Emscripten laisse le module MORT pour la session du
+      // worker (cf. docs/claude/libavoid-routing.md) : on relance
+      if (msg.error != null) killWorker(); else armIdleKill();
+      pump();
     });
-    worker.on('error', () => { killWorker(); });
+    w.on('error', () => { if (w === worker) { killWorker(); pump(); } });
   }
   return worker;
 }
 function killWorker() {
   const w = worker;
-  worker = null;
-  for (const [, p] of pending) { clearTimeout(p.timer); p.resolve({ error: 'worker-restart' }); }
-  pending.clear();
+  worker = null; workerReady = false;
+  if (inflight != null) { const p = inflight; inflight = null; clearTimeout(p.timer); p.resolve({ error: 'worker-restart' }); }
   if (w != null) w.terminate().catch(() => {});
+}
+function pump() {
+  if (inflight != null || queue.length === 0) return;
+  const w = getWorker();
+  if (!workerReady) return;   // repris au message « ready » du worker
+  const p = queue.shift();
+  inflight = p;
+  p.timer = setTimeout(() => {
+    if (inflight !== p) return;
+    inflight = null;
+    p.resolve({ error: 'route-timeout' });
+    killWorker();
+    pump();
+  }, ROUTE_TIMEOUT_MS);
+  w.postMessage({ id: p.id, vertices: p.vertices, edges: p.edges, opts: p.opts });
 }
 
 function computeRoutesSafe(vertices, edges, opts) {
   return new Promise((resolve) => {
-    const id = ++seq;
-    const timer = setTimeout(() => {
-      pending.delete(id);
-      killWorker();
-      resolve({ error: 'route-timeout' });
-    }, ROUTE_TIMEOUT_MS);
-    pending.set(id, { resolve, timer });
-    getWorker().postMessage({ id, vertices, edges, opts });
+    queue.push({ id: ++seq, vertices, edges, opts, resolve, timer: null });
+    pump();
   });
 }
 
