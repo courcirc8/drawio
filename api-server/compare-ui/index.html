@@ -7,37 +7,104 @@
 <style>
   body { margin: 0; font-family: system-ui, sans-serif; background: #f4f4f4; }
   header { padding: 10px 12px; font-size: 15px; display: flex; justify-content: space-between; }
+  h3 { font-size: 15px; margin: 10px 12px 4px; }
+  .ref { margin: 0 8px; background: #fff; border: 1px solid #bbb; border-radius: 8px; padding: 6px; }
+  .ref img { width: 100%; max-height: 40vh; object-fit: contain; display: block; }
+  .ref .cite { font-size: 13px; margin: 6px 2px 2px; line-height: 1.35; }
+  .ref .none { font-size: 14px; color: #a40; padding: 8px 4px; }
   .pair { display: flex; flex-direction: column; gap: 10px; padding: 0 8px; }
   @media (orientation: landscape) { .pair { flex-direction: row; } .pair button { flex: 1; } }
-  .pair button { border: 3px solid #ccc; border-radius: 8px; background: #fff; padding: 4px; cursor: pointer; }
-  .pair button:active { border-color: #2a7; }
+  .pair button { border: 3px solid #ccc; border-radius: 8px; background: #fff; padding: 4px; cursor: pointer; position: relative; }
+  .pair button .tag { position: absolute; top: 4px; left: 8px; font-weight: 700; color: #555; }
   .pair img { width: 100%; max-height: 42vh; object-fit: contain; display: block; }
   @media (orientation: landscape) { .pair img { max-height: 80vh; } }
-  .eq { display: block; margin: 12px auto; padding: 12px 40px; font-size: 17px; border-radius: 8px; border: 1px solid #999; background: #fff; }
+  .sel { border-color: #2a7 !important; background: #eefaf2 !important; }
+  .eq { display: block; margin: 10px auto; padding: 10px 40px; font-size: 17px; border-radius: 8px; border: 3px solid #ccc; background: #fff; }
+  .note { margin: 4px 8px; display: flex; gap: 8px; align-items: flex-start; }
+  .note textarea { flex: 1; min-height: 4.5em; font-size: 16px; border-radius: 8px; border: 1px solid #999; padding: 6px; }
+  .mic { font-size: 26px; width: 56px; height: 56px; border-radius: 50%; border: 1px solid #999; background: #fff; }
+  .mic.rec { background: #e33; border-color: #e33; }
+  .etat { margin: 2px 12px; font-size: 13px; color: #555; min-height: 1.2em; }
+  .go { display: block; margin: 10px auto 30px; padding: 12px 30px; font-size: 17px; border-radius: 8px; border: none; background: #2a7; color: #fff; }
+  .go:disabled { background: #9cc; }
   .msg { padding: 40px 16px; text-align: center; font-size: 18px; }
+  a { color: #06c; }
 </style>
 </head>
 <body>
-<header><span>Touchez le schéma le plus lisible</span><span id="prog"></span></header>
+<header><span>Lequel est le plus lisible ?</span><span id="prog"></span></header>
 <div id="main"></div>
 <script>
 const batch = new URLSearchParams(location.search).get('batch') || 'rules-1';
 const main = document.getElementById('main'), prog = document.getElementById('prog');
-let cur = null, busy = false;
+const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+let cur = null, choice = null, busy = false, rec = null, chunks = [];
+
+function refHtml(r, src) {
+  if (!r) return '<div class="ref"><div class="none">Pas de figure de référence pour ce circuit (netlist sans figure d\'origine connue).</div></div>';
+  let cite = '';
+  if (r.kind === 'ieee') {
+    const pdf = `../rag/api/page.png?id=${encodeURIComponent(r.paper_id)}&n=${r.page}&dpi=150`;
+    cite = `<b>${esc(r.title)}</b><br>${esc((r.authors || []).slice(0, 3).join(', '))}${(r.authors || []).length > 3 ? ' et al.' : ''} — ${esc(r.venue)} ${esc(r.year)}, page ${esc(r.page)}`
+      + (r.legende ? `<br><i>${esc(r.legende)}</i>` : '')
+      + `<br><a href="${pdf}" target="_blank">Ouvrir la page PDF complète</a> · <a href="../rag/?id=${encodeURIComponent(r.paper_id)}" target="_blank">l'article</a>`;
+  } else cite = esc(r.cite || '');
+  return `<div class="ref">${r.img ? `<a href="${src}" target="_blank"><img src="${src}" alt="figure de référence"></a>` : ''}<div class="cite">${cite}</div></div>`;
+}
+
 async function next() {
   const r = await (await fetch(`compare/api/next?batch=${encodeURIComponent(batch)}`)).json();
   if (r.finished) { prog.textContent = `${r.done}/${r.total}`; main.innerHTML = '<div class="msg">Terminé, merci !</div>'; return; }
-  cur = r.n; prog.textContent = `${r.done + 1}/${r.total}`;
+  cur = r.n; choice = null; prog.textContent = `${r.done + 1}/${r.total}`;
   const src = (s) => `compare/img/${encodeURIComponent(batch)}/${r.n}-${s}.png`;
-  main.innerHTML = `<div class="pair"><button data-c="L"><img src="${src('L')}" alt="A"></button>`
-    + `<button data-c="R"><img src="${src('R')}" alt="B"></button></div>`
-    + `<button class="eq" data-c="equal">Égal</button>`;
-  main.querySelectorAll('[data-c]').forEach((b) => b.onclick = () => answer(b.dataset.c));
+  const land = matchMedia('(orientation: landscape)').matches;
+  main.innerHTML = `<h3>Schéma de référence (publication d'origine)</h3>${refHtml(r.ref, src('ref'))}`
+    + `<h3>Touchez le dessin le plus lisible</h3>`
+    + `<div class="pair"><button data-c="L"><span class="tag">${land ? 'Gauche' : 'Haut'}</span><img src="${src('L')}" alt="A"></button>`
+    + `<button data-c="R"><span class="tag">${land ? 'Droite' : 'Bas'}</span><img src="${src('R')}" alt="B"></button></div>`
+    + `<button class="eq" data-c="equal">Égal</button>`
+    + `<h3>Ce qui ne va pas (facultatif)</h3>`
+    + `<div class="note"><textarea id="txt" placeholder="Dictez avec 🎤 ou écrivez…"></textarea><button class="mic" id="mic" title="Dicter">🎤</button></div>`
+    + `<div class="etat" id="etat"></div>`
+    + `<button class="go" id="go" disabled>Enregistrer et suivant</button>`;
+  main.querySelectorAll('[data-c]').forEach((b) => b.onclick = () => {
+    choice = b.dataset.c;
+    main.querySelectorAll('[data-c]').forEach((x) => x.classList.toggle('sel', x === b));
+    document.getElementById('go').disabled = false;
+  });
+  document.getElementById('mic').onclick = dicter;
+  document.getElementById('go').onclick = save;
+  scrollTo(0, 0);
 }
-async function answer(choice) {
-  if (busy) return; busy = true;
+
+function dicter() {
+  const etat = document.getElementById('etat'), mic = document.getElementById('mic');
+  if (rec && rec.state === 'recording') { rec.stop(); return; }
+  if (!navigator.mediaDevices || !window.MediaRecorder) { etat.textContent = 'Dictée indisponible dans ce navigateur.'; return; }
+  navigator.mediaDevices.getUserMedia({ audio: true }).then((flux) => {
+    const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find((t) => MediaRecorder.isTypeSupported(t)) || '';
+    rec = new MediaRecorder(flux, type ? { mimeType: type } : {});
+    chunks = [];
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      flux.getTracks().forEach((t) => t.stop());
+      mic.classList.remove('rec'); etat.textContent = 'Transcription…';
+      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/mp4' }); chunks = [];
+      try {
+        const r = await (await fetch('compare/api/transcrire', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob })).json();
+        if (r.texte) { const t = document.getElementById('txt'); t.value = (t.value ? t.value + ' ' : '') + r.texte.trim(); etat.textContent = 'Texte ajouté (modifiable).'; }
+        else etat.textContent = r.erreur || 'Rien entendu.';
+      } catch (e) { etat.textContent = 'Transcription impossible : ' + e; }
+    };
+    rec.start(); mic.classList.add('rec'); etat.textContent = 'Enregistrement… touchez 🎤 pour arrêter (l\'audio n\'est pas conservé).';
+  }).catch(() => { etat.textContent = 'Micro refusé.'; });
+}
+
+async function save() {
+  if (busy || !choice) return; busy = true;
   try {
-    await fetch('compare/api/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch, n: cur, choice }) });
+    const comment = document.getElementById('txt').value;
+    await fetch('compare/api/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch, n: cur, choice, comment }) });
     await next();
   } finally { busy = false; }
 }

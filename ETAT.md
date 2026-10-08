@@ -492,6 +492,34 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   avant devant sur VCO (12-3), filter (9-2), lna (7-2), clock (7-2), oscillator : petits circuits RF où sa est souvent
   élu. Observation seulement (règle d'Eric) ; piste pour la suite : croisements et placement des petits circuits RF.
 
+- NOTE D'ERIC, SÉRIE 1 (8 oct., /drawio/eric-paires, 10 paires « auto d'avant » contre « auto d'aujourd'hui »,
+  circuits où Ornith hésitait) : avant 6, aujourd'hui 1, égal 3. ORCHESTRATEUR : ne rien fusionner qui change le choix
+  d'auto (y compris la pénalité d'allongement, codée, en mesure) avant l'analyse de la série 2 (avec figure de
+  référence et commentaires dictés : /AI/datasets/judge/compare/eric-paires-2).
+  Analyse (`tools/analyse-pairs.mjs`, dessins refaits identiques à ceux vus, `eric-paires/analyse.json`) sur les 6 paires
+  préférées « avant » : erreurs du vérificateur PLUS nombreuses 6/6 (1,2,4,10,7,4 contre 0,0,0,3,4,0) ; fil total par
+  composant plus COURT 6/6 (−2 à −30 %) ; fils longs moins nombreux 5/6 ; croisements moins nombreux 4/6 ; feuille plus
+  allongée 3/6 (jusqu'à 2,8:1). Les mesures des règles d'Eric (sources à la masse / au VDD sur une rangée, charge dans la
+  colonne de son transistor, branche en colonne) ne séparent PAS les deux côtés ; à l'œil (paires 3 et 7), l'avant
+  dessine chaque étage en colonne VDD → charge → transistor → masse et les étages de gauche à droite dans l'ordre du
+  signal, l'aujourd'hui aligne les transistors mais pend les charges à un bus commun avec de longs fils aller-retour.
+  CONCLUSION PROVISOIRE (n = 6) : le choix calé sur check.py sacrifie la longueur de fil et l'enchaînement des étages ;
+  « sans erreur » au vérificateur ne mesure pas la lisibilité pour Eric ; la pénalité d'allongement va peut-être contre
+  son goût. Pistes à valider sur la série 2 : départager par la longueur de fil, ou ne plus laisser check.py primer.
+
+- RÈGLE D'ALLONGEMENT (Eric, 8 oct. ; `AUTO_ASPECT=1`, DÉSACTIVÉE par défaut sur consigne de l'orchestrateur jusqu'à la
+  série 2) : à erreurs égales, une feuille ≤ 3:1 d'abord. Runs `aspect{0,1}-{tune,test,holdout,dvd,pdk}` (même code,
+  scellés refusés : 46 variantes) — zéro erreur ; err/c ; > 3:1 ; crois./c ; fil/c :
+    | jeu | avant | après |
+    | réglage (1212) | 85,1 % ; 0,30 ; 4,3 % ; 7,1 ; 580 | 85,1 % ; 0,30 ; 0,9 % ; 7,2 ; 583 |
+    | test (772) | 86,0 % ; 0,35 ; 5,1 % ; 7,6 ; 572 | 86,0 % ; 0,35 ; 0,8 % ; 7,6 ; 576 |
+    | jamais vues (936) | 67,4 % ; 0,69 ; 0,9 % ; 19,0 ; 866 | 67,4 % ; 0,69 ; 0,2 % ; 19,0 ; 866 |
+    | DVD natif (1401) | 88,4 % ; 0,27 ; 21,1 % ; 3,4 ; 529 | 88,4 % ; 0,27 ; 6,6 % ; 3,4 ; 536 |
+    | PDK (343) | 53,1 % ; 29,4 ; 7,6 % ; 62,0 ; 937 | 53,1 % ; 20,2 ; 3,5 % ; 61,7 ; 925 |
+  Objectif ≤ 10 % tenu partout, aucune erreur perdue (règle placée après le nombre d'erreurs) ; fil +0,5 à +1,3 % (sauf
+  PDK : −1 %, et err/c PDK 29 → 20 = effet du budget de temps, pas de la règle). Choix changés : 39 à 398 par jeu.
+  MAIS Eric a préféré la feuille plus allongée dans 3 des 6 paires de la série 1 : à n'activer qu'après la série 2.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.

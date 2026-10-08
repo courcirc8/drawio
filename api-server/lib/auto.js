@@ -8,6 +8,8 @@
  * bends, isolated parts). Tune bench: clean drawings 21.7 -> 25.8 % (original
  * bank), errors and aspect unchanged or better.
  * SA (default on since 2026-10-07; AUTO_SA=0 disables): the annealing engine is one more candidate.
+ * ASPECT (2026-10-08, off by default, AUTO_ASPECT=1 enables): between equal error counts, a sheet within
+ * 3:1 first (AUTO_ASPECT_MAX).
  * AUTO_RULES=1 (measurement only, not adopted): between the error count and the
  * conventions, prefer the higher published-layout-rules score (lib/layout-rules.js).
  * Shared by server.js (POST …/netlist/import?engine=auto) and the bench tools,
@@ -18,7 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
-import { newDocument, getPage, normalizeOrigin, serialize, parseXml } from './model.js';
+import { newDocument, getPage, normalizeOrigin, serialize, parseXml, allCells, cellInfo } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { importNetlist4, AUTO_CANDIDATES, AUTO_SPACINGS } from './place4.js';
 import { routePage } from './route.js';
@@ -51,13 +53,29 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   if (process.env.AUTO_BASICS !== '0') { try { basics = basicsReport(m, parsed).count; } catch { /* no geometry */ } }
   let rules = null;
   if (process.env.AUTO_RULES === '1') { try { rules = layoutRulesScore(m).score; } catch { /* no geometry */ } }
-  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics };
+  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, aspect: sheetAspect(m) };
+}
+
+/** Long side / short side of the box around the placed vertices, as the bench
+ *  measures it (tools/bench-families.mjs geometry()). */
+function sheetAspect(m) {
+  const verts = allCells(m).map(cellInfo).filter((c) => c.kind === 'vertex' && c.x != null);
+  if (!verts.length) return 1;
+  const xs = verts.flatMap((c) => [c.x, c.x + c.w]), ys = verts.flatMap((c) => [c.y, c.y + c.h]);
+  const W = Math.max(...xs) - Math.min(...xs), H = Math.max(...ys) - Math.min(...ys);
+  return Math.max(W, H) / Math.max(1, Math.min(W, H));
 }
 
 // rules scores closer than this count as equal (then conventions decide)
 const RULES_EPS = 0.02;
+// ASPECT (Eric 2026-10-08; OFF by default until Eric's second blind series is read —
+// AUTO_ASPECT=1 enables; AUTO_ASPECT_MAX, default 3):
+// between equal error counts, a sheet within 3:1 beats a longer one — errors
+// stay first, so no error is traded for a squarer sheet.
+const wide = (t) => process.env.AUTO_ASPECT === '1' && t.aspect != null && t.aspect > Number(process.env.AUTO_ASPECT_MAX ?? 3);
 const better = (b, a) => {
   if (b.errs !== a.errs) return b.errs < a.errs;
+  if (wide(b) !== wide(a)) return !wide(b);
   if (b.basics != null && a.basics != null && b.basics !== a.basics) return b.basics < a.basics;
   if (b.rules != null && a.rules != null && Math.abs(b.rules - a.rules) > RULES_EPS) return b.rules > a.rules;
   return b.conv > a.conv + 1e-9;
