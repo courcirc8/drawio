@@ -1,7 +1,7 @@
 /**
  * auto.js — engine=auto: place a netlist with every candidate of
  * AUTO_CANDIDATES × AUTO_SPACINGS (lib/place4.js) and keep the drawing with
- * the fewest check.js errors (rule 30 aside), then the best published-convention
+ * the fewest errors of tools/check.py (since 2026-10-08; AUTO_JUDGE=js: check.js, rule 30 aside), then the best published-convention
  * score (lib/conventions.js), then the earlier candidate.
  * BASICS (default on since 2026-10-05; AUTO_BASICS=0 disables): between the error count and the rest, prefer the
  * fewer basic-rule violations (lib/basics.js: PMOS above NMOS, mirrored pairs,
@@ -13,7 +13,11 @@
  * Shared by server.js (POST …/netlist/import?engine=auto) and the bench tools,
  * so what is measured is exactly what is served.
  */
-import { newDocument, getPage, normalizeOrigin } from './model.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { newDocument, getPage, normalizeOrigin, serialize } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { importNetlist4, AUTO_CANDIDATES, AUTO_SPACINGS } from './place4.js';
 import { routePage } from './route.js';
@@ -58,6 +62,23 @@ const better = (b, a) => {
   return b.conv > a.conv + 1e-9;
 };
 
+// JUDGE (Eric 2026-10-08): the candidates are ranked by the bench's own checker
+// (tools/check.py, all error rules) — check.js is a partial port that disagreed
+// on 216 tune circuits (auto kept a drawing check.py found worse than sa).
+// AUTO_JUDGE=js restores check.js; a failing python run falls back to it.
+const CHECK_PY = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'tools', 'check.py');
+let tmpSeq = 0;
+function checkPyErrors(doc) {
+  return new Promise((resolve) => {
+    const f = path.join(os.tmpdir(), `auto-judge-${process.pid}-${tmpSeq++}.drawio`);
+    try { fs.writeFileSync(f, serialize(doc)); } catch { resolve(null); return; }
+    execFile('python3', [CHECK_PY, f, '--json'], { timeout: 120000, maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => {
+      fs.rm(f, { force: true }, () => {});
+      try { resolve(JSON.parse(stdout).errors); } catch { resolve(null); }   // exit 1 = errors found, stdout still JSON
+    });
+  });
+}
+
 /** Returns {doc, placed, label, trials:{label:{errors, conventions}}} or throws
  *  when every candidate failed. */
 export async function autoPlace(parsed) {
@@ -65,6 +86,10 @@ export async function autoPlace(parsed) {
   // the annealing engine (lib/place-sa.js) as one more candidate (Eric
   // 2026-10-07; AUTO_SA=0 disables, AUTO_SA_MAX=N limits it to N parts)
   if (process.env.AUTO_SA !== '0' && parsed.components.length <= Number(process.env.AUTO_SA_MAX ?? Infinity)) trials.push(await trial(parsed, 'sa', null, {}, {}));
+  if (process.env.AUTO_JUDGE !== 'js') {
+    const py = await Promise.all(trials.map((t) => (t.doc && t.errs !== Infinity ? checkPyErrors(t.doc) : Promise.resolve(null))));
+    trials.forEach((t, k) => { if (py[k] != null) { t.errsJs = t.errs; t.errs = py[k]; } });
+  }
   let win = trials.reduce((a, b) => (better(b, a) ? b : a));
   // STACK-FIRST BAND (experiment, AUTO_BAND=N): among candidates within N
   // check.py-like errors of the best, prefer the branch-column drawings

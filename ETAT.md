@@ -429,6 +429,19 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   « règles de base » favorise aussi les autres candidats (sa a plus de coudes). auto+sa choisit sa dans 25-42 % des cas.
   Temps (auto+sa) : médiane 0,6-1,9 s, 90e centile 4-6 s (52 s sur les PDK) ; sa seul : 45 s à 150 composants, le
   maximum de 958 s vient des autres candidats d'auto. Piste : aligner check.js sur check.py, puis remesurer.
+- ARBITRE D'AUTO ALIGNÉ SUR check.py (Eric : option a, 8 oct. ; PR #13 fusionnée avant) : auto fait compter les erreurs
+  de chaque candidat par tools/check.py (en parallèle ; repli check.js si python échoue ; AUTO_JUDGE=js pour revenir).
+  Runs `autosa3-*` (scellés refusés : 49, aucun échec LVS) :
+    | jeu | auto (avant) | sa | auto+sa, arbitre check.py |
+    | réglage (1153) | 60,1 % ; 1,39 | 70,7 % ; 0,63 | 85,9 % ; 0,26 (≤ 12 : 95,8 % ; > 12 : 73,7 %) |
+    | test (720) | 57,2 % ; 1,87 | 71,0 % ; 0,74 | 86,4 % ; 0,33 |
+    | jamais vues (937) | 29,6 % ; 2,89 | 33,9 % ; 2,30 | 67,4 % ; 0,69 |
+    | conv./PDK jamais vus (345) | 35,1 % ; 38,4 | 43,8 % ; 62,9 | 53,0 % ; 22,3 |
+  (zéro erreur ; err/c). > 3:1 : 2,5 / 4,2 / 0,6 / 6,1 % ; propres 24,9 % (auto 20,6). sa choisi dans 38-48 % des cas.
+  Temps : médiane 1,1-2,6 s, 90e centile 5-9 s (63 s PDK), maximum 1 217 s sur un convertisseur de 147 composants.
+  RÉSERVE : le critère de choix et la mesure sont maintenant le même vérificateur ; « zéro erreur » n'est plus une
+  mesure indépendante de la lisibilité (seuls l'œil d'Eric, les 50 notes finales et le juge relatif d'Ornith le sont).
+  Cible d'Eric ≥ 80 % sans erreur atteinte sur réglage et test, pas sur les familles jamais vues.
 - Étape intermédiaire AVANT (c) (orchestrateur, Eric ne veut pas de longues annotations) : PSEUDO-ÉTIQUETTES —
   (1) demander à Ornith des boîtes approximatives en plus des composants, ou utiliser ses décomptes par type comme
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
