@@ -492,6 +492,21 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   avant devant sur VCO (12-3), filter (9-2), lna (7-2), clock (7-2), oscillator : petits circuits RF où sa est souvent
   élu. Observation seulement (règle d'Eric) ; piste pour la suite : croisements et placement des petits circuits RF.
 
+- NOTE D'ERIC, SÉRIE 1 (8 oct., /drawio/eric-paires, 10 paires « auto d'avant » contre « auto d'aujourd'hui »,
+  circuits où Ornith hésitait) : avant 6, aujourd'hui 1, égal 3. ORCHESTRATEUR : ne rien fusionner qui change le choix
+  d'auto (y compris la pénalité d'allongement, codée, en mesure) avant l'analyse de la série 2 (avec figure de
+  référence et commentaires dictés : /AI/datasets/judge/compare/eric-paires-2).
+  Analyse (`tools/analyse-pairs.mjs`, dessins refaits identiques à ceux vus, `eric-paires/analyse.json`) sur les 6 paires
+  préférées « avant » : erreurs du vérificateur PLUS nombreuses 6/6 (1,2,4,10,7,4 contre 0,0,0,3,4,0) ; fil total par
+  composant plus COURT 6/6 (−2 à −30 %) ; fils longs moins nombreux 5/6 ; croisements moins nombreux 4/6 ; feuille plus
+  allongée 3/6 (jusqu'à 2,8:1). Les mesures des règles d'Eric (sources à la masse / au VDD sur une rangée, charge dans la
+  colonne de son transistor, branche en colonne) ne séparent PAS les deux côtés ; à l'œil (paires 3 et 7), l'avant
+  dessine chaque étage en colonne VDD → charge → transistor → masse et les étages de gauche à droite dans l'ordre du
+  signal, l'aujourd'hui aligne les transistors mais pend les charges à un bus commun avec de longs fils aller-retour.
+  CONCLUSION PROVISOIRE (n = 6) : le choix calé sur check.py sacrifie la longueur de fil et l'enchaînement des étages ;
+  « sans erreur » au vérificateur ne mesure pas la lisibilité pour Eric ; la pénalité d'allongement va peut-être contre
+  son goût. Pistes à valider sur la série 2 : départager par la longueur de fil, ou ne plus laisser check.py primer.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
