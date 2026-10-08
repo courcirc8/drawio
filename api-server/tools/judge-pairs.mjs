@@ -13,7 +13,8 @@
  *
  * Usage: node tools/judge-pairs.mjs --a v2 --b auto --out FILE [--split tune] [--per-family 15] [--families f1,f2]
  *   engines: v2 | v4 | auto | auto-old (no sa, check.js referee) | sa
- * Output: one JSON line per circuit {id, family, a, b, ab, ba, prefers}, and a
+ * Output: one JSON line per circuit {id, family, a, b, ab, ba, firstAB, prefers}
+ * (prefers 'same' when both engines drew the same picture: not asked), and a
  * summary: order consistency, preference per family.
  */
 import fs from 'node:fs';
@@ -62,6 +63,7 @@ async function ask(a, b) {
   const content = [{ type: 'text', text: PROMPT }, { type: 'text', text: 'Drawing A:' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,' + a } },
     { type: 'text', text: 'Drawing B:' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,' + b } }];
   const r = await fetch(JUDGE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: MODEL, temperature: 0, max_tokens: 200, chat_template_kwargs: { enable_thinking: false }, messages: [{ role: 'user', content }] }) });
+  if (!r.ok) throw new Error(`judge HTTP ${r.status}`);   // a judge outage is a failure, not an inconsistent answer
   const j = await r.json();
   const m = (j.choices?.[0]?.message?.content || '').match(/\{[\s\S]*\}/);
   return m ? JSON.parse(m[0]) : { better: null };
@@ -84,15 +86,21 @@ for (const r of pick) {
     assertNotSealed(text, r.id, { family: r.family });
     const parsed = parseSpice(text);
     const [pa, pb] = [await draw(parsed, EA), await draw(parsed, EB)];
-    row.ab = (await ask(pa, pb)).better;   // A = EA
-    row.ba = (await ask(pb, pa)).better;   // A = EB
+    if (pa === pb) { row.prefers = 'same'; fs.writeSync(fd, JSON.stringify(row) + '\n'); continue; }   // both engines drew the same picture
+    // both orders, the first one drawn at random per circuit (seeded by the id)
+    row.firstAB = parseInt(crypto.createHash('sha1').update('order:' + r.id).digest('hex').slice(0, 2), 16) < 128;
+    if (row.firstAB) { row.ab = (await ask(pa, pb)).better; row.ba = (await ask(pb, pa)).better; }
+    else { row.ba = (await ask(pb, pa)).better; row.ab = (await ask(pa, pb)).better; }   // ab: A = EA ; ba: A = EB
     const vA = row.ab === 'A' ? EA : row.ab === 'B' ? EB : null, vB = row.ba === 'A' ? EB : row.ba === 'B' ? EA : null;
     row.prefers = vA && vA === vB ? vA : 'inconsistent';
   } catch (e) { row.failed = String(e.message || e).slice(0, 120); }
   fs.writeSync(fd, JSON.stringify(row) + '\n');
 }
 fs.closeSync(fd);
-const rows = fs.readFileSync(OUT, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => !r.failed);
+const all = fs.readFileSync(OUT, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+const same = all.filter((r) => r.prefers === 'same').length;
+console.log(`${all.length} circuits: ${same} identical drawings, ${all.filter((r) => r.failed).length} failed`);
+const rows = all.filter((r) => !r.failed && r.prefers !== 'same');
 const fam = {};
 for (const r of rows) { const f = (fam[r.family] ||= { n: 0, [EA]: 0, [EB]: 0, inconsistent: 0 }); f.n++; f[r.prefers]++; }
 const cons = rows.filter((r) => r.prefers !== 'inconsistent').length;

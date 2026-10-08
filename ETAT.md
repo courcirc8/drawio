@@ -1,6 +1,6 @@
 # ÉTAT du chantier « qualité de la génération » — fork drawio (api-server)
 
-Mis à jour le 2026-10-07 (reprise après le redémarrage d'ai-station ; branche et données vérifiées intactes). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
+Mis à jour le 2026-10-08 (reprise après le redémarrage d'ai-station ; branche et données vérifiées intactes). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
 Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 
 ## Contraintes fermes d'Eric (plan qualité validé)
@@ -447,6 +447,28 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
   d'Ornith, réentraîner, itérer ; mesurer sur un petit jeu DVD vérifié à part. Eric seulement en dernier recours,
   lot court, interface simple.
+
+- REPRISE DU 8 OCT. (redémarrage d'ai-station ; décisions d'Eric : PR #13 et #14 fusionnées, auto+sa par défaut,
+  arbitre check.py) : service drawio-api revenu tout seul (200 en local et via le portail).
+  (a) BUDGET DE TEMPS d'auto (commit 3fb553f, `AUTO_BUDGET_MS`, 60 s par défaut) : passé le budget, auto garde le
+  meilleur dessin déjà fini (les candidats en cours continuent en tâche de fond sans être attendus). Mesure sur les 345
+  convertisseurs PDK : run `budget60-holdout-openpdk`, à comparer à `autosa3-holdout-openpdk` (même code sans budget).
+  (b) DVD NATIF (livraison du RAG `schemas-natif-2026-10-08.jsonl`, 10 404 lectures DVD) : normaliseur strict
+  `tools/import-dvd-natif.py` → 1 475 netlists gardées (`bank/dvd-natif`, `manifest-dvdnatif.jsonl`), puis FILTRE
+  EXPLICITE DES SCELLÉS `tools/filter-sealed.mjs --source dvd-natif` (lib/sealed.js en forme stricte, règle de
+  motifs appliquée toutes familles confondues ; lib/invariant.js empreinte des documents dessinés et dépend des refdes,
+  son équivalent pour une netlist est l'empreinte WL de sealed.js) : 0 scellé exact, 47 variantes proches refusées
+  → `bank/excluded-dvd-natif.jsonl`, lu par `bankExclusions()` comme `excluded.jsonl`. Reste 1 401 (réglage 767,
+  test 507, familles jamais vues 127 : data-converter 100, regulator 27).
+  Banc (runs `dvd-{autoold,sa,auto}`, filtrés dans `dvd-*-f`) — zéro erreur ; > 3:1 ; err/c ; crois./c :
+    | jeu | auto d'avant | sa | auto d'aujourd'hui |
+    | réglage (767) | 59,1 % ; 34,9 % ; 1,83 ; 2,6 | 74,2 % ; 10,7 % ; 1,51 ; 4,7 | 87,1 % ; 16,9 % ; 0,71 ; 3,0 |
+    | test (507) | 57,6 % ; 32,7 % ; 2,00 ; 2,7 | 80,1 % ; 12,6 % ; 0,57 ; 4,4 | 90,5 % ; 17,2 % ; 0,48 ; 3,3 |
+    | jamais vues (127) | 58,3 % ; 34,6 % ; 1,63 ; 2,3 | 78,0 % ; 11,8 % ; 1,59 ; 5,5 | 85,0 % ; 15,0 % ; 0,34 ; 3,3 |
+  Petits circuits (médiane 0,3 s). Cible ≥ 80 % sans erreur tenue partout, y compris jamais vues ; MAIS feuilles
+  > 3:1 à 15-17 % (cible ≤ 10 %) : sur ces petits circuits lus, auto préfère souvent une rangée allongée. À traiter.
+  (c) Juge par paires corrigé : une panne d'Ornith devient un échec (avant : compté « incohérent » — le run de la nuit,
+  13 paires, en souffrait), dessins identiques mis à part (`same`), premier ordre tiré au hasard par circuit.
 
 ## Chantier en cours
 
