@@ -274,6 +274,9 @@ const { mountCorrect } = await import('./lib/correct.js');
 mountCorrect(app, wrap);
 const { mountCompare } = await import('./lib/compare.js');
 mountCompare(app, wrap);
+// Eric's before/after page (tools/eric-pairs-batch.mjs): the blind /compare page
+// on the eric-paires batch; relative redirect so it works behind /drawio/
+app.get('/eric-paires', (req, res) => res.redirect('compare?batch=eric-paires'));
 
 // home page for the ai-station portal (https://<host>/drawio/ -> 127.0.0.1:8770/,
 // prefix stripped by tailscale serve): relative links only, shared bar optional
@@ -283,6 +286,7 @@ app.get('/', (req, res) => res.type('html').send(`<!doctype html><html lang="fr"
 <style>body{font-family:system-ui,sans-serif;margin:16px;max-width:40em}li{margin:.5em 0}</style>
 <h1>drawio — schémas électroniques</h1><ul>
 <li><a href="correct?batch=rf-1">Correction des netlists (lot rf-1)</a></li>
+<li><a href="eric-paires">Avant / après : 10 paires à juger</a></li>
 <li><a href="compare">Comparaison à l'aveugle de deux dessins</a></li>
 <li><a href="compare/gallery?batch=exemples-1">Galerie d'exemples : auto et recuit (sa)</a></li>
 <li><a href="editor/">Éditeur drawio</a></li>
