@@ -94,7 +94,7 @@ async function run() {
       const parsed = parseSpice(text);
       const t0 = Date.now();
       let doc, m, chosen = engine;
-      if (engine === 'auto') { const a = await autoPlace(parsed); doc = a.doc; chosen = a.label; }
+      if (engine === 'auto') { const a = await autoPlace(parsed); doc = a.doc; chosen = a.label; if (a.timedOut) row.timedOut = true; }
       else { doc = newDocument(); const mm = getPage(doc); if (engine === 'v2') { const p = importNetlist2(mm, parsed); await routePage(mm, p.wires, {}); normalizeOrigin(mm); } else if (engine === 'sa') await importNetlistSA(mm, parsed); else await importNetlist4(mm, parsed); }
       m = getPage(doc);
       row.ms = Date.now() - t0;   // drawing time (placement + routing, auto: all candidates)

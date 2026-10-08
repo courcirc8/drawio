@@ -12,7 +12,7 @@
  * anything. Our own renders only: no corpus image is sent.
  *
  * Usage: node tools/judge-pairs.mjs --a v2 --b auto --out FILE [--split tune] [--per-family 15] [--families f1,f2]
- *   engines: v2 | v4 | auto | sa (anything lib/auto.js / place2 / place4 produce)
+ *   engines: v2 | v4 | auto | auto-old (no sa, check.js referee) | sa
  * Output: one JSON line per circuit {id, family, a, b, ab, ba, prefers}, and a
  * summary: order consistency, preference per family.
  */
@@ -47,6 +47,11 @@ const PROMPT = 'Two drawings of the SAME analog circuit. Which one would an anal
 async function draw(parsed, engine) {
   let doc = newDocument(); const m = getPage(doc);
   if (engine === 'auto') doc = (await autoPlace(parsed)).doc;
+  else if (engine === 'auto-old') {   // auto as it was before 2026-10-07: no sa candidate, check.js referee
+    const keep = [process.env.AUTO_SA, process.env.AUTO_JUDGE];
+    process.env.AUTO_SA = '0'; process.env.AUTO_JUDGE = 'js';
+    try { doc = (await autoPlace(parsed)).doc; } finally { [process.env.AUTO_SA, process.env.AUTO_JUDGE] = keep; if (keep[0] === undefined) delete process.env.AUTO_SA; if (keep[1] === undefined) delete process.env.AUTO_JUDGE; }
+  }
   else if (engine === 'v2') { const p = importNetlist2(m, parsed); await routePage(m, p.wires, {}); normalizeOrigin(m); }
   else if (engine === 'sa') await importNetlistSA(m, parsed);
   else await importNetlist4(m, parsed);
