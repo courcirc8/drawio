@@ -507,6 +507,19 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   « sans erreur » au vérificateur ne mesure pas la lisibilité pour Eric ; la pénalité d'allongement va peut-être contre
   son goût. Pistes à valider sur la série 2 : départager par la longueur de fil, ou ne plus laisser check.py primer.
 
+- RÈGLE D'ALLONGEMENT (Eric, 8 oct. ; `AUTO_ASPECT=1`, DÉSACTIVÉE par défaut sur consigne de l'orchestrateur jusqu'à la
+  série 2) : à erreurs égales, une feuille ≤ 3:1 d'abord. Runs `aspect{0,1}-{tune,test,holdout,dvd,pdk}` (même code,
+  scellés refusés : 46 variantes) — zéro erreur ; err/c ; > 3:1 ; crois./c ; fil/c :
+    | jeu | avant | après |
+    | réglage (1212) | 85,1 % ; 0,30 ; 4,3 % ; 7,1 ; 580 | 85,1 % ; 0,30 ; 0,9 % ; 7,2 ; 583 |
+    | test (772) | 86,0 % ; 0,35 ; 5,1 % ; 7,6 ; 572 | 86,0 % ; 0,35 ; 0,8 % ; 7,6 ; 576 |
+    | jamais vues (936) | 67,4 % ; 0,69 ; 0,9 % ; 19,0 ; 866 | 67,4 % ; 0,69 ; 0,2 % ; 19,0 ; 866 |
+    | DVD natif (1401) | 88,4 % ; 0,27 ; 21,1 % ; 3,4 ; 529 | 88,4 % ; 0,27 ; 6,6 % ; 3,4 ; 536 |
+    | PDK (343) | 53,1 % ; 29,4 ; 7,6 % ; 62,0 ; 937 | 53,1 % ; 20,2 ; 3,5 % ; 61,7 ; 925 |
+  Objectif ≤ 10 % tenu partout, aucune erreur perdue (règle placée après le nombre d'erreurs) ; fil +0,5 à +1,3 % (sauf
+  PDK : −1 %, et err/c PDK 29 → 20 = effet du budget de temps, pas de la règle). Choix changés : 39 à 398 par jeu.
+  MAIS Eric a préféré la feuille plus allongée dans 3 des 6 paires de la série 1 : à n'activer qu'après la série 2.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
