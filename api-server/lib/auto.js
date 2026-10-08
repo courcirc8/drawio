@@ -17,7 +17,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
-import { newDocument, getPage, normalizeOrigin, serialize } from './model.js';
+import { Worker } from 'node:worker_threads';
+import { newDocument, getPage, normalizeOrigin, serialize, parseXml } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { importNetlist4, AUTO_CANDIDATES, AUTO_SPACINGS } from './place4.js';
 import { routePage } from './route.js';
@@ -31,7 +32,7 @@ import { compare } from './lvs.js';
 
 export const candidateLabel = (t) => (t.eng === 'sa' ? 'sa' : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
 
-async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
+export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   const doc = newDocument(); const m = getPage(doc);
   let placed;
   try {
@@ -95,13 +96,31 @@ export async function autoPlace(parsed) {
   // the annealing engine (lib/place-sa.js) as one more candidate (Eric
   // 2026-10-07; AUTO_SA=0 disables, AUTO_SA_MAX=N limits it to N parts)
   if (process.env.AUTO_SA !== '0' && parsed.components.length <= Number(process.env.AUTO_SA_MAX ?? Infinity)) specs.push(['sa', null, {}, {}]);
+  // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
+  // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
+  // on one thread the budget only ever saw v2 finish on the big converters.
+  // Past the budget the unfinished threads are terminated (their CPU is freed).
+  const threads = process.env.AUTO_THREADS !== '0' && parsed.components.length >= Number(process.env.AUTO_THREADS_MIN ?? 30);
+  const workers = new Set();
+  const run1 = ([eng, mode, sp, extra]) => {
+    if (!threads) return trial(parsed, eng, mode, sp, extra);
+    return new Promise((resolve) => {
+      const w = new Worker(new URL('./auto-trial-worker.js', import.meta.url), { workerData: { parsed, eng, restMode: mode, sp, extra } });
+      workers.add(w);
+      const fail = (e) => { workers.delete(w); resolve({ eng, restMode: mode, sp, extra, errs: Infinity, error: String(e && e.message || e) }); };
+      w.once('message', (t) => { workers.delete(w); const { xml, ...rest } = t; resolve({ ...rest, doc: xml ? parseXml(xml) : undefined }); w.terminate().catch(() => {}); });
+      w.once('error', fail);
+      w.once('exit', (code) => { if (workers.has(w)) fail(new Error('trial thread exit ' + code)); });
+    });
+  };
   const done = [];
-  const running = specs.map(([eng, mode, sp, extra]) => trial(parsed, eng, mode, sp, extra).then(judge).then((t) => { done.push(t); return t; }));
+  const running = specs.map((spec) => run1(spec).then(judge).then((t) => { done.push(t); return t; }));
   let timer;
   const deadline = new Promise((r) => { timer = setTimeout(r, BUDGET); });
   await Promise.race([Promise.all(running), deadline]);
   clearTimeout(timer);
   if (!done.length) await Promise.race(running);
+  for (const w of workers) { workers.delete(w); w.terminate().catch(() => {}); }
   const timedOut = done.length < running.length;
   const trials = [...done];
   let win = trials.reduce((a, b) => (better(b, a) ? b : a));
