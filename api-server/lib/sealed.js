@@ -54,7 +54,14 @@ export function assertNotSealed(text, where = '', opts = {}) {
   if (st) throw new Error(`refused: ${st} evaluation circuit${where ? ' (' + where + ')' : ''} — sealed for the final human rating`);
 }
 
-/** Set of bank ids excluded by tools/seal-eval.mjs (sealed + variants). */
+/** Set of bank ids excluded by tools/seal-eval.mjs (excluded.jsonl) and by
+ *  tools/filter-sealed.mjs for later sources (excluded-<source>.jsonl). */
 export function bankExclusions(bank = '/AI/datasets/netlists/bank') {
-  try { return new Set(fs.readFileSync(`${bank}/excluded.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l).id)); } catch { return new Set(); }
+  const ids = new Set();
+  let names = [];
+  try { names = fs.readdirSync(bank).filter((n) => /^excluded(-[\w-]+)?\.jsonl$/.test(n)); } catch { return ids; }
+  for (const n of names) {
+    for (const l of fs.readFileSync(`${bank}/${n}`, 'utf8').split('\n')) if (l.trim()) ids.add(JSON.parse(l).id);
+  }
+  return ids;
 }

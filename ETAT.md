@@ -1,6 +1,6 @@
 # ÉTAT du chantier « qualité de la génération » — fork drawio (api-server)
 
-Mis à jour le 2026-10-07 (reprise après le redémarrage d'ai-station ; branche et données vérifiées intactes). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
+Mis à jour le 2026-10-08 (reprise après le redémarrage d'ai-station ; branche et données vérifiées intactes). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
 Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 
 ## Contraintes fermes d'Eric (plan qualité validé)
@@ -447,6 +447,50 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   contrainte faible ; (2) auto-apprentissage : garder les détections confiantes ET cohérentes avec les décomptes
   d'Ornith, réentraîner, itérer ; mesurer sur un petit jeu DVD vérifié à part. Eric seulement en dernier recours,
   lot court, interface simple.
+
+- REPRISE DU 8 OCT. (redémarrage d'ai-station ; décisions d'Eric : PR #13 et #14 fusionnées, auto+sa par défaut,
+  arbitre check.py) : service drawio-api revenu tout seul (200 en local et via le portail).
+  (a) BUDGET DE TEMPS d'auto (commit 3fb553f, `AUTO_BUDGET_MS`, 60 s par défaut) : passé le budget, auto garde le
+  meilleur dessin déjà fini (les candidats en cours continuent en tâche de fond sans être attendus). Mesure sur les 345
+  convertisseurs PDK (339 communs, comparés à `autosa3-holdout-openpdk`, même code sans budget) :
+    | | zéro erreur | err/c | > 3:1 | médiane | 90e c. | max | total | budget atteint |
+    | sans budget | 53,7 % | 17,2 | 5,6 % | 2,5 s | 57 s | 637 s | 124 min | — |
+    | budget, un seul fil JS | 52,5 % | 71,5 | 10,6 % | 2,5 s | 66 s | 216 s | 100 min | 31 |
+    | budget + threads | 53,7 % | 17,9 | 7,1 % | 3,8 s | 34 s | 85 s | 59 min | 11 |
+  Deux défauts trouvés en mesurant : (1) les candidats d'auto étaient des promesses sur UN seul fil : au budget,
+  seul v2 (rapide, médiocre) avait fini sur les gros convertisseurs → erreurs ×4 ; corrigé : un worker thread par
+  candidat dès 30 composants (`AUTO_THREADS=0` pour couper, `AUTO_THREADS_MIN`), les threads non finis sont tués au
+  budget ; (2) le worker de routage libavoid comptait son délai de 6 s dès la mise en file, et chaque expiration
+  faisait échouer toute la file (routes ratées quand les candidats routent ensemble) ; corrigé : file d'attente, délai
+  pendant le calcul seulement (lib/route.js). Avec les threads : 3 circuits sur 339 un peu moins bons (144, 150 et
+  128 composants), aucun meilleur ; temps total divisé par deux. Runs `budget60{,q,t}-holdout-openpdk`.
+  (b) DVD NATIF (livraison du RAG `schemas-natif-2026-10-08.jsonl`, 10 404 lectures DVD) : normaliseur strict
+  `tools/import-dvd-natif.py` → 1 475 netlists gardées (`bank/dvd-natif`, `manifest-dvdnatif.jsonl`), puis FILTRE
+  EXPLICITE DES SCELLÉS `tools/filter-sealed.mjs --source dvd-natif` (lib/sealed.js en forme stricte, règle de
+  motifs appliquée toutes familles confondues ; lib/invariant.js empreinte des documents dessinés et dépend des refdes,
+  son équivalent pour une netlist est l'empreinte WL de sealed.js) : 0 scellé exact, 47 variantes proches refusées
+  → `bank/excluded-dvd-natif.jsonl`, lu par `bankExclusions()` comme `excluded.jsonl`. Reste 1 401 (réglage 767,
+  test 507, familles jamais vues 127 : data-converter 100, regulator 27).
+  Banc (runs `dvd-{autoold,sa,auto}`, filtrés dans `dvd-*-f`) — zéro erreur ; > 3:1 ; err/c ; crois./c :
+    | jeu | auto d'avant | sa | auto d'aujourd'hui |
+    | réglage (767) | 59,1 % ; 34,9 % ; 1,83 ; 2,6 | 74,2 % ; 10,7 % ; 1,51 ; 4,7 | 87,1 % ; 16,9 % ; 0,71 ; 3,0 |
+    | test (507) | 57,6 % ; 32,7 % ; 2,00 ; 2,7 | 80,1 % ; 12,6 % ; 0,57 ; 4,4 | 90,5 % ; 17,2 % ; 0,48 ; 3,3 |
+    | jamais vues (127) | 58,3 % ; 34,6 % ; 1,63 ; 2,3 | 78,0 % ; 11,8 % ; 1,59 ; 5,5 | 85,0 % ; 15,0 % ; 0,34 ; 3,3 |
+  Petits circuits (médiane 0,3 s). Cible ≥ 80 % sans erreur tenue partout, y compris jamais vues ; MAIS feuilles
+  > 3:1 à 15-17 % (cible ≤ 10 %) : sur ces petits circuits lus, auto préfère souvent une rangée allongée. À traiter.
+  (c) Juge par paires corrigé : une panne d'Ornith devient un échec (avant : compté « incohérent » — le run de la nuit,
+  13 paires, en souffrait), dessins identiques mis à part (`same`), premier ordre tiré au hasard par circuit.
+  JUGE ORNITH PAR PAIRES « auto d'avant » (sans sa, arbitre check.js) contre « auto d'aujourd'hui » (+sa, arbitre
+  check.py), 15 circuits par famille, les deux ordres, premier ordre au hasard (`/AI/datasets/judge/pairs3-*`) :
+    | jeu | circuits | identiques | paires | cohérentes | préfère avant | préfère aujourd'hui |
+    | réglage | 275 | 105 | 167 | 57 % | 48 | 48 |
+    | test | 266 | 95 | 170 | 57 % | 50 | 47 |
+    | jamais vues | 45 | 16 | 29 | 48 % | 4 | 10 |
+  Biais de position : Ornith choisit le 2e dessin 65 % du temps ; 43 % d'incohérences. Globalement ÉGALITÉ (102 contre
+  105) : le gain d'auto au vérificateur (60 → 86 % sans erreur) ne se voit pas à l'œil d'Ornith. Par famille : aujourd'hui
+  devant sur power (16-3), regulator (6-0), reference (9-4), opamp, et sur les circuits ≥ 12 composants (74-55) ;
+  avant devant sur VCO (12-3), filter (9-2), lna (7-2), clock (7-2), oscillator : petits circuits RF où sa est souvent
+  élu. Observation seulement (règle d'Eric) ; piste pour la suite : croisements et placement des petits circuits RF.
 
 ## Chantier en cours
 
