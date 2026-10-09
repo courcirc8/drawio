@@ -562,6 +562,18 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   Par famille : regulator 58 → 72,4 % ; sampler-sc 70 → 71,4 % ; data-converter 249 → 76,3 %. Aucun LVS faux.
   Feuilles > 3:1 à 11,1 % (cible ≤ 10 %) : la règle d'allongement est désactivée en attendant la série 2.
 
+- SÉRIE 2 D'ERIC (9 oct., 10 paires avec figure de référence et commentaires dictés ; `eric-paires-2/answers.jsonl`,
+  `analyse.json`) : aujourd'hui 5, avant 4, égal 1 (séries 1+2 : avant 10, aujourd'hui 6, égal 4).
+  Pouvoir prédictif sur les 16 paires tranchées : « vérificateur d'abord » (choix actuel d'auto) 4 justes + 3 égalités ;
+  « fil le plus court » 12 ; « feuille ≤ 3:1 d'abord, puis fil le plus court » 13. Les feuilles très allongées perdent
+  (8:1, 9,5:1, 27:1), 2,8:1 passe.
+  Commentaires d'Eric par thème : (A) LECTURES FAUSSES vues grâce à la référence : « il n'y a que des NMOS », « la
+  grille de M6 est polarisée, pas à la masse », « tu as manqué le transformateur, les inductances sont couplées »,
+  « il manque la source de courant », « pas de transistors, juste des sous-blocs », « schéma trop compliqué, retire-le » ;
+  (B) RÈGLES DE DESSIN : tout entre le rail du haut et le rail du bas, ne pas mélanger les fonctions ; jamais de
+  composants les uns sur les autres ; éviter les coudes en alignant (résistance) ; miroirs et symétrie horizontale des
+  MOS ; étages d'entrée à gauche, de sortie à droite ; empilements verticaux (M3, M4) ; dessin par sous-blocs.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
