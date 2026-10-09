@@ -615,6 +615,19 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   RESTE : paires à sources séparées (dégénérescence commutée, entrée via interrupteurs), suiveur à contre-réaction
   locale (FVF), comparateurs dynamiques / verrous, références BJT (bandgap), boucles d'auto-polarisation.
 
+- ÉTAPE B, 2E PASSAGE (9 oct.) : structures ajoutées — paires à sources séparées (dégénérescence, échelle commutée,
+  entrée de comparateur dynamique via interrupteurs), suiveur à contre-réaction locale (FVF ; distingué du miroir
+  cascode basse tension par la grille), BJT en diode (bandgap), commandes VCONT/CTRL (interrupteurs), source sans forme
+  d'onde reliée seulement à des grilles = entrée (pas un rail), « cascode » à drain sur rail = suiveur, boucle passant
+  par une diode = miroir (pas paire croisée), paire différentielle exclue si une grille est une polarisation EXPLICITE
+  (rail, nom, diviseur vers les rails, grille partagée hors paire), diviseur venant d'une sortie = contre-réaction,
+  « miroir » à grille sur rail = charges en diode.
+  2E CONTRÔLE À LA MAIN sur 30 AUTRES circuits avec figure : 20 justes, 7 en partie, 3 faux — objectif 24 NON atteint
+  (et le chiffre inclut des corrections faites pendant le contrôle). Échecs restants : cœur d'oscillateur BJT à
+  inductances d'émetteur, charges commandées par une CMFB résistive, figures d'analyse de bruit, broche numérotée
+  ambiguë Vb/Vin (AMSNet, sans noms : indécidable), une netlist AMSNet fausse (PMOS déclaré NMOS).
+  Test navigateur intermittent (`eda-validate plugin via /editor: reroute…`, délai de 60 s) : à surveiller.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.

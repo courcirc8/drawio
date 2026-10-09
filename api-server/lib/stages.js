@@ -30,7 +30,7 @@ import { detectMotifs, railNets } from './motifs.js';
 import { isPmosLike } from './patterns.js';
 
 export const ROLES = ['diff-pair', 'cross-coupled', 'mirror-ref', 'mirror-out', 'cascode', 'tail', 'current-source',
-  'common-source', 'common-gate', 'follower', 'switch', 'inverter', 'diode', 'amplifier',
+  'common-source', 'common-gate', 'follower', 'shunt-feedback', 'switch', 'inverter', 'diode', 'amplifier',
   'load', 'degeneration', 'feedback', 'coupling', 'bias', 'shunt', 'source', 'dummy', 'varactor', 'unknown'];
 
 const GND_RE = /^(0|gnd\w*|vss\w*|vee\w*|agnd|dgnd|avss|dvss|v-)$/i;
@@ -38,10 +38,11 @@ const BIAS_RE = /^(vb|vbias|bias|vg\d|vcas|vc\d|vref|vbn|vbp|vcm)/i;   // (not I
 const INPUT_RE = /^(in|vin|iin|rf|sig|lo|inp|inm|inn|vip|vim|vi\b|vi[pn])/i;
 // clock / control nets (AnalogGenie names them VCLK1, VLATCH1): a device they
 // gate is a switch, whatever pair it seems to form
-const CLOCK_RE = /^(v?clk|v?ck\d|v?phi|ph\d|v?latch|clock|en\b|enb?\d|sel|v?sw\d|φ)/i;
+const CLOCK_RE = /^(v?clk|v?ck\d|v?phi|ph\d|v?latch|clock|en\b|enb?\d|sel|v?sw\d|v?cont|v?ctrl|v?ctl|φ)/i;
 const OUTPUT_RE = /^(out|vout|if|outp|outm|outn|op|om|vo\b|vo[pn])/i;
 const WAVE_RE = /\b(ac|sin|sine|pulse|pwl|exp|sffm)\b/i;
 const isActive = (c) => c.prefix === 'M' || c.prefix === 'Q' || c.prefix === 'J';
+const isActiveC = isActive;
 const isAmp = (c) => c.prefix === 'X' || c.prefix === 'E' || c.prefix === 'G';
 const twoPin = (c) => 'RLCDI'.includes(c.prefix);
 
@@ -52,6 +53,15 @@ export function analyseStages(parsed) {
   const ground = new Set([...rails].filter((n) => GND_RE.test(n)));
   ground.add('0');
   const supply = new Set([...rails].filter((n) => !ground.has(n)));
+  // a DC source that only feeds gates through a series R / C is a SIGNAL
+  // source drawn without a waveform (textbook "Vin"), not a supply
+  const gateOnly = (n, via) => comps.filter((c) => c !== via && c.nodes.includes(n)).every((c) => (isActiveC(c) && c.nodes[1] === n) || c.prefix === 'C' || c.prefix === 'V')
+    && comps.some((c) => isActiveC(c) && c.nodes[1] === n);
+  for (const n of [...supply]) {
+    const here = comps.filter((c) => c.nodes.includes(n));
+    if (here.some((c) => c.prefix === 'V') && here.every((c) => c.prefix === 'V' || (['R', 'C'].includes(c.prefix) && gateOnly(c.nodes[0] === n ? c.nodes[1] : c.nodes[0], c))))
+      supply.delete(n);
+  }
   const isRail = (n) => ground.has(n) || supply.has(n);
 
   // terminals with drain/source fixed from the rails (ALIGN idea): an NMOS
@@ -67,29 +77,6 @@ export function analyseStages(parsed) {
   const on = new Map();
   for (const c of comps) for (const n of c.nodes) { if (!on.has(n)) on.set(n, []); on.get(n).push(c); }
   const at = (n) => on.get(n) || [];
-
-  // ---- roles: primitives of the motif registry first
-  const roles = {};
-  const set = (ref, role) => { if (!roles[ref] || roles[ref] === 'unknown') roles[ref] = role; };
-  const m = detectMotifs(parsed);
-  for (const c of comps.filter(isActive)) if (CLOCK_RE.test(T.get(c.ref).g)) roles[c.ref] = 'switch';
-  // a MOS with drain and source tied is a varactor / MOS capacitor
-  for (const c of comps.filter(isActive)) if (T.get(c.ref).d === T.get(c.ref).s) roles[c.ref] = 'varactor';
-  // cross-coupled before differential: a cross-coupled pair also shares its sources
-  const order = ['cross-coupled-pair', 'differential-pair', 'current-mirror', 'cascode', 'tail', 'switch', 'inverter',
-    'common-source', 'common-gate', 'source-follower', 'bjt-resistive-stage', 'opamp-stage', 'diode-connected', 'load'];
-  const name = { 'differential-pair': 'diff-pair', 'cross-coupled-pair': 'cross-coupled', 'cascode': 'cascode', 'tail': 'tail',
-    'switch': 'switch', 'inverter': 'inverter', 'common-source': 'common-source', 'common-gate': 'common-gate',
-    'source-follower': 'follower', 'bjt-resistive-stage': 'common-source', 'opamp-stage': 'amplifier', 'diode-connected': 'diode' };
-  for (const motif of order) {
-    for (const i of m.instances.filter((x) => x.motif === motif)) {
-      if (motif === 'current-mirror') { set(i.diode, 'mirror-ref'); for (const r of i.refs) if (r !== i.diode) set(r, 'mirror-out'); continue; }
-      if (motif === 'cascode') { set(i.refs[0], 'cascode'); continue; }
-      if (motif === 'load') { for (const r of i.refs) if (!isActive(byRef.get(r))) set(r, 'load'); continue; }
-      const dev = i.device ? [i.device] : i.refs.filter((r) => isActive(byRef.get(r)) || isAmp(byRef.get(r)));
-      for (const r of dev) set(r, name[motif]);
-    }
-  }
 
   // ---- bias nets: mirror gates, named bias nets, nets fed only by resistors
   // to rails / DC sources (dividers), gates of diode devices
@@ -114,11 +101,105 @@ export function analyseStages(parsed) {
     const dn = at(t.d);
     return !dn.some((c) => ['R', 'L'].includes(c.prefix)) && dn.some((c) => c !== gates[0] && isActive(c) && T.get(c.ref).d === t.d);
   };
+  // EXPLICIT bias only (a bare numbered pin may be Vb or Vin: undecidable):
+  // a rail, a bias name, a divider / DC source, or a gate shared with devices
+  // outside the group under test
+  const explicitBias = (n, group = []) => {
+    if (isRail(n) || BIAS_RE.test(n)) return true;
+    if (inputs.has(n)) return false;
+    const here = at(n);
+    // a divider is a bias only when its resistors go to rails (one from an
+    // output node is a feedback divider)
+    const rs = here.filter((c) => c.prefix === 'R');
+    if (rs.some((c) => c.nodes.some(isRail)) && rs.every((c) => c.nodes.some(isRail)) && here.every((c) => (isActive(c) && T.get(c.ref).g === n) || ['R', 'C', 'V'].includes(c.prefix))) return true;
+    return here.filter((c) => isActive(c) && T.get(c.ref).g === n && !group.includes(c.ref)).length >= 1 && here.every((c) => isActive(c) && T.get(c.ref).g === n);
+  };
+  // ---- roles: primitives of the motif registry first
+  const roles = {};
+  const set = (ref, role) => { if (!roles[ref] || roles[ref] === 'unknown') roles[ref] = role; };
+  const m = detectMotifs(parsed);
+  for (const c of comps.filter(isActive)) if (CLOCK_RE.test(T.get(c.ref).g)) roles[c.ref] = 'switch';
+  // a MOS with drain and source tied is a varactor / MOS capacitor
+  for (const c of comps.filter(isActive)) if (T.get(c.ref).d === T.get(c.ref).s) roles[c.ref] = 'varactor';
+  // cross-coupled before differential: a cross-coupled pair also shares its sources
+  const order = ['cross-coupled-pair', 'differential-pair', 'current-mirror', 'cascode', 'tail', 'switch', 'inverter',
+    'common-source', 'common-gate', 'source-follower', 'bjt-resistive-stage', 'opamp-stage', 'diode-connected', 'load'];
+  const name = { 'differential-pair': 'diff-pair', 'cross-coupled-pair': 'cross-coupled', 'cascode': 'cascode', 'tail': 'tail',
+    'switch': 'switch', 'inverter': 'inverter', 'common-source': 'common-source', 'common-gate': 'common-gate',
+    'source-follower': 'follower', 'bjt-resistive-stage': 'common-source', 'opamp-stage': 'amplifier', 'diode-connected': 'diode' };
+  for (const motif of order) {
+    for (const i of m.instances.filter((x) => x.motif === motif)) {
+      // a loop through a diode-connected device's gate is a mirror with
+      // feedback, not a cross-coupled pair (a latch has no diode on its nodes)
+      // a differential pair has two SIGNAL gates: one gate on a bias net makes
+      // it a follower / cascode arrangement, read by the fallback
+      if (motif === 'differential-pair' && i.refs.some((r) => isActive(byRef.get(r)) && explicitBias(T.get(r).g, i.refs))) continue;
+      if (motif === 'cross-coupled-pair' && (i.nets || []).some((n) => comps.some((k) => isActive(k) && T.get(k.ref).g === n && T.get(k.ref).d === n))) continue;
+      // gates on a rail: diode-connected LOADS side by side, not a mirror
+      if (motif === 'current-mirror' && isRail(i.gateNet)) { for (const r of i.refs) set(r, 'load'); continue; }
+      if (motif === 'current-mirror') { set(i.diode, 'mirror-ref'); for (const r of i.refs) if (r !== i.diode) set(r, 'mirror-out'); continue; }
+      if (motif === 'cascode') { set(i.refs[0], 'cascode'); continue; }
+      if (motif === 'load') { for (const r of i.refs) if (!isActive(byRef.get(r))) set(r, 'load'); continue; }
+      const dev = i.device ? [i.device] : i.refs.filter((r) => isActive(byRef.get(r)) || isAmp(byRef.get(r)));
+      for (const r of dev) set(r, name[motif]);
+    }
+  }
+
   // current sources: a device fed by a bias gate with its source (emitter) on a
   // rail, drain elsewhere
   for (const c of comps.filter(isActive)) {
     const t = T.get(c.ref);
     if ((!roles[c.ref] || roles[c.ref] === 'diode') && biasNet(t.g) && isRail(t.s) && !isRail(t.d)) roles[c.ref] = t.g === t.d ? 'diode' : 'current-source';
+  }
+  // BJT diode (base on collector, or base and collector both on a rail: the
+  // substrate PNP of a bandgap)
+  for (const c of comps.filter((c) => c.prefix === 'Q')) {
+    const t = T.get(c.ref);
+    if (t.g === t.d || (isRail(t.g) && isRail(t.d))) roles[c.ref] = 'diode';
+  }
+  // DIFFERENTIAL PAIR WITH SEPARATE SOURCES: two devices of one polarity,
+  // distinct non-bias gates and drains, whose sources are joined through at
+  // most three passives / switches (degeneration, switched resistor ladder,
+  // clocked tail of a dynamic comparator) without crossing a rail
+  const pairLinks = [];
+  const actives = comps.filter(isActive);
+  const passable = (k) => ['R', 'C', 'L'].includes(k.prefix) || roles[k.ref] === 'switch';
+  const linkPath = (from, to) => {
+    let frontier = [[from, []]]; const seen = new Set([from]);
+    for (let depth = 0; depth < 3; depth++) {
+      const next = [];
+      for (const [n, path] of frontier) for (const k of at(n)) {
+        if (!passable(k)) continue;
+        const ends = isActive(k) ? [T.get(k.ref).d, T.get(k.ref).s] : k.nodes.slice(0, 2);
+        if (!ends.includes(n)) continue;
+        const o = ends[0] === n ? ends[1] : ends[0];
+        if (o === to) return [...path, k.ref];
+        if (isRail(o) || seen.has(o)) continue;
+        seen.add(o); next.push([o, [...path, k.ref]]);
+      }
+      frontier = next;
+    }
+    return null;
+  };
+  for (let i = 0; i < actives.length; i++) for (let j = i + 1; j < actives.length; j++) {
+    const a = actives[i], b = actives[j], ta = T.get(a.ref), tb = T.get(b.ref);
+    if (a.prefix !== b.prefix || ta.p !== tb.p || roles[a.ref] === 'switch' || roles[b.ref] === 'switch') continue;
+    if (['diff-pair', 'cross-coupled'].includes(roles[a.ref]) && roles[a.ref] === roles[b.ref]) continue;
+    if (ta.s === tb.s || isRail(ta.s) || isRail(tb.s) || ta.g === tb.g || ta.d === tb.d || isRail(ta.g) || isRail(tb.g) || biasNet(ta.g) || biasNet(tb.g)) continue;
+    const path = linkPath(ta.s, tb.s);
+    if (!path) continue;
+    roles[a.ref] = 'diff-pair'; roles[b.ref] = 'diff-pair';
+    for (const r of path) if (!roles[r] || !isActive(byRef.get(r))) roles[r] = isActive(byRef.get(r)) ? 'switch' : 'degeneration';
+    pairLinks.push([a.ref, b.ref]);
+  }
+  // FLIPPED VOLTAGE FOLLOWER: a follower (gate = input, source = output X)
+  // whose drain drives the gate of a device that sinks X to the rail
+  for (const a of actives) {
+    const ta = T.get(a.ref);
+    const b = actives.find((k) => k !== a && T.get(k.ref).g === ta.d && T.get(k.ref).d === ta.s && isRail(T.get(k.ref).s));
+    // (a biased gate makes it a low-voltage cascode mirror, read below)
+    if (!b || isRail(ta.d) || isRail(ta.s) || explicitBias(ta.g) || biasNet(ta.g)) continue;
+    roles[a.ref] = 'follower'; roles[b.ref] = 'shunt-feedback';
   }
   // low-voltage cascode mirror: the reference's gate is taken at the top of
   // its cascode (gate = drain of the cascode above it, not its own drain)
@@ -155,6 +236,12 @@ export function analyseStages(parsed) {
     else if (viaOne(d) && !isRail(s)) role = 'follower';
     else role = at(d).concat(at(s)).some((k) => k !== c && isActive(k) && T.get(k.ref).p === T.get(c.ref).p && (T.get(k.ref).s === d || T.get(k.ref).d === s)) ? 'cascode' : 'switch';
     for (const x of fingers.get(fingerKey(c))) if (!roles[x]) roles[x] = role;
+  }
+  // a "cascode" whose drain is on the rail and whose gate is not biased is a
+  // follower (its source node only looks like a stacking node)
+  for (const c of comps.filter(isActive)) {
+    const t = T.get(c.ref);
+    if (roles[c.ref] === 'cascode' && isRail(t.d) && !isRail(t.s) && !biasNet(t.g)) roles[c.ref] = 'follower';
   }
   // a device with its source on a rail and a bias gate is a current source,
   // whatever stacking motif claimed it (the registry may take it for the top
@@ -220,6 +307,7 @@ export function analyseStages(parsed) {
     const bs = i.refs.map((r) => branchOf.get(r)).filter((b) => b != null);
     for (const b of bs.slice(1)) unite(bs[0], b);
   }
+  for (const [a, b] of pairLinks) { const x = branchOf.get(a), y = branchOf.get(b); if (x != null && y != null) unite(x, y); }
   const groups = new Map();
   kept.forEach((_, i) => { const r = find(i); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(i); });
   const stages = [...groups.values()].map((bs, k) => ({ id: 'S' + (k + 1), branches: bs, refs: [...new Set(bs.flatMap((b) => kept[b]).filter((r) => branchOf.get(r) != null && bs.includes(branchOf.get(r))))] }));
@@ -285,12 +373,12 @@ export function analyseStages(parsed) {
   }
   stages.sort((a, b) => a.rank - b.rank);
 
-  const actives = comps.filter((c) => isActive(c) || isAmp(c));
+  const allActives = comps.filter((c) => isActive(c) || isAmp(c));
   return {
     rails: { supply: [...supply], ground: [...ground] },
     roles, branches: kept, stages,
     coverage: {
-      actives: actives.length, activesWithRole: actives.filter((c) => roles[c.ref] && roles[c.ref] !== 'unknown').length,
+      actives: allActives.length, activesWithRole: allActives.filter((c) => roles[c.ref] && roles[c.ref] !== 'unknown').length,
       parts: comps.length, partsInStage: comps.filter((c) => stageOf.has(c.ref)).length,
       partsWithRole: comps.filter((c) => roles[c.ref] && roles[c.ref] !== 'unknown').length,
     },
