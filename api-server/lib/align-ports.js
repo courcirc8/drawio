@@ -32,7 +32,10 @@ export async function alignPorts(model, { errorCount } = {}) {
     if (!part || classify(part).role !== 'component') continue;
     const end = atSource ? 'entry' : 'exit';
     const pin = pinAbs(part, { x: Number(e.style.map.get(end + 'X') ?? 0.5), y: Number(e.style.map.get(end + 'Y') ?? 0.5) });
-    const left = Math.abs(pin.x - part.x) < 2, right = Math.abs(pin.x - (part.x + part.w)) < 2;
+    // a SIDE pin (a corner pin — a transistor's drain at the top of its lead —
+    // is a top / bottom pin: its wire leaves vertically)
+    const corner = Math.abs(pin.y - part.y) < 2 || Math.abs(pin.y - (part.y + part.h)) < 2;
+    const left = !corner && Math.abs(pin.x - part.x) < 2, right = !corner && Math.abs(pin.x - (part.x + part.w)) < 2;
     if (!left && !right) continue;
     // the tip of the port faces the pin: unflipped (pointing east) on the left,
     // flipped (pointing west) on the right
@@ -74,7 +77,7 @@ export function misalignedPorts(model) {
     if (!part || classify(part).role !== 'component') continue;
     const end = atSource ? 'entry' : 'exit', portEnd = atSource ? 'exit' : 'entry';
     const pin = pinAbs(part, { x: Number(e.style.map.get(end + 'X') ?? 0.5), y: Number(e.style.map.get(end + 'Y') ?? 0.5) });
-    if (Math.abs(pin.x - part.x) >= 2 && Math.abs(pin.x - (part.x + part.w)) >= 2) continue;   // a top / bottom pin
+    if ((Math.abs(pin.x - part.x) >= 2 && Math.abs(pin.x - (part.x + part.w)) >= 2) || Math.abs(pin.y - part.y) < 2 || Math.abs(pin.y - (part.y + part.h)) < 2) continue;   // a top / bottom (or corner) pin
     const tip = pinAbs(port, { x: Number(e.style.map.get(portEnd + 'X') ?? 0.5), y: Number(e.style.map.get(portEnd + 'Y') ?? 0.5) });
     const outside = Math.abs(pin.x - part.x) < 2 ? tip.x <= pin.x : tip.x >= pin.x;
     if (Math.abs(tip.y - pin.y) > 0.5 || e.points.length || !outside) out.push(String(port.value || port.id));

@@ -23,7 +23,7 @@ ul{margin:6px 0 0 18px;padding:0;font-size:13px}
 <div class="f" id="filt"></div></header>
 <main id="list"></main>
 <script>
-const why={avoidable:'coudes évitables',crossX:'X manquant sur une paire croisée',pairRow:'paire différentielle hors rangée',symmetry:'paire pas symétrique',uWires:'fil en détour',ports:'port pas aligné sur sa broche'};
+const why={labels:'étiquettes superposées',wireOnBody:'fil sur un composant',netlist:'netlist absurde',avoidable:'coudes évitables',crossX:'X manquant sur une paire croisée',pairRow:'paire différentielle hors rangée',symmetry:'paire pas symétrique',uWires:'fil en détour',ports:'port pas aligné sur sa broche'};
 const q=new URLSearchParams(location.search), batch=q.get('batch');
 const base=location.pathname.replace(/\/review\/?(index\.html)?$/,'');
 let data, mode='all';
@@ -42,9 +42,10 @@ function render(){
     return `<div class="card"><div class="t">n° ${x.n} · ${x.family} · ${x.parts} composants</div>
     <div class="s">${x.id} · source ${x.refSource} · moteur ${x.engine}</div>
     <div class="imgs"><figure><img loading="lazy" src="${x.refUrl}"><figcaption>Référence</figcaption></figure>
-    <figure><img loading="lazy" src="${x.drawioUrl}"><figcaption>drawio</figcaption></figure></div>
-    <ul><li>Contrôle automatique : ${x.quality.pass?'<span class="ok">OK</span>':'<span class="ko">raté</span> — '+bad.map(([k,c])=>why[k]+' ('+c.n+')').join(', ')}</li>
-    <li>${m.bends} coudes (${m.bendsPerWire} par fil), ${m.crossings??'?'} croisements, ${m.severe} erreur(s) grave(s), ${m.checkErrors??'?'} erreur(s) au total</li>
-    ${xs}<li>Motifs reconnus : ${x.motifs.join(', ')||'aucun'}</li></ul></div>`}).join('');
+    ${x.beforeUrl?`<figure><img loading="lazy" src="${x.beforeUrl}"><figcaption>avant (${x.engineBefore})</figcaption></figure>`:''}
+    <figure><img loading="lazy" src="${x.drawioUrl}"><figcaption>${x.beforeUrl?'après — gabarit':'drawio'}</figcaption></figure></div>
+    <ul>${x.verdict?`<li><b>Avis de Claude :</b> ${x.verdict}</li>`:''}<li>Contrôle automatique : ${x.quality.pass?'<span class="ok">OK</span>':'<span class="ko">raté</span> — '+bad.map(([k,c])=>why[k]+' ('+c.n+')').join(', ')}</li>
+    ${m.bends!=null?`<li>${m.bends} coudes`:'<li style="display:none">'} (${m.bendsPerWire} par fil), ${m.crossings??'?'} croisements, ${m.severe} erreur(s) grave(s), ${m.checkErrors??'?'} erreur(s) au total</li>
+    ${xs}${x.qualityBefore?`<li>Contrôle automatique avant : ${x.qualityBefore.pass?'<span class="ok">OK</span>':'<span class="ko">raté</span> — '+Object.entries(x.qualityBefore.checks).filter(([,c])=>!c.ok).map(([k,c])=>why[k]+' ('+c.n+')').join(', ')}</li>`:''}<li>Motifs reconnus : ${x.motifs.join(', ')||'aucun'}</li></ul></div>`}).join('');
 }
 </script></body></html>
