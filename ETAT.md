@@ -653,6 +653,21 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   netlists exactes avec figure de référence (AnalogGenie à image propre ; AMSNet lues dans le zip), familles
   analogiques, 3 paires dessinées par le moteur stages ; jamais de scellé.
 
+- PASSE DE REDRESSEMENT (Eric, 9 oct., capture iPhone « 5 coudes évitables » ; `lib/straighten.js`, outil
+  `tools/straighten-eval.mjs` ; PAS activée dans auto, appliquée aux pages de lectures) : coude ÉVITABLE = coude d'un
+  fil entre deux broches d'un même net décalées de ≤ 1 pas (½ taille médiane) sur un axe. Passe gloutonne après
+  placement : déplacer d'un pas au plus un symbole / port, puis un dipôle, puis un transistor (avec ses satellites :
+  rail, masse, port reliés à lui seul), ou RETOURNER un transistor (colonne de queue sous un transistor retourné) ;
+  rangées et colonnes de transistors reliés jamais cassées ; recherche à deux coups ; chaque coup est validé par
+  `tools/check.py` (fils re-routés seulement autour des pièces déplacées, fil droit figé quand les broches sont
+  alignées, points de contact là où check.py les demande ; coup refusé si les erreurs ou une seule erreur grave —
+  diagonale, traversée, contact, superposition — augmentent). Étiquettes des transistors collées au trait
+  drain-source, côté opposé à la grille. Banc ≤ 25 (200 dessins d'auto) : coudes évitables 9,9 → 6,0 /dessin,
+  coudes totaux 20,3 → 16,4, 147 dessins améliorés et aucun dégradé, erreurs check.py 0,09 → 0,07, LVS intact,
+  0,6 s/dessin. Lectures d'Eric redessinées : lot 1 (8) 77 → 15 coudes évitables ; échantillon (20) 340 → 247.
+  Le zéro n'est PAS atteint sur les lectures de 15-25 composants (décalages > 1 pas = placement, ou coups refusés
+  par check.py) ; les verrous de lot 1 et le verrou CML de la capture sont propres.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
