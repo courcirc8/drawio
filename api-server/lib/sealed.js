@@ -54,8 +54,10 @@ export function assertNotSealed(text, where = '', opts = {}) {
   if (st) throw new Error(`refused: ${st} evaluation circuit${where ? ' (' + where + ')' : ''} — sealed for the final human rating`);
 }
 
-/** Set of bank ids excluded by tools/seal-eval.mjs (excluded.jsonl) and by
- *  tools/filter-sealed.mjs for later sources (excluded-<source>.jsonl). */
+/** Set of bank ids excluded from every tuning and measuring tool: sealed
+ *  circuits and variants (tools/seal-eval.mjs: excluded.jsonl; later sources,
+ *  tools/filter-sealed.mjs: excluded-<source>.jsonl) and entries removed from
+ *  measurement (tools/clean-bank.mjs: excluded-analoggenie-flat.jsonl). */
 export function bankExclusions(bank = '/AI/datasets/netlists/bank') {
   const ids = new Set();
   let names = [];

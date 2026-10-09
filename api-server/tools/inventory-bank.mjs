@@ -29,6 +29,9 @@ const DRAWABLE = new Set(['R', 'C', 'L', 'D', 'V', 'I', 'M', 'Q', 'J', 'S', 'E',
 // main manifest + extra sources (open-PDK crawl: manifest-openpdk.jsonl)
 const man = fs.readdirSync(BANK).filter((f) => /^manifest.*\.jsonl$/.test(f)).sort()
   .flatMap((f) => fs.readFileSync(`${BANK}/${f}`, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)));
+// family corrections decided outside the source manifests (tools/clean-bank.mjs)
+const OVER = new Map(fs.existsSync(`${BANK}/family-overrides.jsonl`) ? fs.readFileSync(`${BANK}/family-overrides.jsonl`, 'utf8').split('\n').filter((l) => l.trim()).map((l) => { const o = JSON.parse(l); return [o.id, o.family]; }) : []);
+for (const r of man) if (OVER.has(r.id)) { r.family = OVER.get(r.id); r.familySource = 'override'; }
 const out = fs.openSync(`${BANK}/inventory.jsonl`, 'w');
 const stat = {};
 const bump = (k, sub) => { stat[k] ||= {}; stat[k][sub] = (stat[k][sub] || 0) + 1; };

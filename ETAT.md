@@ -520,6 +520,23 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   PDK : −1 %, et err/c PDK 29 → 20 = effet du budget de temps, pas de la règle). Choix changés : 39 à 398 par jeu.
   MAIS Eric a préféré la feuille plus allongée dans 3 des 6 paires de la série 1 : à n'activer qu'après la série 2.
 
+- BANQUE NETTOYÉE (décision d'Eric, 9 oct. ; `tools/clean-bank.mjs` puis `inventory-bank.mjs`) : les entrées AnalogGenie à
+  bloc mis à plat (noms d'instance en double dans la netlist d'ORIGINE ; la copie de la banque les avait renommés,
+  MM0_2) sont RETIRÉES de la mesure : 2 305 entrées, `bank/excluded-analoggenie-flat.jsonl` (lu par bankExclusions).
+  Les entrées à image partagée restent comme netlists (image jamais affichée). FAMILLES JAMAIS VUES RECONSTRUITES avec
+  des circuits propres d'open PDK et du DVD (jamais réglés dessus) + les AnalogGenie propres ; 27 circuits
+  sample-and-hold / capacités commutées réétiquetés `sampler-sc` (légende DVD explicite, nom de cellule open PDK :
+  `bank/family-overrides.jsonl`). NOUVELLE RÉFÉRENCE (runs `clean1-*`, scellés refusés 50, échecs 0) :
+    | jeu | n | zéro erreur | err/c | > 3:1 | crois./c | ≤ 12 comp. | > 12 comp. |
+    | réglage (banque d'origine propre) | 822 | 89,9 % | 0,21 | 5,8 % | 2,9 | 94,6 % | 70,4 % |
+    | test (banque d'origine propre) | 519 | 90,6 % | 0,28 | 6,6 % | 3,5 | 96,3 % | 71,2 % |
+    | jamais vues reconstruites | 542 | 62,7 % | 30,0 | 9,8 % | 42,2 | 93,0 % | 43,2 % |
+  Jamais vues par famille : regulator 74 → 62,2 % (DVD 77,8 %, open PDK 47,4 % avec 108 err/c : gros régulateurs à
+  blocs) ; sampler-sc 75 → 72,0 % ; data-converter 393 → 61,1 % (DVD 88,5 %, open PDK 53,2 %). Avant (936, dont 93 %
+  d'AnalogGenie aplatis) : 67,4 % — l'ancien chiffre surestimait la généralisation sur des circuits propres. Le seul
+  dessin LVS faux (une lecture DVD de 6 MOS aux bornes incohérentes) l'était déjà dans tous les runs précédents.
+  Faiblesse claire : les GRANDS circuits jamais vus (> 12 composants : 43 % sans erreur), surtout open PDK.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
