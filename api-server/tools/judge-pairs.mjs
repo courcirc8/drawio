@@ -39,6 +39,7 @@ const OUT = arg('--out', '/tmp/judge-pairs.jsonl');
 const PER = Number(arg('--per-family', 15));
 const FAMS = arg('--families', null)?.split(',');
 const SPLIT = arg('--split', 'tune');
+const MAX_PARTS = Number(arg('--max-parts', 25)) || Infinity;   // Eric's perimeter (2026-10-09); 0 = none
 const SEALED = JSON.parse(fs.readFileSync(new URL('../benchmark/sealed-50.json', import.meta.url), 'utf8'));
 const famOf = (r) => ((r.family === 'adc' || r.family === 'dac') ? 'data-converter' : r.family);
 const splitOf = (r) => { if (SEALED.holdoutFamilies.includes(famOf(r))) return 'holdout-family'; const h = parseInt(crypto.createHash('sha1').update(r.id).digest('hex').slice(0, 8), 16) / 0xffffffff; return h < 0.6 ? 'tune' : 'test'; };
@@ -74,7 +75,7 @@ const ex = bankExclusions(BANK);
 const man = new Map(fs.readdirSync(BANK).filter((f) => /^manifest.*\.jsonl$/.test(f))
   .flatMap((f) => fs.readFileSync(`${BANK}/${f}`, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))).map((r) => [r.id, r]));
 const inv = fs.readFileSync(`${BANK}/inventory.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
-  .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && !r.familyWeak && r.family !== 'misc' && splitOf(r) === SPLIT && (!FAMS || FAMS.includes(famOf(r))));
+  .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && !r.familyWeak && r.family !== 'misc' && splitOf(r) === SPLIT && r.parts <= MAX_PARTS && (!FAMS || FAMS.includes(famOf(r))));
 const byFam = new Map();
 for (const r of inv) { const f = famOf(r); if (!byFam.has(f)) byFam.set(f, []); byFam.get(f).push(r); }
 const pick = [...byFam.values()].flatMap((l) => l.sort((a, b) => (crypto.createHash('sha1').update(a.id).digest('hex') < crypto.createHash('sha1').update(b.id).digest('hex') ? -1 : 1)).slice(0, PER));

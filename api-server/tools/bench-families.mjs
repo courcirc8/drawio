@@ -16,7 +16,7 @@
  * wire, published-convention score, check.py error rules. One JSON line per circuit.
  *
  * Usage:
- *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4|sa] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all] [--sources a,b] [--exclude-source a,b] [--ids a,b] [--min-parts N]
+ *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4|sa] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all] [--sources a,b] [--exclude-source a,b] [--ids a,b] [--min-parts N] [--max-parts N, default 25 = Eric's perimeter, 0 = none]
  *   node tools/bench-families.mjs sum  DIR [DIR2]       (DIR2: compare two runs)
  */
 import fs from 'node:fs';
@@ -77,8 +77,10 @@ async function run() {
   const man = new Map(fs.readdirSync(BANK).filter((f) => /^manifest.*\.jsonl$/.test(f))
     .flatMap((f) => fs.readFileSync(`${BANK}/${f}`, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))).map((r) => [r.id, r]));
   const onlyIds = arg('--ids') ? new Set(arg('--ids').split(',')) : null, minParts = Number(arg('--min-parts', 0));
+  // PERIMETER (Eric 2026-10-09): circuits of at most 25 parts; --max-parts 0 lifts it
+  const maxParts = Number(arg('--max-parts', 25)) || Infinity;
   const inv = fs.readFileSync(`${BANK}/inventory.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
-    .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && (wantSplit === 'all' || splitOf(r) === wantSplit) && (!onlySrc || onlySrc.includes(r.source)) && !exSrc.includes(r.source) && (!onlyIds || onlyIds.has(r.id)) && r.parts >= minParts)
+    .filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && (wantSplit === 'all' || splitOf(r) === wantSplit) && (!onlySrc || onlySrc.includes(r.source)) && !exSrc.includes(r.source) && (!onlyIds || onlyIds.has(r.id)) && r.parts >= minParts && r.parts <= maxParts)
     .filter((_, i) => i % sk === si).slice(0, limit);
   // --resume: skip circuits already measured in this output directory
   const done = new Set();
