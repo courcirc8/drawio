@@ -78,6 +78,7 @@ export function avoidableBends(model) {
   const STEP = u / 2;
   let wires = 0, bends = 0;
   for (const e of edges) {
+    if (e.style.map.get('drawioApiCrossX') === '1') continue;   // the deliberate X of a cross-coupled pair
     const a = pinOf(byId.get(e.source), e, 'exit'), b = pinOf(byId.get(e.target), e, 'entry');
     const dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y);
     // bends of the drawn path: direction changes along pin -> waypoints -> pin

@@ -24,20 +24,21 @@ import { classify } from './components.js';
 import { newDocument, getPage, normalizeOrigin, serialize, parseXml, allCells, cellInfo } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { importNetlist4, AUTO_CANDIDATES, AUTO_SPACINGS } from './place4.js';
-import { routePage, pinAbs } from './route.js';
+import { routePage, pinAbs, netGroups, polylineOf } from './route.js';
 import { checkDocument } from './check.js';
 import { conventionReport } from './conventions.js';
 import { layoutRulesScore } from './layout-rules.js';
 import { basicsReport } from './basics.js';
 import { importNetlistSA } from './place-sa.js';
 import { importNetlistStages, stagesConfident } from './place-stages.js';
+import { importNetlistLatch, latchReading } from './place-latch.js';
 import { crossCoupledX } from './crossx.js';
 import { wireNamedNets } from './wirenames.js';
 import { straighten, checkerErrors, fixDots } from './straighten.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 
-export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
+export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' || t.eng === 'latch' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
 
 export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   const doc = newDocument(); const m = getPage(doc);
@@ -46,6 +47,7 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
     if (eng === 'v4') placed = await importNetlist4(m, parsed, { restMode, ...sp, ...extra });
     else if (eng === 'sa') placed = await importNetlistSA(m, parsed, { ...sp, ...extra });
     else if (eng === 'stages') placed = await importNetlistStages(m, parsed, { ...sp, ...extra });
+    else if (eng === 'latch') placed = await importNetlistLatch(m, parsed, { ...sp, ...extra });
     else { placed = importNetlist2(m, parsed, { ...sp, ...extra }); await routePage(m, placed.wires, {}); normalizeOrigin(m); }
   } catch (e) { return { eng, restMode, sp, extra, errs: Infinity, error: String(e.message || e) }; }
   // a candidate that does not draw the netlist (LVS) is never chosen: a
@@ -97,8 +99,20 @@ export function namedLinks(m) {
 
 /** Bends per wire (waypoints of the drawn wires), as the bench measures it. */
 function bendsPerWire(m) {
-  const es = allCells(m).map(cellInfo).filter((c) => c.kind === 'edge');
-  return es.length ? es.reduce((n, e) => n + e.points.length, 0) / es.length : 0;
+  const cs = allCells(m).map(cellInfo), es = cs.filter((c) => c.kind === 'edge');
+  if (!es.length) return 0;
+  // a waypoint lying INSIDE a straight run of another wire of the same net is
+  // a tee hidden in the copper, not a bend the eye sees (lib/place-latch.js
+  // draws a pair's source net that way)
+  let net = new Map(), byId = new Map(cs.map((c) => [c.id, c])), runs = [];
+  try {
+    net = netGroups(cs);
+    for (const e of es) { const p = polylineOf(e, byId); if (p) for (let i = 1; i < p.length; i++) runs.push([e.id, net.get(e.id), p[i - 1], p[i]]); }
+  } catch { runs = []; }
+  const inside = (q, e) => runs.some(([id, n, a, b]) => id !== e.id && n === net.get(e.id)
+    && ((Math.abs(a.x - b.x) < 0.5 && Math.abs(q.x - a.x) < 0.5 && q.y > Math.min(a.y, b.y) + 0.5 && q.y < Math.max(a.y, b.y) - 0.5)
+      || (Math.abs(a.y - b.y) < 0.5 && Math.abs(q.y - a.y) < 0.5 && q.x > Math.min(a.x, b.x) + 0.5 && q.x < Math.max(a.x, b.x) - 0.5)));
+  return es.reduce((n, e) => n + e.points.filter((q) => !inside(q, e)).length, 0) / es.length;
 }
 
 /** Long side / short side of the box around the placed vertices, as the bench
@@ -131,6 +145,10 @@ const betterEric = (b, a) => {
   if (sb !== sa) return !sb;
   // then wires rather than connections by name (Eric)
   if ((b.byName ?? 0) !== (a.byName ?? 0)) return (b.byName ?? 0) < (a.byName ?? 0);
+  // then a recognised MOTIF drawn by its template (the textbook drawing,
+  // Eric 2026-10-09 on the CML comparator) over a generic placement
+  const tb = b.eng === 'latch', ta = a.eng === 'latch';
+  if (tb !== ta) return tb;
   const wb = b.aspect > 3, wa = a.aspect > 3;
   if (wb !== wa) return !wb;
   if (b.bends != null && a.bends != null && Math.abs(b.bends - a.bends) > 0.05) return b.bends < a.bends;
@@ -155,8 +173,9 @@ const CHECK_PY = path.join(path.dirname(new URL(import.meta.url).pathname), '..'
 let tmpSeq = 0;
 // errors that make a drawing UNACCEPTABLE to the eye (criterion D): parts on
 // top of each other, a bend lying on another net (reads as a contact), a wire
-// through a part
-const SEVERE = new Set(['comp-overlap', '22-contact', 'through', '22', 'double-line']);
+// through a part, two nets drawn on top of each other; and (Eric 2026-10-09)
+// a differential pair not drawn on one row (rule 14)
+const SEVERE = new Set(['comp-overlap', '22-contact', 'through', '22', 'double-line', '14']);
 function checkPyErrors(doc) {
   return new Promise((resolve) => {
     const f = path.join(os.tmpdir(), `auto-judge-${process.pid}-${tmpSeq++}.drawio`);
@@ -193,6 +212,9 @@ export async function autoPlace(parsed) {
   // of at most 12 parts (Eric: liked on small circuits, bad on a 15-part PA;
   // AUTO_STAGES=0 disables, AUTO_STAGES_MAX changes the size)
   if (process.env.AUTO_STAGES !== '0' && parsed.components.length <= Number(process.env.AUTO_STAGES_MAX ?? 12) && stagesConfident(parsed)) specs.push(['stages', null, {}, {}]);
+  // the CML latch / clocked comparator template (lib/place-latch.js), when the
+  // netlist has that core (Eric 2026-10-09; AUTO_LATCH=0 disables)
+  if (process.env.AUTO_LATCH !== '0' && latchReading(parsed)) specs.push(['latch', null, {}, {}]);
   // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
   // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
   // on one thread the budget only ever saw v2 finish on the big converters.
