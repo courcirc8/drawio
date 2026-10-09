@@ -12,8 +12,10 @@
  *        [--quota oscillator:2,filter:2,lna:2,power:2,regulator:2]
  */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { getPage } from '../lib/model.js';
+import { getPage, allCells, cellInfo } from '../lib/model.js';
+import { classify } from '../lib/components.js';
 import { parseSpice } from '../lib/netlist.js';
 import { autoPlace } from '../lib/auto.js';
 import { exportDocument } from '../lib/render.js';
@@ -49,12 +51,30 @@ const RAG = `${process.env.HOME}/ClaudeCode/local_AI/rag`;
 const NATIF = '/AI/datasets/IEEE/derived/schemas-natif-2026-10-08.jsonl';
 const natif = new Map();
 if (fs.existsSync(NATIF)) for (const r of jsonl(NATIF)) natif.set('dvd-natif/' + `${r.paper_id}_p${r.page}_r${r.rang}`.replace(/[^A-Za-z0-9]+/g, '_'), r);
+const md5 = (f) => crypto.createHash('md5').update(fs.readFileSync(f)).digest('hex');
+let AG = null;
+function agImageCount() {
+  if (AG) return AG;
+  AG = new Map();
+  const D = '/AI/datasets/netlists/AnalogGenie/Dataset';
+  for (const d of fs.readdirSync(D)) { const f = `${D}/${d}/Book${d}.png`; if (fs.existsSync(f)) { const h = md5(f); AG.set(h, (AG.get(h) || 0) + 1); } }
+  return AG;
+}
+function hasDuplicateRefs(cir) {
+  const refs = fs.readFileSync(cir, 'utf8').split('\n').filter((l) => /^[MQRCLDX]/i.test(l)).map((l) => l.split(/\s+/)[0].toUpperCase());
+  return new Set(refs).size !== refs.length;
+}
 function refOf(id) {
   const [src, key] = [id.slice(0, id.indexOf('/')), id.slice(id.indexOf('/') + 1)];
   if (src === 'dvd-natif' && natif.has(id)) { const r = natif.get(id); return { kind: 'ieee', paper_id: r.paper_id, page: r.page, rang: r.rang, legende: r.legende || '' }; }
   if (src === 'analoggenie') {
     const f = `/AI/datasets/netlists/AnalogGenie/Dataset/${key}/Book${key}.png`;
     if (!fs.existsSync(f)) return null;
+    // DOUBTFUL ATTRIBUTION (RAG session for Eric, 2026-10-08): one image and one
+    // citation are shared by up to 163 entries (variants built around one
+    // figure), and a flattened sub-block leaves duplicate instance names (MM0,
+    // MM0 ...): the netlist is then not the figure shown. Both are refused.
+    if (agImageCount().get(md5(f)) > 1 || hasDuplicateRefs(`/AI/datasets/netlists/AnalogGenie/Dataset/${key}/${key}.cir`)) return null;
     let pg = ''; try { pg = fs.readFileSync(`/AI/datasets/netlists/AnalogGenie/Dataset/${key}/Pagenumber${key}.txt`, 'utf8').trim(); } catch { /* none */ }
     return { kind: 'livre', file: f, cite: analogGenieCite(pg) };
   }
@@ -68,7 +88,7 @@ function refOf(id) {
 // full citation (keywords dropped here)
 export function analogGenieCite(pg) {
   if (!pg) return "Figure d'origine du jeu AnalogGenie (source non indiquée).";
-  if (/^\d+$/.test(pg)) return `Figure d'origine du jeu AnalogGenie : schéma de manuel, page ${pg} (pas d'article de référence).`;
+  if (/^[\d\s\-–]+$/.test(pg)) return `Figure d'origine du jeu AnalogGenie : schéma de manuel, page ${pg} (pas d'article de référence).`;
   return `${pg.replace(/\s*keywords:.*$/s, '').replace(/,\s*$/, '')} — figure d'origine du jeu AnalogGenie.`;
 }
 const looksReal = (r) => !r.id.startsWith('dvd-natif/') || (r.parts >= 5 && (fs.readFileSync(man.get(r.id).file, 'utf8').match(/^[MQ]/gim) || []).length >= 2);
@@ -93,10 +113,32 @@ async function sharpToPng(f) {   // AMSNet images are JPEG: converted with PIL (
   return execFileSync('python3', ['-c', 'import sys,io;from PIL import Image;b=io.BytesIO();Image.open(sys.argv[1]).save(b,"PNG");sys.stdout.buffer.write(b.getvalue())', f], { maxBuffer: 64 << 20 });
 }
 
+/** refdes -> centre of every component, and the median part size. */
+function positions(m) {
+  const pos = new Map(), sz = [];
+  for (const c of allCells(m).map(cellInfo)) {
+    if (c.kind !== 'vertex' || c.x == null || classify(c).role !== 'component') continue;
+    pos.set(String(c.refdes || c.id), { x: c.x + c.w / 2, y: c.y + c.h / 2 }); sz.push(Math.max(c.w, c.h));
+  }
+  sz.sort((a, b) => a - b);
+  return { pos, u: sz[Math.floor(sz.length / 2)] || 1 };
+}
+/** Share of component pairs whose left/right or above/below order differs. */
+function layoutChange(A, B) {
+  const refs = [...A.pos.keys()].filter((k) => B.pos.has(k));
+  const sgn = (d, u) => (Math.abs(d) < 0.3 * u ? 0 : Math.sign(d));
+  let n = 0, flip = 0;
+  for (let i = 0; i < refs.length; i++) for (let j = i + 1; j < refs.length; j++) {
+    const a1 = A.pos.get(refs[i]), a2 = A.pos.get(refs[j]), b1 = B.pos.get(refs[i]), b2 = B.pos.get(refs[j]);
+    n++;
+    if (sgn(a2.x - a1.x, A.u) !== sgn(b2.x - b1.x, B.u) || sgn(a2.y - a1.y, A.u) !== sgn(b2.y - b1.y, B.u)) flip++;
+  }
+  return n ? flip / n : 0;
+}
 async function draw(p, old) {
   const keep = [process.env.AUTO_SA, process.env.AUTO_JUDGE];
   if (old) { process.env.AUTO_SA = '0'; process.env.AUTO_JUDGE = 'js'; }
-  try { const res = await autoPlace(p); return { label: res.label, png: (await exportDocument(res.doc, getPage(res.doc), { format: 'png', scale: 1.5 })).buffer }; }
+  try { const res = await autoPlace(p); return { label: res.label, pos: positions(getPage(res.doc)), png: (await exportDocument(res.doc, getPage(res.doc), { format: 'png', scale: 1.5 })).buffer }; }
   finally { for (const [k, v] of [['AUTO_SA', keep[0]], ['AUTO_JUDGE', keep[1]]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
 }
 
@@ -109,14 +151,10 @@ for (const r of pool) {
   const p = parseSpice(text);
   let before, after;
   try { before = await draw(p, true); after = await draw(p, false); } catch { continue; }
-  // a pair must differ VISIBLY: another engine (v2 / v4 / sa), or a clearly
-  // different sheet shape (aspect ratios 15 % apart), or another v4 mode on a
-  // circuit of 20+ parts; a spacing-only change says little to the eye
-  const eng = (l) => l.split(/[:@+]/)[0], mode = (l) => l.replace(/@.*$/, '');
-  const ar = (png) => png.readUInt32BE(16) / png.readUInt32BE(20);   // PNG IHDR width / height
-  const visible = eng(before.label) !== eng(after.label) || Math.abs(Math.log(ar(before.png) / ar(after.png))) > 0.15
-    || (mode(before.label) !== mode(after.label) && r.parts >= 20);
-  if (Buffer.compare(before.png, after.png) === 0 || !visible) continue;
+  // a pair must differ VISIBLY: the relative order (left / right, above /
+  // below) of at least 10 % of the component pairs changes. Another engine or
+  // mode is not enough: v2 and v4 can draw the same layout, spacing aside.
+  if (Buffer.compare(before.png, after.png) === 0 || layoutChange(before.pos, after.pos) < 0.1) continue;
   const n = items.length + 1, newLeft = rnd() < 0.5;
   let ref = null;
   try { ref = await writeRef(r.id, `${OUT}/img/${n}-ref.png`); } catch { ref = null; }
