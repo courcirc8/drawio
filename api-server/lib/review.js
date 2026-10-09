@@ -2,17 +2,23 @@
  * review.js — READ-ONLY review sets for the orchestrator (built by
  * tools/review-batch.mjs into REVIEW_ROOT/<batch>/: index.json, img/*.png).
  * Nothing here is shown to Eric; no answers are collected.
+ *   GET /review                       the page to read a set (?batch=…)
  *   GET /review/index.json            the latest batch's index (image URLs made absolute)
  *   GET /review/<batch>/index.json    one batch's index
  *   GET /review/<batch>/img/<file>    its PNGs
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const PAGE = fileURLToPath(new URL('../review-ui/index.html', import.meta.url));
 
 const ROOT = process.env.REVIEW_ROOT || '/AI/datasets/judge/review';
 const SAFE = /^[A-Za-z0-9_-]+$/, FILE = /^[A-Za-z0-9_.-]+\.png$/;
 
 export function mountReview(app, wrap) {
+  // the page to READ a set (phone-friendly): reference and drawing side by side
+  app.get(['/review', '/review/'], (req, res) => res.sendFile(PAGE));
   const batches = () => (fs.existsSync(ROOT) ? fs.readdirSync(ROOT).filter((d) => SAFE.test(d) && fs.existsSync(path.join(ROOT, d, 'index.json'))) : [])
     .sort((a, b) => fs.statSync(path.join(ROOT, a, 'index.json')).mtimeMs - fs.statSync(path.join(ROOT, b, 'index.json')).mtimeMs);
   const send = (req, res, b) => {

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Revue des schémas drawio</title>
+<style>
+body{font-family:-apple-system,system-ui,sans-serif;margin:0;background:#f4f4f4;color:#222}
+header{position:sticky;top:0;background:#fff;padding:10px 14px;border-bottom:1px solid #ddd;z-index:2}
+h1{font-size:18px;margin:0 0 4px}
+.sum{font-size:13px;color:#555}
+.f{margin-top:6px;font-size:13px}
+.f button{margin:2px;padding:4px 8px;border:1px solid #bbb;border-radius:12px;background:#fff}
+.f button.on{background:#333;color:#fff}
+.card{background:#fff;margin:12px;border-radius:10px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.t{font-weight:600;font-size:15px}
+.s{font-size:12px;color:#666;margin:2px 0 8px;word-break:break-all}
+.imgs{display:flex;gap:10px;flex-wrap:wrap}
+.imgs figure{margin:0;flex:1 1 300px;min-width:0}
+.imgs img{width:100%;border:1px solid #ddd;background:#fff}
+figcaption{font-size:12px;color:#666}
+.ok{color:#1a7f37;font-weight:600}.ko{color:#c62828;font-weight:600}
+ul{margin:6px 0 0 18px;padding:0;font-size:13px}
+</style></head><body>
+<header><h1>Revue des schémas — lot <span id="b"></span></h1><div class="sum" id="sum"></div>
+<div class="f" id="filt"></div></header>
+<main id="list"></main>
+<script>
+const why={avoidable:'coudes évitables',crossX:'X manquant sur une paire croisée',pairRow:'paire différentielle hors rangée',symmetry:'paire pas symétrique',uWires:'fil en détour',ports:'port pas aligné sur sa broche'};
+const q=new URLSearchParams(location.search), batch=q.get('batch');
+const base=location.pathname.replace(/\/review\/?(index\.html)?$/,'');
+let data, mode='all';
+fetch(base+'/review/'+(batch?batch+'/':'')+'index.json').then(r=>r.json()).then(j=>{data=j;render()});
+function render(){
+  document.getElementById('b').textContent=data.batch;
+  const it=data.items, pass=it.filter(x=>x.quality.pass).length;
+  document.getElementById('sum').textContent=`${it.length} circuits · ${pass} passent le contrôle automatique · lecture seule`;
+  const fams=[...new Set(it.map(x=>x.family))];
+  document.getElementById('filt').innerHTML=['all','pass','fail',...fams].map(k=>`<button data-k="${k}" class="${k===mode?'on':''}">${k==='all'?'tous':k==='pass'?'contrôle OK':k==='fail'?'contrôle raté':k}</button>`).join('');
+  document.querySelectorAll('#filt button').forEach(b=>b.onclick=()=>{mode=b.dataset.k;render()});
+  const show=it.filter(x=>mode==='all'||(mode==='pass'?x.quality.pass:mode==='fail'?!x.quality.pass:x.family===mode));
+  document.getElementById('list').innerHTML=show.map(x=>{
+    const m=x.metrics, bad=Object.entries(x.quality.checks).filter(([,c])=>!c.ok);
+    const xs=x.crossX.pairs?`<li>Paires croisées : ${x.crossX.pairs}, dessinées en X : ${x.crossX.drawn}${Object.keys(x.crossX.refused).length?' (refus : '+Object.entries(x.crossX.refused).map(([k,v])=>k+' ×'+v).join(', ')+')':''}</li>`:'';
+    return `<div class="card"><div class="t">n° ${x.n} · ${x.family} · ${x.parts} composants</div>
+    <div class="s">${x.id} · source ${x.refSource} · moteur ${x.engine}</div>
+    <div class="imgs"><figure><img loading="lazy" src="${x.refUrl}"><figcaption>Référence</figcaption></figure>
+    <figure><img loading="lazy" src="${x.drawioUrl}"><figcaption>drawio</figcaption></figure></div>
+    <ul><li>Contrôle automatique : ${x.quality.pass?'<span class="ok">OK</span>':'<span class="ko">raté</span> — '+bad.map(([k,c])=>why[k]+' ('+c.n+')').join(', ')}</li>
+    <li>${m.bends} coudes (${m.bendsPerWire} par fil), ${m.crossings??'?'} croisements, ${m.severe} erreur(s) grave(s), ${m.checkErrors??'?'} erreur(s) au total</li>
+    ${xs}<li>Motifs reconnus : ${x.motifs.join(', ')||'aucun'}</li></ul></div>`}).join('');
+}
+</script></body></html>
