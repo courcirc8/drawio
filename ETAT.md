@@ -653,6 +653,42 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   netlists exactes avec figure de référence (AnalogGenie à image propre ; AMSNet lues dans le zip), familles
   analogiques, 3 paires dessinées par le moteur stages ; jamais de scellé.
 
+- PASSE DE REDRESSEMENT (Eric, 9 oct., capture iPhone « 5 coudes évitables » ; `lib/straighten.js`, outil
+  `tools/straighten-eval.mjs` ; PAS activée dans auto, appliquée aux pages de lectures) : coude ÉVITABLE = coude d'un
+  fil entre deux broches d'un même net décalées de ≤ 1 pas (½ taille médiane) sur un axe. Passe gloutonne après
+  placement : déplacer d'un pas au plus un symbole / port, puis un dipôle, puis un transistor (avec ses satellites :
+  rail, masse, port reliés à lui seul), ou RETOURNER un transistor (colonne de queue sous un transistor retourné) ;
+  rangées et colonnes de transistors reliés jamais cassées ; recherche à deux coups ; chaque coup est validé par
+  `tools/check.py` (fils re-routés seulement autour des pièces déplacées, fil droit figé quand les broches sont
+  alignées, points de contact là où check.py les demande ; coup refusé si les erreurs ou une seule erreur grave —
+  diagonale, traversée, contact, superposition — augmentent). Étiquettes des transistors collées au trait
+  drain-source, côté opposé à la grille. Banc ≤ 25 (200 dessins d'auto) : coudes évitables 9,9 → 6,0 /dessin,
+  coudes totaux 20,3 → 16,4, 147 dessins améliorés et aucun dégradé, erreurs check.py 0,09 → 0,07, LVS intact,
+  0,6 s/dessin. Lectures d'Eric redessinées : lot 1 (8) 77 → 15 coudes évitables ; échantillon (20) 340 → 247.
+  Le zéro n'est PAS atteint sur les lectures de 15-25 composants (décalages > 1 pas = placement, ou coups refusés
+  par check.py) ; les verrous de lot 1 et le verrou CML de la capture sont propres.
+
+- SÉRIE 3 D'ERIC (9 oct., « auto actuel » contre « D + étages », 10 paires ≤ 25, netlists exactes AnalogGenie) :
+  D + étages 4, actuel 3, égal 3. Paires dessinées par le moteur stages : 2 préférées (PLL 7 comp., ampli 4), 1 jugée
+  « nulle » des deux côtés (PA 15 comp. : 26 croisements côté stages). Commentaires : « pénalité à chaque coude à 90° »,
+  « aligner R et MOS réduit le coude », « deux nets différents n'ont pas le droit d'être l'un sur l'autre » (règle à
+  ajouter), « valeurs fausses, pas 1k mais valeurs littérales » (AnalogGenie : valeurs inventées à l'import), « VCO :
+  croisement à 45° grille-drain » (paire croisée), « transistor entre les deux groupes de résistances », 3 paires
+  « très mauvais » des deux côtés (comparateur 14, PA 15, PLL 9).
+  PRÉDICTEURS sur les 23 paires tranchées des séries 1-3 : vérificateur d'abord 6 justes / 9 faux / 8 égalités ;
+  fil le plus court 16/7 ; feuille ≤ 3:1 puis fil (critère D) 17/6 ; ≤ 3:1 puis coudes par fil + 0,1·croisements
+  17/6 ; série 3 seule : coudes par fil 6/7.
+
+- X SYMÉTRIQUE DES PAIRES CROISÉES (Eric, 9 oct. : « autoriser les fils en diagonale pour les croisements symétriques
+  de 2 lignes horizontales, genre VCO drain / grille » ; `lib/crossx.js`) : pour une paire croisée sur UNE rangée, grilles
+  tournées face à face, chaque grille part à l'horizontale vers le centre, croise l'autre en diagonale, et rejoint le
+  drain du partenaire sur une horizontale juste au-delà des drains (`edgeStyle=none`, `drawioApiCrossX=1` : check.py
+  exempte ces diagonales volontaires). Les deux fils du X sont AJOUTÉS ; un ancien fil de grille n'est supprimé que si
+  le LVS reste juste, sinon il est rebranché sur le drain du partenaire (même net). Points de contact réparés selon
+  check.py (`fixDots`). Abandon si LVS faux ou une erreur de plus. Sur 40 circuits ≤ 25 à paire croisée : 31 paires sur
+  71 dessinées en X ; refus : 31 (un autre composant ou d'autres fils occupent l'espace du X — le placement ne réserve
+  pas cette zone), 9 paires pas sur une rangée. Appliqué aux pages de lectures (avant le redressement) ; PAS dans auto.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
