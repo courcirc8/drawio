@@ -17,6 +17,9 @@
  *      - openpdk: the cell name says bootstrapped S/H switch, SC integrator or
  *        switched-capacitor CMFB.
  *    Written to <bank>/family-overrides.jsonl, applied by inventory-bank.mjs.
+ * 3. OPEN PDK NON-SCHEMATICS (Eric 2026-10-09): layout extractions, flattened
+ *    hierarchies and test benches are excluded from measurement
+ *    (<bank>/excluded-openpdk-nonschema.jsonl); see section 3 below.
  * Entries with a shared AnalogGenie image stay as netlists (their image is
  * never shown: tools/eric-pairs-batch.mjs). Nothing of the corpus goes to Git:
  * only these rules; the id lists stay in the bank.
@@ -41,6 +44,27 @@ for (const r of manifests.filter((m) => m.source === 'analoggenie')) {
   if (new Set(refs).size !== refs.length) flat.push({ id: r.id, reason: 'flattened-block', filter: 'clean-bank' });
 }
 fs.writeFileSync(`${BANK}/excluded-analoggenie-flat.jsonl`, flat.map((x) => JSON.stringify(x)).join('\n') + '\n');
+
+// 3. open PDK entries that are not schematics (Eric 2026-10-09): layout
+//    extractions (Magic geometric net names a_130_0#, pex / mag / lvs / flat /
+//    lay / rcx / parasitic in the name), flattened hierarchies (net names
+//    Xx1.x5/A or a/b), test benches (tb_, _tb, testbench). Files kept, excluded
+//    from measurement: <bank>/excluded-openpdk-nonschema.jsonl.
+const EXTRACT_NAME = /pex|_mag|mag\.|lvs|extract|_flat|flat_|-lay|_lay|layout|rcx|parasit/i;
+const TB_NAME = /(^|[_/.-])tb([_/.-]|$)|testbench/i;
+const nonSchema = [];
+for (const m of manifests.filter((m) => m.source === 'openpdk')) {
+  let text; try { text = fs.readFileSync(m.file, 'utf8'); } catch { continue; }
+  const nets = text.split('\n').filter((l) => /^[MQRCLD]/i.test(l)).flatMap((l) => l.split(/\s+/).slice(1, 4));
+  const share = (re) => nets.filter((n) => re.test(n)).length / Math.max(1, nets.length);
+  const name = m.id.slice(m.id.indexOf('__') + 2);
+  const reason = EXTRACT_NAME.test(name) || share(/#$/) > 0.05 ? 'layout-extraction'
+    : share(/^X\w*\.|\//) > 0.05 ? 'flattened-hierarchy' : TB_NAME.test(name) ? 'test-bench' : null;
+  if (reason) nonSchema.push({ id: m.id, reason, filter: 'clean-bank' });
+}
+fs.writeFileSync(`${BANK}/excluded-openpdk-nonschema.jsonl`, nonSchema.map((x) => JSON.stringify(x)).join('\n') + '\n');
+const byReason = nonSchema.reduce((o, x) => ((o[x.reason] = (o[x.reason] || 0) + 1), o), {});
+console.log('open PDK non-schematics excluded:', nonSchema.length, byReason);
 
 // 2. sampler / switched-capacitor relabelling
 const CAPTION = /sample[- ]?and[- ]?hold|track[- ]?and[- ]?hold|\bS\/H\b|\bT\/H\b|switched[- ]capacitor (integrator|filter|amplifier|circuit|common[- ]mode|cmfb)|opamp and switched-capacitor/i;
