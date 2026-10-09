@@ -32,6 +32,7 @@ import { basicsReport } from './basics.js';
 import { importNetlistSA } from './place-sa.js';
 import { importNetlistStages, stagesConfident } from './place-stages.js';
 import { crossCoupledX } from './crossx.js';
+import { wireNamedNets } from './wirenames.js';
 import { straighten, checkerErrors, fixDots } from './straighten.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
@@ -49,6 +50,9 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   } catch (e) { return { eng, restMode, sp, extra, errs: Infinity, error: String(e.message || e) }; }
   // a candidate that does not draw the netlist (LVS) is never chosen: a
   // v4 variant lost a cap on an extracted netlist and auto picked it anyway
+  // no connection by name (Eric): labels joining an internal net are replaced
+  // by wires before the drawing is judged (AUTO_WIRE_NAMES=0 keeps the labels)
+  if (process.env.AUTO_WIRE_NAMES !== '0') { try { await wireNamedNets(m); } catch { /* judged as drawn */ } }
   let lvsOk = true;
   try { lvsOk = compare(extractNetlist(m), parsed).match; } catch { lvsOk = false; }
   if (!lvsOk) return { eng, restMode, sp, extra, doc, placed, errs: Infinity, conv: 0, lvsFailed: true };
@@ -80,7 +84,7 @@ function wirePerPart(m, parsed) {
  *  nom"): nets drawn as two or more port labels of the same name instead of
  *  wires (v4 joins its blocks that way), supply and ground excepted. */
 const RAILNAME = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|v\+|v-)$/i;
-function namedLinks(m) {
+export function namedLinks(m) {
   const count = new Map();
   for (const c of allCells(m).map(cellInfo)) {
     if (c.kind !== 'vertex' || classify(c).role !== 'port') continue;
@@ -246,5 +250,5 @@ export async function autoPlace(parsed) {
       await straighten(page);
     } catch { /* the unfinished drawing stays as chosen */ }
   }
-  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics }])) };
+  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire }])) };
 }
