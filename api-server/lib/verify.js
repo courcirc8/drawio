@@ -25,10 +25,16 @@ function batchDir(b) {
 const readJsonl = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 
 export function mountVerify(app, wrap) {
-  // the newest batch (lectures-1, lectures-2 ...); earlier ones keep their verdicts
+  // batches lectures-1, lectures-2 ...; each keeps its verdicts
   app.get('/eric-lectures', (req, res) => {
+    // the OLDEST batch Eric has not finished (a new batch does not hide an
+    // unfinished one), else the newest
     let latest = 'lectures-1';
-    try { latest = fs.readdirSync(ROOT).filter((d) => /^lectures-\d+$/.test(d)).sort((a, b) => Number(a.split('-')[1]) - Number(b.split('-')[1])).pop() || latest; } catch { /* none yet */ }
+    try {
+      const all = fs.readdirSync(ROOT).filter((d) => /^lectures-\d+$/.test(d)).sort((a, b) => Number(a.split('-')[1]) - Number(b.split('-')[1]));
+      const open = all.find((d) => readJsonl(path.join(ROOT, d, 'answers.jsonl')).length < readJsonl(path.join(ROOT, d, 'items.jsonl')).length);
+      latest = open || all.pop() || latest;
+    } catch { /* none yet */ }
     res.redirect((req.query.export != null ? 'verify/export?batch=' : 'verify?batch=') + encodeURIComponent(latest));
   });
   app.get('/verify', (req, res) => res.sendFile(PAGE));

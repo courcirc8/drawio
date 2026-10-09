@@ -24,6 +24,7 @@ import { sealedStatus } from '../lib/sealed.js';
 const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const SRC = arg('--src'), BATCH = arg('--batch', 'lectures-1');
+// (a reading refused as unreadable — empty netlist — has nothing to check: skipped and listed)
 if (!SRC) { console.error('usage: --src FILE.jsonl [--batch lectures-1]'); process.exit(1); }
 const OUT = `${process.env.VERIFY_ROOT || '/AI/datasets/judge/lectures'}/${BATCH}`;
 if (fs.existsSync(OUT)) { console.error(`${OUT} exists: refusing to overwrite a batch`); process.exit(1); }
@@ -36,9 +37,10 @@ for (const r of rows) {
   const n = items.length + 1;
   const key = `${r.paper_id} p${r.page} r${r.rang}`;
   // lecture-2 (RAG, 2026-10-09): {lecture: {netlist: [lines], notes, level}}
-  const L = r.lecture || {};
+  const L = r.lecture || r;   // lecture-2 nested, or the flat drawio file (level, notes at the top)
   let netlist = String((Array.isArray(L.netlist) ? L.netlist.join('\n') : null) ?? r.netlist ?? r.spice ?? '').trim();
   if (!netlist) { console.error(`${key}: no netlist text, skipped`); continue; }
+  if (!netlist.replace(/^\s*\.end\s*$/gim, '').trim()) { console.error(`${key}: empty netlist (reading refused as unreadable), skipped`); continue; }
   if (!/\.end\b/i.test(netlist)) netlist += '\n.end';
   if (sealedStatus(netlist)) { console.error(`${key}: matches a sealed circuit, refused`); continue; }
   // the figure, cropped by the RAG, and its citation
@@ -52,8 +54,20 @@ for (const r of rows) {
   // for the DRAWING only (the page shows the netlist as read): a passive or a
   // source written without a value gets a placeholder (a missing value is not
   // a connectivity fault); what drawio cannot draw is said on the page
-  const forDrawing = netlist.split('\n').map((l) => {
-    const t = l.trim().split(/\s+/);
+  // (also: refs that are not SPICE — PFET1, P10, N7 for a MOS — get the M / Q
+  // letter, and a duplicate ref a suffix)
+  const seenRef = new Map();
+  const forDrawing = netlist.split('\n').map((l0) => {
+    let l = l0;
+    let t = l.trim().split(/\s+/);
+    const model = (t[t.length - 1] || '').toLowerCase();
+    if (/^[a-z]/i.test(t[0]) && !/^\./.test(t[0])) {
+      if (/^(n|p)(mos|fet|ch)/.test(model) && !/^M/i.test(t[0])) t[0] = 'M' + t[0];
+      if (/^(npn|pnp)/.test(model) && !/^Q/i.test(t[0])) t[0] = 'Q' + t[0];
+      const k = t[0].toUpperCase(), c = (seenRef.get(k) || 0) + 1; seenRef.set(k, c);
+      if (c > 1) t[0] = `${t[0]}_${c}`;
+      l = t.join(' ');
+    }
     if (/^[RCL]/i.test(t[0]) && t.length === 3) return `${l} 1`;
     if (/^D/i.test(t[0]) && t.length === 3) return `${l} D`;
     if (/^[VI]/i.test(t[0]) && t.length === 3) return `${l} DC 0`;
