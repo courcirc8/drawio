@@ -274,6 +274,13 @@ export async function importNetlistSA(model, parsed, opts = {}) {
     for (const p of parts) c += PULL * (Math.abs(cx(p) - mx) + Math.abs(cy(p) - my)) / u;
     return c;
   };
+  // INITIAL POSITIONS given by the caller (lib/place-stages.js: stages in
+  // columns, left to right along the signal): centres in units of the median
+  // part size; the annealing then only refines (low temperature)
+  if (opts.saInit) for (const p of parts) {
+    const pos = opts.saInit.get(String(p.pc.ref));
+    if (pos) { p.x = Math.round(pos.x * u - p.w / 2); p.y = Math.round(pos.y * u - p.h / 2); }
+  }
   // annealing (deterministic seed)
   let seed = 12345; const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
   const T0 = opts.saT0 ?? 2; let cur = cost(), T = T0;

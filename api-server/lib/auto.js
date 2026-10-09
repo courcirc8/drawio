@@ -23,16 +23,17 @@ import { Worker } from 'node:worker_threads';
 import { newDocument, getPage, normalizeOrigin, serialize, parseXml, allCells, cellInfo } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { importNetlist4, AUTO_CANDIDATES, AUTO_SPACINGS } from './place4.js';
-import { routePage } from './route.js';
+import { routePage, pinAbs } from './route.js';
 import { checkDocument } from './check.js';
 import { conventionReport } from './conventions.js';
 import { layoutRulesScore } from './layout-rules.js';
 import { basicsReport } from './basics.js';
 import { importNetlistSA } from './place-sa.js';
+import { importNetlistStages, stagesConfident } from './place-stages.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 
-export const candidateLabel = (t) => (t.eng === 'sa' ? 'sa' : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
+export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
 
 export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   const doc = newDocument(); const m = getPage(doc);
@@ -40,6 +41,7 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   try {
     if (eng === 'v4') placed = await importNetlist4(m, parsed, { restMode, ...sp, ...extra });
     else if (eng === 'sa') placed = await importNetlistSA(m, parsed, { ...sp, ...extra });
+    else if (eng === 'stages') placed = await importNetlistStages(m, parsed, { ...sp, ...extra });
     else { placed = importNetlist2(m, parsed, { ...sp, ...extra }); await routePage(m, placed.wires, {}); normalizeOrigin(m); }
   } catch (e) { return { eng, restMode, sp, extra, errs: Infinity, error: String(e.message || e) }; }
   // a candidate that does not draw the netlist (LVS) is never chosen: a
@@ -53,7 +55,22 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   if (process.env.AUTO_BASICS !== '0') { try { basics = basicsReport(m, parsed).count; } catch { /* no geometry */ } }
   let rules = null;
   if (process.env.AUTO_RULES === '1') { try { rules = layoutRulesScore(m).score; } catch { /* no geometry */ } }
-  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, aspect: sheetAspect(m) };
+  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, aspect: sheetAspect(m), wire: wirePerPart(m, parsed) };
+}
+
+/** Total wire length per part, as the bench measures it (Manhattan length of
+ *  each edge through its waypoints, pin to pin). */
+function wirePerPart(m, parsed) {
+  const cells = allCells(m).map(cellInfo), byId = new Map(cells.map((c) => [c.id, c]));
+  let len = 0;
+  for (const e of cells.filter((c) => c.kind === 'edge')) {
+    const a = byId.get(e.source), b = byId.get(e.target);
+    if (!a || !b) continue;
+    const pin = (c, pre) => pinAbs(c, { x: Number(e.style.map.get(pre + 'X') ?? 0.5), y: Number(e.style.map.get(pre + 'Y') ?? 0.5) });
+    const pts = [pin(a, 'exit'), ...e.points, pin(b, 'entry')];
+    for (let i = 1; i < pts.length; i++) len += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
+  }
+  return len / Math.max(1, parsed.components.length);
 }
 
 /** Long side / short side of the box around the placed vertices, as the bench
@@ -73,7 +90,22 @@ const RULES_EPS = 0.02;
 // between equal error counts, a sheet within 3:1 beats a longer one — errors
 // stay first, so no error is traded for a squarer sheet.
 const wide = (t) => process.env.AUTO_ASPECT === '1' && t.aspect != null && t.aspect > Number(process.env.AUTO_ASPECT_MAX ?? 3);
+// CRITERION D (Eric's blind series 1-2, 2026-10-09; AUTO_CRITERION=eric, OFF
+// by default): what he prefers is predicted by "sheet within 3:1, then the
+// shortest wire" (13 of 16 pairs; the checker-first choice: 4). Unacceptable
+// drawings (severe errors: overlaps, bend on another net, wire through a part)
+// go last; the checker's error count only breaks remaining ties.
+const betterEric = (b, a) => {
+  const sb = (b.severe ?? 0) > 0, sa = (a.severe ?? 0) > 0;
+  if (sb !== sa) return !sb;
+  const wb = b.aspect > 3, wa = a.aspect > 3;
+  if (wb !== wa) return !wb;
+  if (b.wire != null && a.wire != null && Math.abs(b.wire - a.wire) > 0.02 * Math.max(a.wire, b.wire)) return b.wire < a.wire;
+  return b.errs < a.errs;
+};
 const better = (b, a) => {
+  if (b.errs === Infinity || a.errs === Infinity) return b.errs < a.errs;
+  if (process.env.AUTO_CRITERION === 'eric') return betterEric(b, a);
   if (b.errs !== a.errs) return b.errs < a.errs;
   if (wide(b) !== wide(a)) return !wide(b);
   if (b.basics != null && a.basics != null && b.basics !== a.basics) return b.basics < a.basics;
@@ -87,13 +119,21 @@ const better = (b, a) => {
 // AUTO_JUDGE=js restores check.js; a failing python run falls back to it.
 const CHECK_PY = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'tools', 'check.py');
 let tmpSeq = 0;
+// errors that make a drawing UNACCEPTABLE to the eye (criterion D): parts on
+// top of each other, a bend lying on another net (reads as a contact), a wire
+// through a part
+const SEVERE = new Set(['comp-overlap', '22-contact', 'through']);
 function checkPyErrors(doc) {
   return new Promise((resolve) => {
     const f = path.join(os.tmpdir(), `auto-judge-${process.pid}-${tmpSeq++}.drawio`);
     try { fs.writeFileSync(f, serialize(doc)); } catch { resolve(null); return; }
     execFile('python3', [CHECK_PY, f, '--json'], { timeout: 120000, maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => {
       fs.rm(f, { force: true }, () => {});
-      try { resolve(JSON.parse(stdout).errors); } catch { resolve(null); }   // exit 1 = errors found, stdout still JSON
+      try {   // exit 1 = errors found, stdout still JSON
+        const j = JSON.parse(stdout);
+        const severe = (j.violations || []).filter((v) => v.severity === 'error' && SEVERE.has(v.rule)).length;
+        resolve({ errors: j.errors, severe });
+      } catch { resolve(null); }
     });
   });
 }
@@ -107,13 +147,16 @@ export async function autoPlace(parsed) {
   // if none has finished yet, the first one to finish is taken)
   const BUDGET = Number(process.env.AUTO_BUDGET_MS ?? 60000);
   const judge = async (t) => {
-    if (process.env.AUTO_JUDGE !== 'js' && t.doc && t.errs !== Infinity) { const e = await checkPyErrors(t.doc); if (e != null) { t.errsJs = t.errs; t.errs = e; } }
+    if (process.env.AUTO_JUDGE !== 'js' && t.doc && t.errs !== Infinity) { const e = await checkPyErrors(t.doc); if (e != null) { t.errsJs = t.errs; t.errs = e.errors; t.severe = e.severe; } }
     return t;
   };
   const specs = AUTO_SPACINGS.flatMap((sp) => AUTO_CANDIDATES.map(([eng, mode, extra]) => [eng, mode, sp, extra || {}]));
   // the annealing engine (lib/place-sa.js) as one more candidate (Eric
   // 2026-10-07; AUTO_SA=0 disables, AUTO_SA_MAX=N limits it to N parts)
   if (process.env.AUTO_SA !== '0' && parsed.components.length <= Number(process.env.AUTO_SA_MAX ?? Infinity)) specs.push(['sa', null, {}, {}]);
+  // the stage-driven engine (lib/place-stages.js) as one more candidate, only
+  // when the topological reading is sure (AUTO_STAGES=1, OFF by default)
+  if (process.env.AUTO_STAGES === '1' && stagesConfident(parsed)) specs.push(['stages', null, {}, {}]);
   // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
   // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
   // on one thread the budget only ever saw v2 finish on the big converters.
