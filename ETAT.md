@@ -668,6 +668,17 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   Le zéro n'est PAS atteint sur les lectures de 15-25 composants (décalages > 1 pas = placement, ou coups refusés
   par check.py) ; les verrous de lot 1 et le verrou CML de la capture sont propres.
 
+- SÉRIE 3 D'ERIC (9 oct., « auto actuel » contre « D + étages », 10 paires ≤ 25, netlists exactes AnalogGenie) :
+  D + étages 4, actuel 3, égal 3. Paires dessinées par le moteur stages : 2 préférées (PLL 7 comp., ampli 4), 1 jugée
+  « nulle » des deux côtés (PA 15 comp. : 26 croisements côté stages). Commentaires : « pénalité à chaque coude à 90° »,
+  « aligner R et MOS réduit le coude », « deux nets différents n'ont pas le droit d'être l'un sur l'autre » (règle à
+  ajouter), « valeurs fausses, pas 1k mais valeurs littérales » (AnalogGenie : valeurs inventées à l'import), « VCO :
+  croisement à 45° grille-drain » (paire croisée), « transistor entre les deux groupes de résistances », 3 paires
+  « très mauvais » des deux côtés (comparateur 14, PA 15, PLL 9).
+  PRÉDICTEURS sur les 23 paires tranchées des séries 1-3 : vérificateur d'abord 6 justes / 9 faux / 8 égalités ;
+  fil le plus court 16/7 ; feuille ≤ 3:1 puis fil (critère D) 17/6 ; ≤ 3:1 puis coudes par fil + 0,1·croisements
+  17/6 ; série 3 seule : coudes par fil 6/7.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
