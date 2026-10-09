@@ -337,7 +337,19 @@ export function glueLabels(model, gap = 3) {
     if (cls.role === 'component' && pins.length >= 3 && /^[MQJ]/i.test(String(p.refdes || ref))) {
       const [d, g, s0] = pins, leadX = (d.x + s0.x) / 2, midY = (d.y + s0.y) / 2;
       const side = leadX >= g.x ? 1 : -1;
-      updateCell(model, l.id, { x: Math.round(side > 0 ? leadX + gap + 2 : leadX - gap - 2 - l.w), y: Math.round(midY - l.h / 2) });
+      const b0 = rotatedAabb(p);
+      // first free spot: beside the lead (away from the gate), then below,
+      // then above the part — never on a port, a symbol or another part
+      const spots = [
+        { x: side > 0 ? leadX + gap + 2 : leadX - gap - 2 - l.w, y: midY - l.h / 2 },
+        { x: (d.x + g.x) / 2 - l.w / 2, y: Math.max(d.y, s0.y) + gap },
+        { x: (d.x + g.x) / 2 - l.w / 2, y: Math.min(d.y, s0.y) - gap - l.h },
+      ];
+      const others = verts.filter((o) => o.id !== l.id && o.id !== p.id && classify(o).role !== 'junction' && !String(o.id).startsWith('LBL_'));
+      const free = (q) => !others.some((o) => { const r = rotatedAabb(o); return q.x < r.x + r.w && r.x < q.x + l.w && q.y < r.y + r.h && r.y < q.y + l.h; });
+      const q = spots.find(free) || spots[0];
+      void b0;
+      updateCell(model, l.id, { x: Math.round(q.x), y: Math.round(q.y) });
       continue;
     }
     const b = rotatedAabb(p);

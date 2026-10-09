@@ -20,6 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
+import { classify } from './components.js';
 import { newDocument, getPage, normalizeOrigin, serialize, parseXml, allCells, cellInfo } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { importNetlist4, AUTO_CANDIDATES, AUTO_SPACINGS } from './place4.js';
@@ -30,6 +31,8 @@ import { layoutRulesScore } from './layout-rules.js';
 import { basicsReport } from './basics.js';
 import { importNetlistSA } from './place-sa.js';
 import { importNetlistStages, stagesConfident } from './place-stages.js';
+import { crossCoupledX } from './crossx.js';
+import { straighten, checkerErrors, fixDots } from './straighten.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 
@@ -55,7 +58,7 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   if (process.env.AUTO_BASICS !== '0') { try { basics = basicsReport(m, parsed).count; } catch { /* no geometry */ } }
   let rules = null;
   if (process.env.AUTO_RULES === '1') { try { rules = layoutRulesScore(m).score; } catch { /* no geometry */ } }
-  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, aspect: sheetAspect(m), wire: wirePerPart(m, parsed) };
+  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, aspect: sheetAspect(m), wire: wirePerPart(m, parsed), bends: bendsPerWire(m), byName: namedLinks(m) };
 }
 
 /** Total wire length per part, as the bench measures it (Manhattan length of
@@ -71,6 +74,27 @@ function wirePerPart(m, parsed) {
     for (let i = 1; i < pts.length; i++) len += Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y);
   }
   return len / Math.max(1, parsed.components.length);
+}
+
+/** CONNECTIONS BY NAME (Eric 2026-10-09: "on ne veut pas de connexions par
+ *  nom"): nets drawn as two or more port labels of the same name instead of
+ *  wires (v4 joins its blocks that way), supply and ground excepted. */
+const RAILNAME = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|v\+|v-)$/i;
+function namedLinks(m) {
+  const count = new Map();
+  for (const c of allCells(m).map(cellInfo)) {
+    if (c.kind !== 'vertex' || classify(c).role !== 'port') continue;
+    const n = String(c.value || '').trim().toUpperCase();
+    if (!n || RAILNAME.test(n)) continue;
+    count.set(n, (count.get(n) || 0) + 1);
+  }
+  return [...count.values()].filter((k) => k > 1).length;
+}
+
+/** Bends per wire (waypoints of the drawn wires), as the bench measures it. */
+function bendsPerWire(m) {
+  const es = allCells(m).map(cellInfo).filter((c) => c.kind === 'edge');
+  return es.length ? es.reduce((n, e) => n + e.points.length, 0) / es.length : 0;
 }
 
 /** Long side / short side of the box around the placed vertices, as the bench
@@ -90,22 +114,28 @@ const RULES_EPS = 0.02;
 // between equal error counts, a sheet within 3:1 beats a longer one — errors
 // stay first, so no error is traded for a squarer sheet.
 const wide = (t) => process.env.AUTO_ASPECT === '1' && t.aspect != null && t.aspect > Number(process.env.AUTO_ASPECT_MAX ?? 3);
-// CRITERION D (Eric's blind series 1-2, 2026-10-09; AUTO_CRITERION=eric, OFF
-// by default): what he prefers is predicted by "sheet within 3:1, then the
-// shortest wire" (13 of 16 pairs; the checker-first choice: 4). Unacceptable
-// drawings (severe errors: overlaps, bend on another net, wire through a part)
-// go last; the checker's error count only breaks remaining ties.
+// CRITERION D, DEFAULT since 2026-10-09 (Eric, after three blind series;
+// AUTO_CRITERION=checker restores the checker-first choice): what he prefers
+// is predicted by "sheet within 3:1, then fewer bends per wire, then the
+// shortest wire" (series 1-3: 17 of 23 pairs; checker-first: 6). Unacceptable
+// drawings (severe errors: parts on top of each other, a bend on another net,
+// a wire through a part, two nets on one line, a double line) go last, then
+// drawings joining an internal net by name (port labels) instead of a wire; the
+// checker's error count only breaks remaining ties (a guard, not a goal).
 const betterEric = (b, a) => {
   const sb = (b.severe ?? 0) > 0, sa = (a.severe ?? 0) > 0;
   if (sb !== sa) return !sb;
+  // then wires rather than connections by name (Eric)
+  if ((b.byName ?? 0) !== (a.byName ?? 0)) return (b.byName ?? 0) < (a.byName ?? 0);
   const wb = b.aspect > 3, wa = a.aspect > 3;
   if (wb !== wa) return !wb;
+  if (b.bends != null && a.bends != null && Math.abs(b.bends - a.bends) > 0.05) return b.bends < a.bends;
   if (b.wire != null && a.wire != null && Math.abs(b.wire - a.wire) > 0.02 * Math.max(a.wire, b.wire)) return b.wire < a.wire;
   return b.errs < a.errs;
 };
 const better = (b, a) => {
   if (b.errs === Infinity || a.errs === Infinity) return b.errs < a.errs;
-  if (process.env.AUTO_CRITERION === 'eric') return betterEric(b, a);
+  if (process.env.AUTO_CRITERION !== 'checker') return betterEric(b, a);
   if (b.errs !== a.errs) return b.errs < a.errs;
   if (wide(b) !== wide(a)) return !wide(b);
   if (b.basics != null && a.basics != null && b.basics !== a.basics) return b.basics < a.basics;
@@ -122,7 +152,7 @@ let tmpSeq = 0;
 // errors that make a drawing UNACCEPTABLE to the eye (criterion D): parts on
 // top of each other, a bend lying on another net (reads as a contact), a wire
 // through a part
-const SEVERE = new Set(['comp-overlap', '22-contact', 'through']);
+const SEVERE = new Set(['comp-overlap', '22-contact', 'through', '22', 'double-line']);
 function checkPyErrors(doc) {
   return new Promise((resolve) => {
     const f = path.join(os.tmpdir(), `auto-judge-${process.pid}-${tmpSeq++}.drawio`);
@@ -155,8 +185,10 @@ export async function autoPlace(parsed) {
   // 2026-10-07; AUTO_SA=0 disables, AUTO_SA_MAX=N limits it to N parts)
   if (process.env.AUTO_SA !== '0' && parsed.components.length <= Number(process.env.AUTO_SA_MAX ?? Infinity)) specs.push(['sa', null, {}, {}]);
   // the stage-driven engine (lib/place-stages.js) as one more candidate, only
-  // when the topological reading is sure (AUTO_STAGES=1, OFF by default)
-  if (process.env.AUTO_STAGES === '1' && stagesConfident(parsed)) specs.push(['stages', null, {}, {}]);
+  // when the topological reading is sure; DEFAULT since 2026-10-09 for circuits
+  // of at most 12 parts (Eric: liked on small circuits, bad on a 15-part PA;
+  // AUTO_STAGES=0 disables, AUTO_STAGES_MAX changes the size)
+  if (process.env.AUTO_STAGES !== '0' && parsed.components.length <= Number(process.env.AUTO_STAGES_MAX ?? 12) && stagesConfident(parsed)) specs.push(['stages', null, {}, {}]);
   // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
   // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
   // on one thread the budget only ever saw v2 finish on the big converters.
@@ -203,6 +235,16 @@ export async function autoPlace(parsed) {
     const any = trials.find((t) => t.doc);
     if (!any) { const e = new Error('auto: every engine failed: ' + trials.map((t) => t.error).join(' | ')); e.status = 422; throw e; }
     return { doc: any.doc, placed: any.placed, label: candidateLabel(any), timedOut, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed }])) };
+  }
+  // FINISHING of the chosen drawing (Eric 2026-10-09, default; AUTO_POLISH=0
+  // disables): the symmetric X of cross-coupled pairs, then the straightening
+  // pass (avoidable bends, labels glued) — each step guarded by tools/check.py
+  if (process.env.AUTO_POLISH !== '0' && process.env.AUTO_JUDGE !== 'js') {
+    try {
+      const page = getPage(win.doc);
+      await crossCoupledX(page, parsed, { errorCount: checkerErrors, fixDots });
+      await straighten(page);
+    } catch { /* the unfinished drawing stays as chosen */ }
   }
   return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics }])) };
 }

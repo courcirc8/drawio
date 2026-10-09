@@ -35,7 +35,6 @@ async function drawReading(netlist) {
       const k = t[0].toUpperCase(), c = (seen.get(k) || 0) + 1; seen.set(k, c);
       if (c > 1) t[0] = `${t[0]}_${c}`;
     }
-    if (/^[RCL]/i.test(t[0] || '') && t.length === 3) t.push('1');
     if (/^D/i.test(t[0] || '') && t.length === 3) t.push('D');
     if (/^[VI]/i.test(t[0] || '') && t.length === 3) t.push('DC', '0');
     return t.join(' ');
@@ -57,6 +56,9 @@ const SRC = arg('--src'), BATCH = arg('--batch', 'lectures-1');
 // --redraw DIR: redraw an existing batch (auto + straightening pass), the old
 // drawings kept as img/<n>-draw-v<k>.png; verdicts and items untouched but lvs/note
 const REDRAW = arg('--redraw');
+// --with DIR: each reading is shown NEXT TO the reading of the same figure in
+// another batch (Eric 2026-10-09: Gemma beside Claude), with the verdict Eric gave it
+const WITH = arg('--with');
 // (a reading refused as unreadable — empty netlist — has nothing to check: skipped and listed)
 if (!SRC && !REDRAW) { console.error('usage: --src FILE.jsonl [--batch lectures-1] | --redraw BATCH_DIR'); process.exit(1); }
 if (REDRAW) {
@@ -115,7 +117,6 @@ for (const r of rows) {
       if (c > 1) t[0] = `${t[0]}_${c}`;
       l = t.join(' ');
     }
-    if (/^[RCL]/i.test(t[0]) && t.length === 3) return `${l} 1`;
     if (/^D/i.test(t[0]) && t.length === 3) return `${l} D`;
     if (/^[VI]/i.test(t[0]) && t.length === 3) return `${l} DC 0`;
     return l;
@@ -131,7 +132,18 @@ for (const r of rows) {
     note = (note ? note + ' — ' : '') + `drawio n'a pas pu dessiner cette netlist (${String(e.message || e).slice(0, 120)})`;
     execFileSync('python3', ['-c', 'import sys;from PIL import Image,ImageDraw;im=Image.new("RGB",(600,120),"white");ImageDraw.Draw(im).text((10,50),"dessin impossible",fill="black");im.save(sys.argv[1])', `${OUT}/img/${n}-draw.png`]);
   }
-  items.push({ n, key, ref, netlist, lvs, note, level: L.level || null, version: r.lecture_version || null, source: r.source || r.lecteur || null });
+  let other = null;
+  if (WITH) {
+    const its = fs.readFileSync(`${WITH}/items.jsonl`, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const ans = fs.existsSync(`${WITH}/answers.jsonl`) ? fs.readFileSync(`${WITH}/answers.jsonl`, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+    const o = its.find((x) => x.key === key);
+    if (o) {
+      fs.copyFileSync(`${WITH}/img/${o.n}-draw.png`, `${OUT}/img/${n}-draw2.png`);
+      const a = ans.find((x) => x.n === o.n);
+      other = { reader: o.version || o.source || 'lecture précédente', netlist: o.netlist, verdict: a?.verdict || null, comment: a?.comment || '' };
+    }
+  }
+  items.push({ n, key, ref, netlist, lvs, note, level: L.level || null, version: r.lecture_version || r.lecteur || null, source: r.source || r.lecteur || null, other });
   console.error(`${n} ${key} lvs=${lvs}`);
 }
 fs.writeFileSync(`${OUT}/items.jsonl`, items.map((x) => JSON.stringify(x)).join('\n') + '\n');
