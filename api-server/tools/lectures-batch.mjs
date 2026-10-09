@@ -1,0 +1,62 @@
+#!/usr/bin/env node
+/**
+ * lectures-batch.mjs — builds a batch for /eric-lectures (lib/verify.js): Eric
+ * checks readings of IEEE DVD figures (Eric 2026-10-09: readings made by
+ * Claude for the RAG session). For each reading: the figure cropped by the
+ * RAG (rag.extract.figures crop) with its citation, the drawing drawio makes
+ * from the netlist read (engine auto as served, LVS reported), the netlist
+ * text. The readings stay OUT of every measurement until Eric's verdict (they
+ * are not in the bank); a netlist matching a sealed circuit is refused.
+ *
+ * Input: JSONL, one reading per line, with paper_id, page (from 1), rang (from
+ * 0) and the netlist as SPICE text in `netlist` (or `spice`); optional legende.
+ * Usage: node tools/lectures-batch.mjs --src FILE.jsonl [--batch lectures-1]
+ */
+import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { getPage } from '../lib/model.js';
+import { parseSpice, extractNetlist } from '../lib/netlist.js';
+import { compare } from '../lib/lvs.js';
+import { autoPlace } from '../lib/auto.js';
+import { exportDocument } from '../lib/render.js';
+import { sealedStatus } from '../lib/sealed.js';
+
+const argv = process.argv.slice(2);
+const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
+const SRC = arg('--src'), BATCH = arg('--batch', 'lectures-1');
+if (!SRC) { console.error('usage: --src FILE.jsonl [--batch lectures-1]'); process.exit(1); }
+const OUT = `${process.env.VERIFY_ROOT || '/AI/datasets/judge/lectures'}/${BATCH}`;
+if (fs.existsSync(OUT)) { console.error(`${OUT} exists: refusing to overwrite a batch`); process.exit(1); }
+const RAG = `${process.env.HOME}/ClaudeCode/local_AI/rag`;
+fs.mkdirSync(`${OUT}/img`, { recursive: true });
+
+const rows = fs.readFileSync(SRC, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+const items = [];
+for (const r of rows) {
+  const n = items.length + 1;
+  const key = `${r.paper_id} p${r.page} r${r.rang}`;
+  let netlist = String(r.netlist ?? r.spice ?? '').trim();
+  if (!netlist) { console.error(`${key}: no netlist text, skipped`); continue; }
+  if (!/\.end\b/i.test(netlist)) netlist += '\n.end';
+  if (sealedStatus(netlist)) { console.error(`${key}: matches a sealed circuit, refused`); continue; }
+  // the figure, cropped by the RAG, and its citation
+  execFileSync(`${RAG}/.venv/bin/python`, ['-m', 'rag.extract.figures', 'crop', r.paper_id, String(r.page), String(r.rang), `${OUT}/img/${n}-ref.png`], { cwd: RAG, stdio: 'ignore', timeout: 120000 });
+  const a = await (await fetch(`http://127.0.0.1:8790/api/article?id=${encodeURIComponent(r.paper_id)}`)).json();
+  const ref = { paper_id: r.paper_id, page: r.page, rang: r.rang, legende: r.legende || '', title: a.title, venue: a.venue, year: a.year, authors: a.authors };
+  // the drawing drawio makes from the reading (auto, as served)
+  let lvs = null, note = '';
+  try {
+    const p = parseSpice(netlist);
+    const res = await autoPlace(p);
+    lvs = compare(extractNetlist(getPage(res.doc)), p).match;
+    fs.writeFileSync(`${OUT}/img/${n}-draw.png`, (await exportDocument(res.doc, getPage(res.doc), { format: 'png', scale: 1.5 })).buffer);
+  } catch (e) {
+    note = `drawio n'a pas pu dessiner cette netlist (${String(e.message || e).slice(0, 120)})`;
+    execFileSync('python3', ['-c', 'import sys;from PIL import Image,ImageDraw;im=Image.new("RGB",(600,120),"white");ImageDraw.Draw(im).text((10,50),"dessin impossible",fill="black");im.save(sys.argv[1])', `${OUT}/img/${n}-draw.png`]);
+  }
+  items.push({ n, key, ref, netlist, lvs, note, source: r.source || r.lecteur || null });
+  console.error(`${n} ${key} lvs=${lvs}`);
+}
+fs.writeFileSync(`${OUT}/items.jsonl`, items.map((x) => JSON.stringify(x)).join('\n') + '\n');
+console.log(`${items.length} readings -> ${OUT}`);
+process.exit(0);

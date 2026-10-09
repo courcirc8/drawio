@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>La lecture est-elle juste ?</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #f4f4f4; }
+  header { padding: 10px 12px; font-size: 15px; display: flex; justify-content: space-between; }
+  h3 { font-size: 15px; margin: 10px 12px 4px; }
+  .box { margin: 0 8px; background: #fff; border: 1px solid #bbb; border-radius: 8px; padding: 6px; }
+  .box img { width: 100%; max-height: 45vh; object-fit: contain; display: block; }
+  .cite { font-size: 13px; margin: 6px 2px 2px; line-height: 1.35; }
+  pre { margin: 0 8px; background: #fff; border: 1px solid #bbb; border-radius: 8px; padding: 8px; font-size: 13px; overflow-x: auto; white-space: pre; }
+  .warn { color: #a40; font-size: 13px; margin: 4px 12px; }
+  .verdicts { display: flex; gap: 8px; margin: 10px 8px; }
+  .verdicts button { flex: 1; padding: 14px 0; font-size: 17px; border-radius: 8px; border: 3px solid #ccc; background: #fff; }
+  .sel { border-color: #2a7 !important; background: #eefaf2 !important; }
+  .note { margin: 4px 8px; display: flex; gap: 8px; align-items: flex-start; }
+  .note textarea { flex: 1; min-height: 4.5em; font-size: 16px; border-radius: 8px; border: 1px solid #999; padding: 6px; }
+  .mic { font-size: 26px; width: 56px; height: 56px; border-radius: 50%; border: 1px solid #999; background: #fff; }
+  .mic.rec { background: #e33; border-color: #e33; }
+  .etat { margin: 2px 12px; font-size: 13px; color: #555; min-height: 1.2em; }
+  .go { display: block; margin: 10px auto 30px; padding: 12px 30px; font-size: 17px; border-radius: 8px; border: none; background: #2a7; color: #fff; }
+  .go:disabled { background: #9cc; }
+  .msg { padding: 40px 16px; text-align: center; font-size: 18px; }
+  a { color: #06c; }
+</style>
+</head>
+<body>
+<header><span>La lecture est-elle juste ?</span><span id="prog"></span></header>
+<div id="main"></div>
+<script>
+const batch = new URLSearchParams(location.search).get('batch') || 'lectures-1';
+const main = document.getElementById('main'), prog = document.getElementById('prog');
+const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+let cur = null, verdict = null, busy = false, rec = null, chunks = [];
+
+function cite(r) {
+  if (!r) return '';
+  const pdf = `../rag/api/page.png?id=${encodeURIComponent(r.paper_id)}&n=${Number(r.page) || 1}&dpi=150`;
+  return `<b>${esc(r.title)}</b><br>${esc((r.authors || []).slice(0, 3).join(', '))}${(r.authors || []).length > 3 ? ' et al.' : ''} — ${esc(r.venue)} ${esc(r.year)}, page ${esc(r.page)}`
+    + (r.legende ? `<br><i>${esc(r.legende)}</i>` : '')
+    + `<br><a href="${pdf}" target="_blank">Ouvrir la page PDF complète</a> · <a href="../rag/?id=${encodeURIComponent(r.paper_id)}" target="_blank">l'article</a>`;
+}
+
+async function next() {
+  const r = await (await fetch(`verify/api/next?batch=${encodeURIComponent(batch)}`)).json();
+  if (r.finished) { prog.textContent = `${r.done}/${r.total}`; main.innerHTML = '<div class="msg">Terminé, merci !</div>'; return; }
+  cur = r.n; verdict = null; prog.textContent = `${r.done + 1}/${r.total}`;
+  const src = (k) => `verify/img/${encodeURIComponent(batch)}/${r.n}-${k}.png`;
+  main.innerHTML = `<h3>Figure d'origine</h3><div class="box"><a href="${src('ref')}" target="_blank"><img src="${src('ref')}" alt="figure"></a><div class="cite">${cite(r.ref)}</div></div>`
+    + `<h3>Schéma dessiné par drawio à partir de la lecture</h3><div class="box"><a href="${src('draw')}" target="_blank"><img src="${src('draw')}" alt="dessin"></a></div>`
+    + (r.lvs === false ? '<div class="warn">Attention : le dessin ne reproduit pas exactement la netlist (LVS).</div>' : '')
+    + (r.note ? `<div class="warn">${esc(r.note)}</div>` : '')
+    + `<h3>Netlist lue</h3><pre>${esc(r.netlist)}</pre>`
+    + `<h3>La lecture est…</h3><div class="verdicts"><button data-v="juste">Juste</button><button data-v="partiel">Partielle</button><button data-v="faux">Fausse</button></div>`
+    + `<h3>Ce qui ne va pas (facultatif)</h3><div class="note"><textarea id="txt" placeholder="Dictez avec 🎤 ou écrivez…"></textarea><button class="mic" id="mic" title="Dicter">🎤</button></div>`
+    + `<div class="etat" id="etat"></div><button class="go" id="go" disabled>Enregistrer et suivant</button>`;
+  main.querySelectorAll('[data-v]').forEach((b) => b.onclick = () => {
+    verdict = b.dataset.v;
+    main.querySelectorAll('[data-v]').forEach((x) => x.classList.toggle('sel', x === b));
+    document.getElementById('go').disabled = false;
+  });
+  document.getElementById('mic').onclick = dicter;
+  document.getElementById('go').onclick = save;
+  scrollTo(0, 0);
+}
+
+function dicter() {
+  const etat = document.getElementById('etat'), mic = document.getElementById('mic');
+  if (rec && rec.state === 'recording') { rec.stop(); return; }
+  if (!navigator.mediaDevices || !window.MediaRecorder) { etat.textContent = 'Dictée indisponible dans ce navigateur.'; return; }
+  navigator.mediaDevices.getUserMedia({ audio: true }).then((flux) => {
+    const type = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find((t) => MediaRecorder.isTypeSupported(t)) || '';
+    rec = new MediaRecorder(flux, type ? { mimeType: type } : {});
+    chunks = [];
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      flux.getTracks().forEach((t) => t.stop());
+      mic.classList.remove('rec'); etat.textContent = 'Transcription…';
+      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/mp4' }); chunks = [];
+      try {
+        // same local transcriber as the comparison page (audio never stored)
+        const r = await (await fetch('compare/api/transcrire', { method: 'POST', headers: { 'Content-Type': blob.type }, body: blob })).json();
+        if (r.texte) { const t = document.getElementById('txt'); t.value = (t.value ? t.value + ' ' : '') + r.texte.trim(); etat.textContent = 'Texte ajouté (modifiable).'; }
+        else etat.textContent = r.erreur || 'Rien entendu.';
+      } catch (e) { etat.textContent = 'Transcription impossible : ' + e; }
+    };
+    rec.start(); mic.classList.add('rec'); etat.textContent = 'Enregistrement… touchez 🎤 pour arrêter (l\'audio n\'est pas conservé).';
+  }).catch(() => { etat.textContent = 'Micro refusé.'; });
+}
+
+async function save() {
+  if (busy || !verdict) return; busy = true;
+  try {
+    await fetch('verify/api/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch, n: cur, verdict, comment: document.getElementById('txt').value }) });
+    await next();
+  } finally { busy = false; }
+}
+next();
+</script>
+</body>
+</html>
