@@ -574,6 +574,17 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   composants les uns sur les autres ; éviter les coudes en alignant (résistance) ; miroirs et symétrie horizontale des
   MOS ; étages d'entrée à gauche, de sortie à droite ; empilements verticaux (M3, M4) ; dessin par sous-blocs.
 
+- DÉCISION D'ERIC (9 oct.) : PÉRIMÈTRE ≤ 25 COMPOSANTS pour la mesure, les séries et les réglages (les > 25 restent
+  dans la banque, hors périmètre ; sous-blocs et canaux proportionnels REPORTÉS). « La reconnaissance topologique est
+  toujours la clef d'un schéma lisible. » Inventaire sur les 3 264 circuits ≤ 25 de la banque propre : 46 % des
+  composants (53 % des transistors) dans un motif AVEC recette de placement ; étages élémentaires détectés SANS recette
+  (source commune 1 053, grille commune 989, suiveur 1 109, interrupteur 506, BJT résistif 148 composants) ; charges et
+  polarisation rattachées à aucun étage (2 107 R, 1 503 C, 475 L, 393 sources I hors motif) ; pas de graphe d'étages ;
+  sa (élu ~40 %) ignore le registre de motifs. PLAN envoyé à l'orchestrateur : A périmètre ≤ 25 dans les outils +
+  référence ; B reconnaissance d'étages (couverture ≥ 90 % des transistors) ; C placement par le graphe d'étages
+  (nouveau candidat) ; D nouveau critère d'auto ; E série 3 (10 paires ≤ 25, netlists exactes ou lectures vérifiées).
+  Activation de C et D seulement avec l'accord d'Eric.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
