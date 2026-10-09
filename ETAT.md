@@ -600,6 +600,21 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   parallèle/série, correction D/S depuis les rails (ALIGN) ; meilleur match mutuel et auto-symétriques (MAGICAL) ;
   rang = plus long chemin depuis les entrées (asg) ; blocs typés à ports sémantiques (pyckt, idée seulement).
 
+- ÉTAPE B — RECONNAISSANCE DES RÔLES ET DES ÉTAGES (`lib/stages.js`, outil `tools/stages-eval.mjs` ; analyse pure,
+  aucun dessin changé) : rôle de chaque composant (paire, paire croisée, miroir réf./sortie, cascode, queue, source de
+  courant, source commune, grille commune, suiveur, interrupteur, inverseur, diode, varactor ; charge, dégénérescence,
+  contre-réaction, liaison, polarisation, découplage), branches DC rail → rail (chemins bornés), étages = branches
+  liées par un nœud drain/source commun (paires et paires croisées réunies ; miroir séparé de sa référence), ordre
+  du signal = plus long chemin depuis les étages d'entrée (sortie drain → grille, à travers une liaison).
+  Couverture (1 777 circuits ≤ 25, netlists exactes) : 100 % des transistors ont un rôle, 81 % des composants dans un
+  étage — chiffre trompeur (un repli donne toujours un rôle). JUSTESSE vérifiée à la main sur 30 circuits avec figure
+  (15 AMSNet, 15 AnalogGenie à image propre) : 15 justes, 11 en partie, 4 faux (dont 2 réseaux passifs / modèle petit
+  signal). Corrigés pendant le contrôle : sources de courant idéales (queue, pas « dégénérescence »), broche de
+  polarisation externe (Vb) distinguée d'une entrée (position de charge), miroir cascode basse tension, paire croisée
+  avant paire différentielle, varactors, horloges VCLK/VLATCH (interrupteurs), entrée en courant IIN.
+  RESTE : paires à sources séparées (dégénérescence commutée, entrée via interrupteurs), suiveur à contre-réaction
+  locale (FVF), comparateurs dynamiques / verrous, références BJT (bandgap), boucles d'auto-polarisation.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
