@@ -40,3 +40,11 @@ test('latch: auto draws it with the template, LVS-clean, and it passes the quali
   const q = qualityGate(m, p);
   assert.ok(q.pass, JSON.stringify(q.checks));
 });
+
+test('quality gate: an absurd reading (parts in two groups joined by no net) is refused', async () => {
+  const p = parseSpice(`M1 a g1 0 0 nmos\nR1 vdd a 1k\nM2 b g2 0 0 nmos\nR2 vdd b 1k\n.end`);
+  const r = await autoPlace(p);
+  const q = qualityGate(getPage(r.doc), p);
+  assert.equal(q.checks.netlist.ok, false);
+  assert.equal(q.pass, false);
+});
