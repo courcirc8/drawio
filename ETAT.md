@@ -585,6 +585,21 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   (nouveau candidat) ; D nouveau critère d'auto ; E série 3 (10 paires ≤ 25, netlists exactes ou lectures vérifiées).
   Activation de C et D seulement avec l'accord d'Eric.
 
+- RÉFÉRENCE ≤ 25 (ÉTAPE A, 9 oct. ; DVD natif EXCLU — lecture-1 non fiable selon le RAG ; netlists exactes seulement :
+  AMSNet, AnalogGenie propres, LTspice, KiCad, schémas open PDK ; runs `p25-*`, les DVD retirés du résultat ;
+  scellés refusés 60, aucun échec, aucun LVS faux) :
+    | jeu | n | zéro erreur | err/c | > 3:1 | crois./c | fil/c |
+    | réglage | 1 021 | 91,8 % | 0,12 | 5,9 % | 2,5 | 454 |
+    | test | 648 | 90,3 % | 0,20 | 7,6 % | 3,0 | 456 |
+    | jamais vues | 169 | 84,6 % | 0,25 | 5,9 % | 5,3 | 606 |
+  Jamais vues par famille : data-converter 104 → 88 %, regulator 27 → 78 %, sampler-sc 38 → 79 % (petit jeu). Familles
+  faibles : oscillateur (68 % réglage, 81 % test), filtre (77 %), comparateur (79-86 %), PLL (80 %) ; KiCad 70-85 %.
+  RAPPEL : « zéro erreur » au vérificateur ≠ lisibilité pour Eric (séries 1-2).
+  Recherche open source pour B : `references/ANALYSE.md` (ALIGN-public, MAGICAL, pyckt, asg, EEschematic) — aucun ne
+  reconnaît les étages ni n'ordonne le signal ; idées reprises : graphe à arêtes = ensembles de broches, fusion
+  parallèle/série, correction D/S depuis les rails (ALIGN) ; meilleur match mutuel et auto-symétriques (MAGICAL) ;
+  rang = plus long chemin depuis les entrées (asg) ; blocs typés à ports sémantiques (pyckt, idée seulement).
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
