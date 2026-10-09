@@ -351,3 +351,25 @@ export function glueLabels(model, gap = 3) {
     updateCell(model, l.id, { x: Math.round(x), y: Math.round(y) });
   }
 }
+
+/** Error count of the bench checker (tools/check.py) on a page, null on failure. */
+export async function checkerErrors(m) { return (await errorCount(m))?.n ?? null; }
+
+/** Contact dots as the bench checker wants them: rebuilt from the wires, then
+ *  added where check.py finds a branch without one (rule 30) and removed where
+ *  it finds one on a mere bend (dot-2way). */
+export async function fixDots(model) {
+  try { rebuildLocalDots(model); } catch { /* none */ }
+  const r = await errorCount(model);
+  const vs = (r?.v || []).filter((x) => (x.rule === '30' || x.rule === 'dot-2way') && Array.isArray(x.at));
+  if (!vs.length) return;
+  let k = 0;
+  for (const x of vs) {
+    const cells = allCells(model);
+    const at = (el) => { const c = cellInfo(el); return c.kind === 'vertex' && c.style.map.get('contactDot') === '1' && Math.hypot(c.x + c.w / 2 - x.at[0], c.y + c.h / 2 - x.at[1]) < 1.5; };
+    if (x.rule === 'dot-2way') { for (const el of cells) if (at(el)) el.parentNode.removeChild(el); continue; }
+    if (cells.some(at)) continue;
+    while (cells.some((el) => el.getAttribute('id') === 'ST_DOT_' + k)) k++;
+    addVertex(model, { id: 'ST_DOT_' + k++, x: x.at[0] - 3, y: x.at[1] - 3, w: 6, h: 6, style: 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;' });
+  }
+}

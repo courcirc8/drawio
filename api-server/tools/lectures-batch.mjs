@@ -20,7 +20,8 @@ import { compare } from '../lib/lvs.js';
 import { autoPlace } from '../lib/auto.js';
 import { exportDocument } from '../lib/render.js';
 import { sealedStatus } from '../lib/sealed.js';
-import { straighten, avoidableBends } from '../lib/straighten.js';
+import { straighten, avoidableBends, checkerErrors, fixDots } from '../lib/straighten.js';
+import { crossCoupledX } from '../lib/crossx.js';
 
 /** auto + straightening pass (Eric 2026-10-09: no avoidable bend) on a reading. */
 async function drawReading(netlist) {
@@ -43,6 +44,7 @@ async function drawReading(netlist) {
     const p = parseSpice(/\.end\b/i.test(text) ? text : text + '\n.end');
     const res = await autoPlace(p), m = getPage(res.doc);
     const before = avoidableBends(m).bends;
+    await crossCoupledX(m, p, { errorCount: checkerErrors, fixDots });   // the symmetric X of a cross-coupled pair (Eric)
     await straighten(m);
     const after = avoidableBends(m).bends;
     return { lvs: compare(extractNetlist(m), p).match, png: (await exportDocument(res.doc, m, { format: 'png', scale: 1.5 })).buffer, straighten: { before, after } };

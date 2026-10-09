@@ -679,6 +679,16 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   fil le plus court 16/7 ; feuille ≤ 3:1 puis fil (critère D) 17/6 ; ≤ 3:1 puis coudes par fil + 0,1·croisements
   17/6 ; série 3 seule : coudes par fil 6/7.
 
+- X SYMÉTRIQUE DES PAIRES CROISÉES (Eric, 9 oct. : « autoriser les fils en diagonale pour les croisements symétriques
+  de 2 lignes horizontales, genre VCO drain / grille » ; `lib/crossx.js`) : pour une paire croisée sur UNE rangée, grilles
+  tournées face à face, chaque grille part à l'horizontale vers le centre, croise l'autre en diagonale, et rejoint le
+  drain du partenaire sur une horizontale juste au-delà des drains (`edgeStyle=none`, `drawioApiCrossX=1` : check.py
+  exempte ces diagonales volontaires). Les deux fils du X sont AJOUTÉS ; un ancien fil de grille n'est supprimé que si
+  le LVS reste juste, sinon il est rebranché sur le drain du partenaire (même net). Points de contact réparés selon
+  check.py (`fixDots`). Abandon si LVS faux ou une erreur de plus. Sur 40 circuits ≤ 25 à paire croisée : 31 paires sur
+  71 dessinées en X ; refus : 31 (un autre composant ou d'autres fils occupent l'espace du X — le placement ne réserve
+  pas cette zone), 9 paires pas sur une rangée. Appliqué aux pages de lectures (avant le redressement) ; PAS dans auto.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.

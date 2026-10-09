@@ -14,7 +14,8 @@ import { parseSpice, extractNetlist } from '../lib/netlist.js';
 import { getPage, serialize, allCells, cellInfo } from '../lib/model.js';
 import { autoPlace } from '../lib/auto.js';
 import { compare } from '../lib/lvs.js';
-import { straighten, avoidableBends } from '../lib/straighten.js';
+import { straighten, avoidableBends, checkerErrors, fixDots } from '../lib/straighten.js';
+import { crossCoupledX } from '../lib/crossx.js';
 import { bankExclusions, sealedStatus } from '../lib/sealed.js';
 
 const argv = process.argv.slice(2);
@@ -46,7 +47,7 @@ for (const it of list) {
   let r; try { r = await autoPlace(p); } catch { continue; }
   const m = getPage(r.doc);
   const a0 = avoidableBends(m).bends, b0 = bends(m), e0 = check(r.doc);
-  const t = Date.now(); await straighten(m); tot.ms += Date.now() - t;
+  const t = Date.now(); const cx = await crossCoupledX(m, p, { errorCount: checkerErrors, fixDots }); tot.x = (tot.x || 0) + cx.drawn; await straighten(m); tot.ms += Date.now() - t;
   const a1 = avoidableBends(m).bends, b1 = bends(m), e1 = check(r.doc);
   if (!compare(extractNetlist(m), p).match) tot.lvsBad++;
   tot.n++; tot.av0 += a0; tot.av1 += a1; tot.b0 += b0; tot.b1 += b1; tot.e0 += e0?.n ?? 0; tot.e1 += e1?.n ?? 0;
@@ -56,5 +57,5 @@ for (const it of list) {
 }
 const f = (x) => (x / Math.max(1, tot.n)).toFixed(2);
 console.log(`${tot.n} dessins — coudes évitables/dessin ${f(tot.av0)} -> ${f(tot.av1)} ; coudes totaux/dessin ${f(tot.b0)} -> ${f(tot.b1)} (moins ${tot.better}, plus ${tot.worse}) ; erreurs check.py/dessin ${f(tot.e0)} -> ${f(tot.e1)} ; LVS cassé ${tot.lvsBad} ; ${Math.round(tot.ms / Math.max(1, tot.n))} ms/dessin`);
-console.log('règles (après - avant):', JSON.stringify(tot.rd || {})); console.log((tot.worseIds || []).slice(0, 8).join('\n'));
+console.log('paires croisées dessinées en X :', tot.x || 0); console.log('règles (après - avant):', JSON.stringify(tot.rd || {})); console.log((tot.worseIds || []).slice(0, 8).join('\n'));
 process.exit(0);
