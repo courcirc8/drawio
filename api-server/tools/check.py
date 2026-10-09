@@ -351,6 +351,31 @@ class Checker:
         for i, ea in enumerate(eids):
             for eb in eids[i + 1:]:
                 if self.net[ea] == self.net[eb]:
+                    # SAME net, two different wires running side by side (1-3 px
+                    # apart, a double line) or on top of each other but drawn
+                    # apart: Eric (2026-10-09) reads two lines one on the other
+                    # as two nets. Exactly collinear (0 px) segments of one net
+                    # are a shared trunk, allowed.
+                    for a1, a2 in self.segs(ea):
+                        xa = seg_axis(a1, a2)
+                        if xa == 'd':
+                            continue
+                        for b1, b2 in self.segs(eb):
+                            if seg_axis(b1, b2) != xa:
+                                continue
+                            k = 1 if xa == 'h' else 0
+                            d = abs(a1[k] - b1[k])
+                            lo = max(min(a1[1 - k], a2[1 - k]), min(b1[1 - k], b2[1 - k]))
+                            hi = min(max(a1[1 - k], a2[1 - k]), max(b1[1 - k], b2[1 - k]))
+                            if 0.5 < d < 4 and hi - lo > TOL['net_overlap_len']:
+                                at = (lo, a1[1]) if xa == 'h' else (a1[0], lo)
+                                key = ('dbl', ea, eb, round(lo), round(d))
+                                if key in seen:
+                                    continue
+                                seen.add(key)
+                                self.add('double-line', 'error',
+                                         f'deux fils du même net à {d:.1f}px sur {hi - lo:.0f}px '
+                                         f'(trait double, lu comme deux nets) : {ea} / {eb}', at)
                     continue
                 for a1, a2 in self.segs(ea):
                     xa = seg_axis(a1, a2)

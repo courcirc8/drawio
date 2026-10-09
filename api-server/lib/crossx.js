@@ -56,11 +56,13 @@ export async function crossCoupledX(model, parsed, { errorCount, fixDots } = {})
     let cs = fresh();
     const pl = pins(L), pr = pins(R);
     const [dL, gL] = [pl.abs[0], pl.abs[1]], [dR, gR] = [pr.abs[0], pr.abs[1]];
-    const xC = (gL.x + gR.x) / 2, s = Math.max(8, Math.min(30, (gR.x - gL.x) / 4));
     if (gR.x - gL.x < 24) { no('trop serrés'); undo(); continue; }   // no room for an X between the gates
     // the drain line: just beyond the drains, away from the gates
     const off = (d, g) => (d.y < g.y ? -12 : 12);
     const yN = (dL.y + dR.y) / 2 + off(dL, gL);
+    // the diagonals at 45° (Eric: "la règle des 45°") when the gates leave
+    // room: half-width = half the drop, else as wide as the gap allows
+    const xC = (gL.x + gR.x) / 2, s = Math.max(8, Math.min(Math.abs(gL.y - yN) / 2, (gR.x - gL.x) / 2 - 12));
     const gateEdge = (c, gRel) => cs.find((e) => e.kind === 'edge' && ((e.source === c.id && near(e, 'exit', gRel)) || (e.target === c.id && near(e, 'entry', gRel))));
     const near = (e, end, rel) => Math.abs(Number(e.style.map.get(end + 'X') ?? -1) - rel.x) < 0.02 && Math.abs(Number(e.style.map.get(end + 'Y') ?? -1) - rel.y) < 0.02;
     const eL = gateEdge(L, pl.rel[1]), eR = gateEdge(R, pr.rel[1]);
@@ -88,6 +90,20 @@ export async function crossCoupledX(model, parsed, { errorCount, fixDots } = {})
         ? { source: partner.id, style: { exitX: dRel.x, exitY: dRel.y, edgeStyle: 'orthogonalEdgeStyle', drawioApiFixedRoute: null }, points: [] }
         : { target: partner.id, style: { entryX: dRel.x, entryY: dRel.y, edgeStyle: 'orthogonalEdgeStyle', drawioApiFixedRoute: null }, points: [] });
       reroute.push(e.id);
+    }
+    // any OTHER wire still on a gate (the net's link to a load or to the rest
+    // of the circuit, CICC 2007 Sheikhaei comparator) would cross the X: it is
+    // moved to the partner's drain too, the X joins it to the gate
+    for (const e of allCells(model).map(cellInfo)) {
+      if (e.kind !== 'edge' || e.style.map.get('drawioApiCrossX') === '1' || reroute.includes(e.id)) continue;
+      for (const [dev, gRel, partner, dRel] of [[L, pl.rel[1], R, pr.rel[0]], [R, pr.rel[1], L, pl.rel[0]]]) {
+        const atSource = e.source === dev.id && near(e, 'exit', gRel), atTarget = e.target === dev.id && near(e, 'entry', gRel);
+        if (!atSource && !atTarget) continue;
+        updateCell(model, e.id, atSource
+          ? { source: partner.id, style: { exitX: dRel.x, exitY: dRel.y, edgeStyle: 'orthogonalEdgeStyle', drawioApiFixedRoute: null }, points: [] }
+          : { target: partner.id, style: { entryX: dRel.x, entryY: dRel.y, edgeStyle: 'orthogonalEdgeStyle', drawioApiFixedRoute: null }, points: [] });
+        reroute.push(e.id);
+      }
     }
     if (reroute.length) await routePage(model, reroute, {});
     // the turned devices' other wires follow

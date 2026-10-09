@@ -44,12 +44,12 @@ export function mountVerify(app, wrap) {
     const done = new Set(readJsonl(path.join(dir, 'answers.jsonl')).map((a) => a.n));
     const it = items.find((x) => !done.has(x.n));
     if (!it) return res.json({ finished: true, total: items.length, done: done.size });
-    const { n, ref, netlist, lvs, note } = it;
-    res.json({ n, total: items.length, done: done.size, ref, netlist, lvs, note });
+    const { n, ref, netlist, lvs, note, other, version } = it;
+    res.json({ n, total: items.length, done: done.size, ref, netlist, lvs, note, other, version });
   }));
   app.get('/verify/img/:batch/:n-:kind.png', wrap(async (req, res) => {
     const n = Number(req.params.n);
-    if (!Number.isInteger(n) || !['ref', 'draw'].includes(req.params.kind)) return res.status(400).end();
+    if (!Number.isInteger(n) || !['ref', 'draw', 'draw2'].includes(req.params.kind)) return res.status(400).end();
     res.sendFile(path.join(batchDir(req.params.batch), 'img', `${n}-${req.params.kind}.png`));
   }));
   app.post('/verify/api/answer', wrap(async (req, res) => {

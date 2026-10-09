@@ -134,8 +134,12 @@ export function parseSpice(text, opts = {}) {
     }
     if (map.dropNodes) nodes = nodes.filter((_, i) => !map.dropNodes.includes(i));
     // V/I may carry "DC 5" style values
-    if (!rest.length) warnings.push('missing value or model: ' + line);
-    const value = rest.join(' ');
+    // a passive written WITHOUT a value (AnalogGenie, figure readings): its
+    // name is shown instead (Eric 2026-10-09: "pas 1k mais valeurs littérales"),
+    // never an invented value
+    const noValue = !rest.length && ['R', 'C', 'L'].includes(prefix);
+    if (!rest.length && !noValue) warnings.push('missing value or model: ' + line);
+    const value = noValue ? ref : rest.join(' ');
     components.push({ ref, prefix, nodes, fullNodes, value, model: ['M', 'Q', 'D', 'J'].includes(prefix) ? (rest[0] || '') : (rest[rest.length - 1] || '') });
   };
 

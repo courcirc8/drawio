@@ -53,7 +53,10 @@ async function next() {
     + `<h3>Schéma dessiné par drawio à partir de la lecture</h3><div class="box"><a href="${src('draw')}" target="_blank"><img src="${src('draw')}" alt="dessin"></a></div>`
     + (r.lvs === false ? '<div class="warn">Attention : le dessin ne reproduit pas exactement la netlist (LVS).</div>' : '')
     + (r.note ? `<div class="warn">${esc(r.note)}</div>` : '')
-    + `<h3>Netlist lue</h3><pre>${esc(r.netlist)}</pre>`
+    + `<h3>Netlist lue${r.version ? ' (' + esc(r.version) + ')' : ''}</h3><pre>${esc(r.netlist)}</pre>`
+    + (r.other ? `<h3>Pour comparer : lecture ${esc(r.other.reader)} de la même figure${r.other.verdict ? ' — votre verdict : ' + esc(r.other.verdict) : ''}</h3>`
+      + (r.other.comment ? `<div class="warn">${esc(r.other.comment)}</div>` : '')
+      + `<div class="box"><a href="${src('draw2')}" target="_blank"><img src="${src('draw2')}" alt="dessin"></a></div><pre>${esc(r.other.netlist)}</pre>` : '')
     + `<h3>La lecture est…</h3><div class="verdicts"><button data-v="juste">Juste</button><button data-v="partiel">Partielle</button><button data-v="faux">Fausse</button></div>`
     + `<h3>Ce qui ne va pas (facultatif)</h3><div class="note"><textarea id="txt" placeholder="Dictez avec 🎤 ou écrivez…"></textarea><button class="mic" id="mic" title="Dicter">🎤</button></div>`
     + `<div class="etat" id="etat"></div><button class="go" id="go" disabled>Enregistrer et suivant</button>`;

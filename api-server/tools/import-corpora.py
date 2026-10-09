@@ -54,7 +54,7 @@ def family_of(i):
 
 
 DEV = {'nmos4': ('M', 'NMOS'), 'pmos4': ('M', 'PMOS'), 'npn': ('Q', 'NPN'), 'pnp': ('Q', 'PNP'),
-       'resistor': ('R', '1k'), 'capacitor': ('C', '1p'), 'inductor': ('L', '1n'), 'diode': ('D', 'D')}
+       'resistor': ('R', ''), 'capacitor': ('C', ''), 'inductor': ('L', ''), 'diode': ('D', 'D')}   # AnalogGenie has no values: none invented (Eric 2026-10-09)
 LINE = re.compile(r'^\s*(\S+)\s*\(([^)]*)\)\s*(\S+)')
 
 

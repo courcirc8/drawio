@@ -278,6 +278,9 @@ mountCompare(app, wrap);
 // Eric checks a reading of a figure (lib/verify.js): figure, drawing, netlist, verdict
 const { mountVerify } = await import('./lib/verify.js');
 mountVerify(app, wrap);
+// read-only review sets for the orchestrator (lib/review.js, tools/review-batch.mjs)
+const { mountReview } = await import('./lib/review.js');
+mountReview(app, wrap);
 // Eric's before/after page (tools/eric-pairs-batch.mjs): the blind /compare page
 // on the eric-paires batch; relative redirect so it works behind /drawio/
 // (the newest eric-paires* batch; earlier batches keep their answers)
