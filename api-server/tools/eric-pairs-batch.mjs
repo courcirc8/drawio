@@ -24,7 +24,7 @@ import { assertNotSealed, bankExclusions } from '../lib/sealed.js';
 const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const BATCH = arg('--batch', 'eric-paires');
-const QUOTA = Object.fromEntries(arg('--quota', 'oscillator:2,filter:2,lna:2,power:2,regulator:2').split(',').map((q) => { const [f, n] = q.split(':'); return [f, Number(n)]; }));
+const QUOTA0 = Object.fromEntries(arg('--quota', 'oscillator:2,filter:2,lna:2,power:2,regulator:2').split(',').map((q) => { const [f, n] = q.split(':'); return [f, Number(n)]; }));
 let seed = Number(arg('--seed', 8));
 const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
 const BANK = '/AI/datasets/netlists/bank', JUDGE = '/AI/datasets/judge';
@@ -35,7 +35,22 @@ const jsonl = (f) => fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolea
 const man = new Map(fs.readdirSync(BANK).filter((f) => /^manifest.*\.jsonl$/.test(f)).flatMap((f) => jsonl(`${BANK}/${f}`)).map((r) => [r.id, r]));
 const shown = new Set(fs.readdirSync(ROOT).flatMap((d) => (fs.existsSync(`${ROOT}/${d}/items.jsonl`) ? jsonl(`${ROOT}/${d}/items.jsonl`).map((x) => x.id) : [])));
 const ex = bankExclusions(BANK);
-const judged = fs.readdirSync(JUDGE).filter((f) => /^pairs3-.*\.jsonl$/.test(f)).flatMap((f) => jsonl(`${JUDGE}/${f}`));
+// --mode old (default): auto d'avant vs auto d'aujourd'hui on the circuits
+// Ornith hesitated on; --mode d (series 3, 2026-10-09): auto as it is vs auto
+// with criterion D + the stage engine (AUTO_CRITERION=eric AUTO_STAGES=1), on
+// the bench circuits whose drawing changes (runs p25-* vs dES-*), the ones
+// where the stage engine was chosen first
+const MODE = arg('--mode', 'old');
+const RUNS = '/AI/datasets/netlists/runs';
+const runRows = (d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => f.endsWith('.jsonl')).flatMap((f) => jsonl(`${d}/${f}`)) : []);
+const judged = MODE === 'd'
+  ? (() => {
+    const cur = new Map(['tune', 'test'].flatMap((sp) => runRows(`${RUNS}/p25-${sp}`)).map((r) => [r.id, r]));
+    return ['tune', 'test'].flatMap((sp) => runRows(`${RUNS}/dES-${sp}`)).filter((r) => r.errors != null && cur.has(r.id) && cur.get(r.id).chosen !== r.chosen)
+      .filter((r) => !['logic', 'memory', 'misc', 'unknown'].includes(String(r.family).replace('*', '')))   // analog circuits only
+      .map((r) => ({ id: r.id, family: String(r.family).replace('*', ''), parts: r.parts, prefers: r.chosen === 'stages' ? 'inconsistent' : 'auto' }));
+  })()
+  : fs.readdirSync(JUDGE).filter((f) => /^pairs3-.*\.jsonl$/.test(f)).flatMap((f) => jsonl(`${JUDGE}/${f}`));
 // hesitation first (order-inconsistent), then the circuits Ornith decided (a
 // family short of hesitations: VCO, filter); large circuits first for power / regulator
 const big = new Set(['power', 'regulator']);
@@ -46,6 +61,9 @@ const tier = (r) => (r.prefers === 'inconsistent' ? 0 : 1);
 // the source image of the textbook schematic. Only circuits WITH a reference are
 // kept (--need-ref 0 to allow none). A DVD reading must look like a circuit
 // (5+ parts, 2+ transistors): some readings are not real circuits.
+// --quota any:N — at most N per family, whatever the family
+const QUOTA = QUOTA0.any ? new Proxy({}, { get: (_, k) => (typeof k === 'string' ? QUOTA0.any : undefined) }) : QUOTA0;
+const TOTAL = Number(arg('--total', 10));
 const NEED_REF = arg('--need-ref', '1') !== '0';
 const MAX_PARTS = Number(arg('--max-parts', 25)) || Infinity;   // Eric's perimeter (2026-10-09); 0 = none
 const RAG = `${process.env.HOME}/ClaudeCode/local_AI/rag`;
@@ -65,6 +83,9 @@ function hasDuplicateRefs(cir) {
   const refs = fs.readFileSync(cir, 'utf8').split('\n').filter((l) => /^[MQRCLDX]/i.test(l)).map((l) => l.split(/\s+/)[0].toUpperCase());
   return new Set(refs).size !== refs.length;
 }
+const AMS_ZIP = '/AI/datasets/netlists/ams.net.github.io/amsnet_1.0-20240412T024532Z-001.zip';
+let AMS = null;
+const amsZip = () => (AMS ??= fs.existsSync(AMS_ZIP) ? execFileSync('python3', ['-c', 'import sys,zipfile;print("\\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))', AMS_ZIP], { maxBuffer: 64 << 20 }).toString().split('\n') : []);
 function refOf(id) {
   const [src, key] = [id.slice(0, id.indexOf('/')), id.slice(id.indexOf('/') + 1)];
   if (src === 'dvd-natif' && natif.has(id)) { const r = natif.get(id); return { kind: 'ieee', paper_id: r.paper_id, page: r.page, rang: r.rang, legende: r.legende || '' }; }
@@ -80,8 +101,9 @@ function refOf(id) {
     return { kind: 'livre', file: f, cite: analogGenieCite(pg) };
   }
   if (src === 'amsnet') {
-    const f = `/AI/datasets/netlists/ams.net.github.io/x/amsnet_1.0/${key}/${key}.jpg`;
-    return fs.existsSync(f) ? { kind: 'livre', file: f, cite: `Figure d'origine du jeu AMSNet n° ${key} (schéma de manuel) — pas d'article de référence.` } : null;
+    // the AMSNet images live in the release zip (only one is unpacked)
+    const name = amsZip().find((n) => n === `amsnet_1.0/${key}/${key}.jpg` || n === `amsnet_1.0/${key}/${key}.png`);
+    return name ? { kind: 'livre', zip: name, cite: `Figure d'origine du jeu AMSNet n° ${key} (schéma de manuel) — pas d'article de référence.` } : null;
   }
   return null;
 }
@@ -105,6 +127,10 @@ async function writeRef(id, out) {
     execFileSync(`${RAG}/.venv/bin/python`, ['-m', 'rag.extract.figures', 'crop', ref.paper_id, String(ref.page), String(ref.rang), out], { cwd: RAG, stdio: 'ignore', timeout: 120000 });
     const a = await (await fetch(`http://127.0.0.1:8790/api/article?id=${encodeURIComponent(ref.paper_id)}`)).json();
     return { kind: 'ieee', paper_id: ref.paper_id, page: ref.page, rang: ref.rang, legende: ref.legende, title: a.title, venue: a.venue, year: a.year, authors: a.authors, img: true };
+  }
+  if (ref.zip) {   // an AMSNet figure: read from the zip, converted to PNG
+    fs.writeFileSync(out, execFileSync('python3', ['-c', 'import sys,io,zipfile;from PIL import Image;b=io.BytesIO();Image.open(io.BytesIO(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]))).convert("RGB").save(b,"PNG");sys.stdout.buffer.write(b.getvalue())', AMS_ZIP, ref.zip], { maxBuffer: 64 << 20 }));
+    return { kind: ref.kind, cite: ref.cite, img: true };
   }
   const buf = fs.readFileSync(ref.file);
   fs.writeFileSync(out, ref.file.endsWith('.png') ? buf : await sharpToPng(ref.file));
@@ -138,14 +164,27 @@ function layoutChange(A, B) {
 }
 async function draw(p, old) {
   const keep = [process.env.AUTO_SA, process.env.AUTO_JUDGE];
+  if (MODE === 'd') {   // base: auto as it is; new: criterion D + stage engine
+    const K = ['AUTO_CRITERION', 'AUTO_STAGES', 'AUTO_ASPECT'], kv = K.map((k) => process.env[k]);
+    for (const k of K) delete process.env[k];
+    if (!old) { process.env.AUTO_CRITERION = 'eric'; process.env.AUTO_STAGES = '1'; }
+    try { const res = await autoPlace(p); return { label: res.label, pos: positions(getPage(res.doc)), png: (await exportDocument(res.doc, getPage(res.doc), { format: 'png', scale: 1.5 })).buffer }; }
+    finally { K.forEach((k, i) => { if (kv[i] === undefined) delete process.env[k]; else process.env[k] = kv[i]; }); }
+  }
   if (old) { process.env.AUTO_SA = '0'; process.env.AUTO_JUDGE = 'js'; }
   try { const res = await autoPlace(p); return { label: res.label, pos: positions(getPage(res.doc)), png: (await exportDocument(res.doc, getPage(res.doc), { format: 'png', scale: 1.5 })).buffer }; }
   finally { for (const [k, v] of [['AUTO_SA', keep[0]], ['AUTO_JUDGE', keep[1]]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
 }
 
+if (MODE === 'd') {   // shuffled, a few stage-engine cases first (capped by --max-stages)
+  pool.forEach((_, i, a) => { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; });
+  const st = pool.filter((r) => r.prefers === 'inconsistent');
+  pool.splice(0, pool.length, ...st.slice(0, 8), ...pool.filter((r) => !st.slice(0, 8).includes(r)));
+}
 fs.mkdirSync(`${OUT}/img`, { recursive: true });
 const items = [], got = {};
 for (const r of pool) {
+  if (items.length >= TOTAL) break;
   if ((got[r.family] || 0) >= QUOTA[r.family]) continue;
   const text = fs.readFileSync(man.get(r.id).file, 'utf8');
   try { assertNotSealed(text, r.id, { family: null }); } catch { continue; }
@@ -156,6 +195,9 @@ for (const r of pool) {
   // below) of at least 10 % of the component pairs changes. Another engine or
   // mode is not enough: v2 and v4 can draw the same layout, spacing aside.
   if (Buffer.compare(before.png, after.png) === 0 || layoutChange(before.pos, after.pos) < 0.1) continue;
+  // series 3: at most --max-stages pairs drawn by the stage engine (it is
+  // chosen in ~4 % of the circuits; the series mostly judges criterion D)
+  if (MODE === 'd' && after.label === 'stages' && items.filter((x) => x.labels.new === 'stages').length >= Number(arg('--max-stages', 3))) continue;
   const n = items.length + 1, newLeft = rnd() < 0.5;
   let ref = null;
   try { ref = await writeRef(r.id, `${OUT}/img/${n}-ref.png`); } catch { ref = null; }

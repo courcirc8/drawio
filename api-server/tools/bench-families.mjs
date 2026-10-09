@@ -16,7 +16,7 @@
  * wire, published-convention score, check.py error rules. One JSON line per circuit.
  *
  * Usage:
- *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4|sa] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all] [--sources a,b] [--exclude-source a,b] [--ids a,b] [--min-parts N] [--max-parts N, default 25 = Eric's perimeter, 0 = none]
+ *   node tools/bench-families.mjs run  --out DIR [--engine auto|v2|v4|sa|stages] [--shard i/k] [--limit N] [--split tune|test|holdout-family|all] [--sources a,b] [--exclude-source a,b] [--ids a,b] [--min-parts N] [--max-parts N, default 25 = Eric's perimeter, 0 = none]
  *   node tools/bench-families.mjs sum  DIR [DIR2]       (DIR2: compare two runs)
  */
 import fs from 'node:fs';
@@ -34,6 +34,7 @@ import { conventionReport } from '../lib/conventions.js';
 import { basicsReport } from '../lib/basics.js';
 import { importNetlistSA } from '../lib/place-sa.js';
 import { assertNotSealed, bankExclusions } from '../lib/sealed.js';
+import { importNetlistStages } from '../lib/place-stages.js';
 
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 const argv = process.argv.slice(2);
@@ -97,7 +98,7 @@ async function run() {
       const t0 = Date.now();
       let doc, m, chosen = engine;
       if (engine === 'auto') { const a = await autoPlace(parsed); doc = a.doc; chosen = a.label; if (a.timedOut) row.timedOut = true; }
-      else { doc = newDocument(); const mm = getPage(doc); if (engine === 'v2') { const p = importNetlist2(mm, parsed); await routePage(mm, p.wires, {}); normalizeOrigin(mm); } else if (engine === 'sa') await importNetlistSA(mm, parsed); else await importNetlist4(mm, parsed); }
+      else { doc = newDocument(); const mm = getPage(doc); if (engine === 'v2') { const p = importNetlist2(mm, parsed); await routePage(mm, p.wires, {}); normalizeOrigin(mm); } else if (engine === 'sa') await importNetlistSA(mm, parsed); else if (engine === 'stages') await importNetlistStages(mm, parsed); else await importNetlist4(mm, parsed); }
       m = getPage(doc);
       row.ms = Date.now() - t0;   // drawing time (placement + routing, auto: all candidates)
       row.chosen = chosen;

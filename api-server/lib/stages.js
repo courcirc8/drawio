@@ -258,20 +258,39 @@ export function analyseStages(parsed) {
   const ends = (c) => (isActive(c) ? [T.get(c.ref).d, T.get(c.ref).s] : [c.nodes[0], c.nodes[1]]);
   const branches = [];
   const MAXB = 200, MAXD = 10;
-  const walk = (net, path, seen) => {
-    if (branches.length >= MAXB || path.length > MAXD) return;
-    if (ground.has(net) && path.length) { branches.push([...path]); return; }
+  // a branch ends on the other rail, or on a dead end (an external current
+  // port such as AnalogGenie's IB1 tail: no element continues the path)
+  const walk = (net, path, seen, stop, out) => {
+    if (out.length >= MAXB || path.length > MAXD) return;
+    if (stop.has(net) && path.length) { out.push([...path]); return; }
+    let moved = false;
     for (const c of at(net)) {
       if (!cond(c) || seen.has(c.ref)) continue;
       const [a, b] = ends(c);
       const next = a === net ? b : b === net ? a : null;
-      if (next == null || supply.has(next)) continue;
+      if (next == null || (!stop.has(next) && isRail(next))) continue;
+      // current flows one way: going DOWN from the supply a PMOS (PNP) is
+      // entered at its source, an NMOS (NPN) at its drain; going UP from
+      // ground the other way round (no path climbs back through a pair)
+      if (isActive(c)) {
+        const t = T.get(c.ref), down = stop === ground;
+        const entry = (t.p === down) ? t.s : t.d;
+        if (net !== entry) continue;
+      }
+      moved = true;
       seen.add(c.ref); path.push(c.ref);
-      walk(next, path, seen);
+      walk(next, path, seen, stop, out);
       path.pop(); seen.delete(c.ref);
     }
+    if (!moved && path.length) out.push([...path]);
   };
-  for (const s of supply) walk(s, [], new Set());
+  for (const s of supply) walk(s, [], new Set(), ground, branches);
+  // chains that never touch the supply, read from ground and reversed (top ->
+  // bottom); flagged so the layout aligns their BOTTOM with the ground row
+  const fromGround = [];
+  for (const g of ground) walk(g, [], new Set(), supply, fromGround);
+  const inSupply = new Set(branches.flat());
+  for (const br of fromGround) if (!br.some((r) => inSupply.has(r))) { const top = [...br].reverse(); top.fromGround = true; branches.push(top); }
   // a part keeps its SHORTEST branch; branches made only of parts already
   // claimed are dropped
   branches.sort((a, b) => a.length - b.length);
