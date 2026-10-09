@@ -22,6 +22,7 @@ import { exportDocument } from '../lib/render.js';
 import { sealedStatus } from '../lib/sealed.js';
 import { straighten, avoidableBends, checkerErrors, fixDots } from '../lib/straighten.js';
 import { crossCoupledX } from '../lib/crossx.js';
+import { qualityGate } from '../lib/quality.js';
 
 /** auto + straightening pass (Eric 2026-10-09: no avoidable bend) on a reading. */
 async function drawReading(netlist) {
@@ -46,7 +47,7 @@ async function drawReading(netlist) {
     await crossCoupledX(m, p, { errorCount: checkerErrors, fixDots });   // the symmetric X of a cross-coupled pair (Eric)
     await straighten(m);
     const after = avoidableBends(m).bends;
-    return { lvs: compare(extractNetlist(m), p).match, byName: namedLinks(m), png: (await exportDocument(res.doc, m, { format: 'png', scale: 1.5 })).buffer, straighten: { before, after } };
+    return { lvs: compare(extractNetlist(m), p).match, byName: namedLinks(m), quality: qualityGate(m, p), png: (await exportDocument(res.doc, m, { format: 'png', scale: 1.5 })).buffer, straighten: { before, after } };
   } catch (e) { return { lvs: null, error: String(e.message || e) }; }
 }
 
@@ -68,12 +69,13 @@ if (REDRAW) {
     fs.copyFileSync(`${REDRAW}/img/${it.n}-draw.png`, `${REDRAW}/img/${it.n}-draw-v${k}.png`);
     const d = await drawReading(it.netlist);
     if (d.png) fs.writeFileSync(`${REDRAW}/img/${it.n}-draw.png`, d.png);
-    it.lvs = d.lvs; it.straighten = d.straighten;
+    it.lvs = d.lvs; it.straighten = d.straighten; it.quality = d.quality;   // the gate before Eric (lib/quality.js)
     // the second reading shown beside it is redrawn the same way
     let d2 = null;
     if (it.other?.netlist && fs.existsSync(`${REDRAW}/img/${it.n}-draw2.png`)) {
       d2 = await drawReading(it.other.netlist);
       if (d2.png) fs.writeFileSync(`${REDRAW}/img/${it.n}-draw2.png`, d2.png);
+      it.other.quality = d2.quality;
     }
     console.error(`${it.n} ${it.key} lvs=${d.lvs} par nom ${d.byName} coudes évitables ${d.straighten?.before} -> ${d.straighten?.after}${d2 ? ` ; 2e lecture lvs=${d2.lvs} par nom ${d2.byName}` : ''}`);
   }

@@ -32,6 +32,7 @@ import { basicsReport } from './basics.js';
 import { importNetlistSA } from './place-sa.js';
 import { importNetlistStages, stagesConfident } from './place-stages.js';
 import { importNetlistLatch, latchReading } from './place-latch.js';
+import { alignPorts } from './align-ports.js';
 import { crossCoupledX } from './crossx.js';
 import { wireNamedNets } from './wirenames.js';
 import { straighten, checkerErrors, fixDots } from './straighten.js';
@@ -265,12 +266,15 @@ export async function autoPlace(parsed) {
   // FINISHING of the chosen drawing (Eric 2026-10-09, default; AUTO_POLISH=0
   // disables): the symmetric X of cross-coupled pairs, then the straightening
   // pass (avoidable bends, labels glued) — each step guarded by tools/check.py
+  const polish = {};
   if (process.env.AUTO_POLISH !== '0' && process.env.AUTO_JUDGE !== 'js') {
     try {
       const page = getPage(win.doc);
-      await crossCoupledX(page, parsed, { errorCount: checkerErrors, fixDots });
-      await straighten(page);
-    } catch { /* the unfinished drawing stays as chosen */ }
+      polish.crossX = await crossCoupledX(page, parsed, { errorCount: checkerErrors, fixDots });   // {drawn, why}
+      polish.straighten = await straighten(page);
+      // ports at the height of the pin they drive, straight wire (Eric)
+      polish.ports = await alignPorts(page, { errorCount: checkerErrors });
+    } catch (e) { polish.error = String(e.message || e); /* the unfinished drawing stays as chosen */ }
   }
-  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire }])) };
+  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, polish, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire }])) };
 }

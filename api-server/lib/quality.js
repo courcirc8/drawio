@@ -10,6 +10,8 @@
  *   pairRow    every differential pair on one row (check.py rule 14)
  *   symmetry   every differential pair mirrored: one device flipped, the
  *              part feeding its source centred under it (±¼ part)
+ *   ports      every port on the horizontal of the pin it drives, outside,
+ *              straight wire (lib/align-ports.js)
  *   uWires     no detour: a wire longer than the Manhattan distance of its
  *              ends by more than 1.5 median part sizes (long U loops)
  *
@@ -20,6 +22,7 @@ import { classify, activePins } from './components.js';
 import { pinAbs, polylineOf } from './route.js';
 import { detectStructures } from './patterns.js';
 import { avoidableBends } from './straighten.js';
+import { misalignedPorts } from './align-ports.js';
 
 export function qualityGate(model, parsed) {
   const cs = allCells(model).map(cellInfo), byId = new Map(cs.map((c) => [c.id, c]));
@@ -76,6 +79,10 @@ export function qualityGate(model, parsed) {
     if (len - man > 1.5 * u) us.push(e.id);
   }
   checks.uWires = { ok: !us.length, n: us.length, detail: us };
+
+  // ports at the height of their pin, outside, straight wire (Eric)
+  const mp = misalignedPorts(model);
+  checks.ports = { ok: !mp.length, n: mp.length, detail: mp };
 
   return { pass: Object.values(checks).every((c) => c.ok), checks };
 }
