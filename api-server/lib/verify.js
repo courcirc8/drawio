@@ -53,7 +53,7 @@ export function mountVerify(app, wrap) {
     const dir = batchDir(batch);
     const it = readJsonl(path.join(dir, 'items.jsonl')).find((x) => x.n === Number(n));
     if (!it) return res.status(404).json({ error: 'no such item' });
-    fs.appendFileSync(path.join(dir, 'answers.jsonl'), JSON.stringify({ n: it.n, key: it.key, verdict, ...(comment ? { comment } : {}), at: new Date().toISOString() }) + '\n');
+    fs.appendFileSync(path.join(dir, 'answers.jsonl'), JSON.stringify({ n: it.n, key: it.key, paper_id: it.ref?.paper_id, page: it.ref?.page, rang: it.ref?.rang, version: it.version || null, verdict, ...(comment ? { comment } : {}), at: new Date().toISOString() }) + '\n');
     res.json({ saved: true });
   }));
   // readable export of the verdicts (HTML; ?format=md | json)

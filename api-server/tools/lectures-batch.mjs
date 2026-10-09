@@ -35,26 +35,42 @@ const items = [];
 for (const r of rows) {
   const n = items.length + 1;
   const key = `${r.paper_id} p${r.page} r${r.rang}`;
-  let netlist = String(r.netlist ?? r.spice ?? '').trim();
+  // lecture-2 (RAG, 2026-10-09): {lecture: {netlist: [lines], notes, level}}
+  const L = r.lecture || {};
+  let netlist = String((Array.isArray(L.netlist) ? L.netlist.join('\n') : null) ?? r.netlist ?? r.spice ?? '').trim();
   if (!netlist) { console.error(`${key}: no netlist text, skipped`); continue; }
   if (!/\.end\b/i.test(netlist)) netlist += '\n.end';
   if (sealedStatus(netlist)) { console.error(`${key}: matches a sealed circuit, refused`); continue; }
   // the figure, cropped by the RAG, and its citation
-  execFileSync(`${RAG}/.venv/bin/python`, ['-m', 'rag.extract.figures', 'crop', r.paper_id, String(r.page), String(r.rang), `${OUT}/img/${n}-ref.png`], { cwd: RAG, stdio: 'ignore', timeout: 120000 });
+  // the figure: the crop the RAG rendered (r.image), else cropped here
+  if (r.image && fs.existsSync(r.image)) fs.copyFileSync(r.image, `${OUT}/img/${n}-ref.png`);
+  else execFileSync(`${RAG}/.venv/bin/python`, ['-m', 'rag.extract.figures', 'crop', r.paper_id, String(r.page), String(r.rang), `${OUT}/img/${n}-ref.png`], { cwd: RAG, stdio: 'ignore', timeout: 120000 });
   const a = await (await fetch(`http://127.0.0.1:8790/api/article?id=${encodeURIComponent(r.paper_id)}`)).json();
-  const ref = { paper_id: r.paper_id, page: r.page, rang: r.rang, legende: r.legende || '', title: a.title, venue: a.venue, year: a.year, authors: a.authors };
+  const ref = { paper_id: r.paper_id, page: Number(r.page), rang: Number(r.rang), legende: r.legende || '', title: a.title, venue: a.venue, year: a.year, authors: a.authors };
   // the drawing drawio makes from the reading (auto, as served)
-  let lvs = null, note = '';
+  let lvs = null, note = L.notes ? `Notes du lecteur : ${L.notes}` : '';
+  // for the DRAWING only (the page shows the netlist as read): a passive or a
+  // source written without a value gets a placeholder (a missing value is not
+  // a connectivity fault); what drawio cannot draw is said on the page
+  const forDrawing = netlist.split('\n').map((l) => {
+    const t = l.trim().split(/\s+/);
+    if (/^[RCL]/i.test(t[0]) && t.length === 3) return `${l} 1`;
+    if (/^D/i.test(t[0]) && t.length === 3) return `${l} D`;
+    if (/^[VI]/i.test(t[0]) && t.length === 3) return `${l} DC 0`;
+    return l;
+  }).join('\n');
   try {
-    const p = parseSpice(netlist);
+    const p = parseSpice(forDrawing);
+    const lost = (p.warnings || []).filter((w) => /unsupported|malformed|skipped/i.test(w));
+    if (lost.length) note = (note ? note + ' — ' : '') + `Non dessiné par drawio : ${lost.map((w) => w.replace(/^.*?:\s*/, '')).join(' ; ')}`;
     const res = await autoPlace(p);
     lvs = compare(extractNetlist(getPage(res.doc)), p).match;
     fs.writeFileSync(`${OUT}/img/${n}-draw.png`, (await exportDocument(res.doc, getPage(res.doc), { format: 'png', scale: 1.5 })).buffer);
   } catch (e) {
-    note = `drawio n'a pas pu dessiner cette netlist (${String(e.message || e).slice(0, 120)})`;
+    note = (note ? note + ' — ' : '') + `drawio n'a pas pu dessiner cette netlist (${String(e.message || e).slice(0, 120)})`;
     execFileSync('python3', ['-c', 'import sys;from PIL import Image,ImageDraw;im=Image.new("RGB",(600,120),"white");ImageDraw.Draw(im).text((10,50),"dessin impossible",fill="black");im.save(sys.argv[1])', `${OUT}/img/${n}-draw.png`]);
   }
-  items.push({ n, key, ref, netlist, lvs, note, source: r.source || r.lecteur || null });
+  items.push({ n, key, ref, netlist, lvs, note, level: L.level || null, version: r.lecture_version || null, source: r.source || r.lecteur || null });
   console.error(`${n} ${key} lvs=${lvs}`);
 }
 fs.writeFileSync(`${OUT}/items.jsonl`, items.map((x) => JSON.stringify(x)).join('\n') + '\n');
