@@ -562,6 +562,72 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   Par famille : regulator 58 → 72,4 % ; sampler-sc 70 → 71,4 % ; data-converter 249 → 76,3 %. Aucun LVS faux.
   Feuilles > 3:1 à 11,1 % (cible ≤ 10 %) : la règle d'allongement est désactivée en attendant la série 2.
 
+- SÉRIE 2 D'ERIC (9 oct., 10 paires avec figure de référence et commentaires dictés ; `eric-paires-2/answers.jsonl`,
+  `analyse.json`) : aujourd'hui 5, avant 4, égal 1 (séries 1+2 : avant 10, aujourd'hui 6, égal 4).
+  Pouvoir prédictif sur les 16 paires tranchées : « vérificateur d'abord » (choix actuel d'auto) 4 justes + 3 égalités ;
+  « fil le plus court » 12 ; « feuille ≤ 3:1 d'abord, puis fil le plus court » 13. Les feuilles très allongées perdent
+  (8:1, 9,5:1, 27:1), 2,8:1 passe.
+  Commentaires d'Eric par thème : (A) LECTURES FAUSSES vues grâce à la référence : « il n'y a que des NMOS », « la
+  grille de M6 est polarisée, pas à la masse », « tu as manqué le transformateur, les inductances sont couplées »,
+  « il manque la source de courant », « pas de transistors, juste des sous-blocs », « schéma trop compliqué, retire-le » ;
+  (B) RÈGLES DE DESSIN : tout entre le rail du haut et le rail du bas, ne pas mélanger les fonctions ; jamais de
+  composants les uns sur les autres ; éviter les coudes en alignant (résistance) ; miroirs et symétrie horizontale des
+  MOS ; étages d'entrée à gauche, de sortie à droite ; empilements verticaux (M3, M4) ; dessin par sous-blocs.
+
+- DÉCISION D'ERIC (9 oct.) : PÉRIMÈTRE ≤ 25 COMPOSANTS pour la mesure, les séries et les réglages (les > 25 restent
+  dans la banque, hors périmètre ; sous-blocs et canaux proportionnels REPORTÉS). « La reconnaissance topologique est
+  toujours la clef d'un schéma lisible. » Inventaire sur les 3 264 circuits ≤ 25 de la banque propre : 46 % des
+  composants (53 % des transistors) dans un motif AVEC recette de placement ; étages élémentaires détectés SANS recette
+  (source commune 1 053, grille commune 989, suiveur 1 109, interrupteur 506, BJT résistif 148 composants) ; charges et
+  polarisation rattachées à aucun étage (2 107 R, 1 503 C, 475 L, 393 sources I hors motif) ; pas de graphe d'étages ;
+  sa (élu ~40 %) ignore le registre de motifs. PLAN envoyé à l'orchestrateur : A périmètre ≤ 25 dans les outils +
+  référence ; B reconnaissance d'étages (couverture ≥ 90 % des transistors) ; C placement par le graphe d'étages
+  (nouveau candidat) ; D nouveau critère d'auto ; E série 3 (10 paires ≤ 25, netlists exactes ou lectures vérifiées).
+  Activation de C et D seulement avec l'accord d'Eric.
+
+- RÉFÉRENCE ≤ 25 (ÉTAPE A, 9 oct. ; DVD natif EXCLU — lecture-1 non fiable selon le RAG ; netlists exactes seulement :
+  AMSNet, AnalogGenie propres, LTspice, KiCad, schémas open PDK ; runs `p25-*`, les DVD retirés du résultat ;
+  scellés refusés 60, aucun échec, aucun LVS faux) :
+    | jeu | n | zéro erreur | err/c | > 3:1 | crois./c | fil/c |
+    | réglage | 1 021 | 91,8 % | 0,12 | 5,9 % | 2,5 | 454 |
+    | test | 648 | 90,3 % | 0,20 | 7,6 % | 3,0 | 456 |
+    | jamais vues | 169 | 84,6 % | 0,25 | 5,9 % | 5,3 | 606 |
+  Jamais vues par famille : data-converter 104 → 88 %, regulator 27 → 78 %, sampler-sc 38 → 79 % (petit jeu). Familles
+  faibles : oscillateur (68 % réglage, 81 % test), filtre (77 %), comparateur (79-86 %), PLL (80 %) ; KiCad 70-85 %.
+  RAPPEL : « zéro erreur » au vérificateur ≠ lisibilité pour Eric (séries 1-2).
+  Recherche open source pour B : `references/ANALYSE.md` (ALIGN-public, MAGICAL, pyckt, asg, EEschematic) — aucun ne
+  reconnaît les étages ni n'ordonne le signal ; idées reprises : graphe à arêtes = ensembles de broches, fusion
+  parallèle/série, correction D/S depuis les rails (ALIGN) ; meilleur match mutuel et auto-symétriques (MAGICAL) ;
+  rang = plus long chemin depuis les entrées (asg) ; blocs typés à ports sémantiques (pyckt, idée seulement).
+
+- ÉTAPE B — RECONNAISSANCE DES RÔLES ET DES ÉTAGES (`lib/stages.js`, outil `tools/stages-eval.mjs` ; analyse pure,
+  aucun dessin changé) : rôle de chaque composant (paire, paire croisée, miroir réf./sortie, cascode, queue, source de
+  courant, source commune, grille commune, suiveur, interrupteur, inverseur, diode, varactor ; charge, dégénérescence,
+  contre-réaction, liaison, polarisation, découplage), branches DC rail → rail (chemins bornés), étages = branches
+  liées par un nœud drain/source commun (paires et paires croisées réunies ; miroir séparé de sa référence), ordre
+  du signal = plus long chemin depuis les étages d'entrée (sortie drain → grille, à travers une liaison).
+  Couverture (1 777 circuits ≤ 25, netlists exactes) : 100 % des transistors ont un rôle, 81 % des composants dans un
+  étage — chiffre trompeur (un repli donne toujours un rôle). JUSTESSE vérifiée à la main sur 30 circuits avec figure
+  (15 AMSNet, 15 AnalogGenie à image propre) : 15 justes, 11 en partie, 4 faux (dont 2 réseaux passifs / modèle petit
+  signal). Corrigés pendant le contrôle : sources de courant idéales (queue, pas « dégénérescence »), broche de
+  polarisation externe (Vb) distinguée d'une entrée (position de charge), miroir cascode basse tension, paire croisée
+  avant paire différentielle, varactors, horloges VCLK/VLATCH (interrupteurs), entrée en courant IIN.
+  RESTE : paires à sources séparées (dégénérescence commutée, entrée via interrupteurs), suiveur à contre-réaction
+  locale (FVF), comparateurs dynamiques / verrous, références BJT (bandgap), boucles d'auto-polarisation.
+
+- ÉTAPE B, 2E PASSAGE (9 oct.) : structures ajoutées — paires à sources séparées (dégénérescence, échelle commutée,
+  entrée de comparateur dynamique via interrupteurs), suiveur à contre-réaction locale (FVF ; distingué du miroir
+  cascode basse tension par la grille), BJT en diode (bandgap), commandes VCONT/CTRL (interrupteurs), source sans forme
+  d'onde reliée seulement à des grilles = entrée (pas un rail), « cascode » à drain sur rail = suiveur, boucle passant
+  par une diode = miroir (pas paire croisée), paire différentielle exclue si une grille est une polarisation EXPLICITE
+  (rail, nom, diviseur vers les rails, grille partagée hors paire), diviseur venant d'une sortie = contre-réaction,
+  « miroir » à grille sur rail = charges en diode.
+  2E CONTRÔLE À LA MAIN sur 30 AUTRES circuits avec figure : 20 justes, 7 en partie, 3 faux — objectif 24 NON atteint
+  (et le chiffre inclut des corrections faites pendant le contrôle). Échecs restants : cœur d'oscillateur BJT à
+  inductances d'émetteur, charges commandées par une CMFB résistive, figures d'analyse de bruit, broche numérotée
+  ambiguë Vb/Vin (AMSNet, sans noms : indécidable), une netlist AMSNet fausse (PMOS déclaré NMOS).
+  Test navigateur intermittent (`eda-validate plugin via /editor: reroute…`, délai de 60 s) : à surveiller.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.

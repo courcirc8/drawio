@@ -47,6 +47,7 @@ const tier = (r) => (r.prefers === 'inconsistent' ? 0 : 1);
 // kept (--need-ref 0 to allow none). A DVD reading must look like a circuit
 // (5+ parts, 2+ transistors): some readings are not real circuits.
 const NEED_REF = arg('--need-ref', '1') !== '0';
+const MAX_PARTS = Number(arg('--max-parts', 25)) || Infinity;   // Eric's perimeter (2026-10-09); 0 = none
 const RAG = `${process.env.HOME}/ClaudeCode/local_AI/rag`;
 const NATIF = '/AI/datasets/IEEE/derived/schemas-natif-2026-10-08.jsonl';
 const natif = new Map();
@@ -93,7 +94,7 @@ export function analogGenieCite(pg) {
 }
 const looksReal = (r) => !r.id.startsWith('dvd-natif/') || (r.parts >= 5 && (fs.readFileSync(man.get(r.id).file, 'utf8').match(/^[MQ]/gim) || []).length >= 2);
 const pool = judged.filter((r) => QUOTA[r.family] && ['inconsistent', 'auto', 'auto-old'].includes(r.prefers) && man.has(r.id) && !shown.has(r.id) && !ex.has(r.id)
-  && (!NEED_REF || refOf(r.id)) && looksReal(r))
+  && r.parts <= MAX_PARTS && (!NEED_REF || refOf(r.id)) && looksReal(r))
   .sort((a, b) => tier(a) - tier(b) || ((refOf(b.id) || {}).kind === 'ieee') - ((refOf(a.id) || {}).kind === 'ieee') || (big.has(a.family) ? b.parts - a.parts : a.id < b.id ? -1 : 1));
 
 /** Writes img/<n>-ref.png and returns the citation shown with it (null: no reference). */
