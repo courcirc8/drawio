@@ -552,6 +552,16 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   AnalogGenie aplatis ; (b) pour les vrais grands schémas : canaux de routage proportionnels au nombre de nets, ou
   dessin hiérarchique (blocs) — chantier de placement, après la série 2.
 
+- RÉFÉRENCE ACTUELLE (9 oct., après retrait d'open PDK hors schémas, décision d'Eric : 549 extractions, 156 hiérarchies
+  aplaties, 202 bancs de test → `excluded-openpdk-nonschema.jsonl` ; restent 798 schémas open PDK). Réglage et test
+  inchangés (banque d'origine propre, sans open PDK) : 89,9 % et 90,6 % sans erreur. JAMAIS VUES (recalcul exact
+  sur `clean1-holdout` sans les exclus, chaque circuit étant dessiné indépendamment) :
+    | | n | zéro erreur | err/c | > 3:1 | crois./c | ≤ 12 comp. | > 12 comp. |
+    | avant retrait | 542 | 62,7 % | 30,0 | 9,8 % | 42,2 | 93,0 % | 43,2 % |
+    | après retrait | 377 | 74,8 % | 2,68 | 11,1 % | 21,2 | 92,5 % | 57,4 % |
+  Par famille : regulator 58 → 72,4 % ; sampler-sc 70 → 71,4 % ; data-converter 249 → 76,3 %. Aucun LVS faux.
+  Feuilles > 3:1 à 11,1 % (cible ≤ 10 %) : la règle d'allongement est désactivée en attendant la série 2.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
