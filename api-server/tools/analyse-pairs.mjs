@@ -20,7 +20,8 @@
  *   per part, aspect, basics (lib/basics.js), published-layout traits
  *   (lib/layout-rules.js: rows, columns, pairs on a row, mirror symmetry).
  * Row / column = centres within 0.3 of the median part size (as layout-rules).
- * Usage: node tools/analyse-pairs.mjs --batch eric-paires [--out FILE.json]
+ * Usage: node tools/analyse-pairs.mjs --batch eric-paires [--mode old|d] [--out FILE.json]
+ *   (--mode d, default for eric-paires-3: auto as it is vs criterion D + stages)
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -45,10 +46,14 @@ const jsonl = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split
 const man = new Map(fs.readdirSync(BANK).filter((f) => /^manifest.*\.jsonl$/.test(f)).flatMap((f) => jsonl(`${BANK}/${f}`)).map((r) => [r.id, r]));
 const answers = new Map(jsonl(`${DIR}/answers.jsonl`).map((a) => [a.n, a]));
 
+// --mode d (series 3): base = auto as it is, new = criterion D + stage engine
+const MODE = arg('--mode', BATCH === 'eric-paires-3' ? 'd' : 'old');
 async function draw(p, old) {
-  const keep = { AUTO_SA: process.env.AUTO_SA, AUTO_JUDGE: process.env.AUTO_JUDGE, AUTO_ASPECT: process.env.AUTO_ASPECT };
+  const keep = { AUTO_SA: process.env.AUTO_SA, AUTO_JUDGE: process.env.AUTO_JUDGE, AUTO_ASPECT: process.env.AUTO_ASPECT, AUTO_CRITERION: process.env.AUTO_CRITERION, AUTO_STAGES: process.env.AUTO_STAGES };
+  for (const k of ['AUTO_CRITERION', 'AUTO_STAGES']) delete process.env[k];
   process.env.AUTO_ASPECT = '0';   // the batches compared auto as it was, without the aspect rule
-  if (old) { process.env.AUTO_SA = '0'; process.env.AUTO_JUDGE = 'js'; }
+  if (MODE === 'd') { if (!old) { process.env.AUTO_CRITERION = 'eric'; process.env.AUTO_STAGES = '1'; } }
+  else if (old) { process.env.AUTO_SA = '0'; process.env.AUTO_JUDGE = 'js'; }
   try { const res = await autoPlace(p); return { doc: res.doc, label: res.label, png: (await exportDocument(res.doc, getPage(res.doc), { format: 'png', scale: 1.5 })).buffer }; }
   finally { for (const [k, v] of Object.entries(keep)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
 }
