@@ -175,7 +175,7 @@ export async function autoPlace(parsed) {
     });
   };
   const done = [];
-  const running = specs.map((spec) => run1(spec).then(judge).then((t) => { done.push(t); return t; }));
+  const running = specs.map((spec, k) => run1(spec).then(judge).then((t) => { t.order = k; done.push(t); return t; }));
   let timer;
   const deadline = new Promise((r) => { timer = setTimeout(r, BUDGET); });
   await Promise.race([Promise.all(running), deadline]);
@@ -183,7 +183,9 @@ export async function autoPlace(parsed) {
   if (!done.length) await Promise.race(running);
   for (const w of workers) { workers.delete(w); w.terminate().catch(() => {}); }
   const timedOut = done.length < running.length;
-  const trials = [...done];
+  // in the candidates' fixed order, not their finishing order: ties went to
+  // whichever finished first, so the same netlist could be drawn differently
+  const trials = [...done].sort((a, b) => a.order - b.order);
   let win = trials.reduce((a, b) => (better(b, a) ? b : a));
   // STACK-FIRST BAND (experiment, AUTO_BAND=N): among candidates within N
   // check.py-like errors of the best, prefer the branch-column drawings

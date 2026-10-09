@@ -628,6 +628,31 @@ Plan (étape 1 en cours : AMSNet extrait dans `/AI/datasets/judge/amsnet/amsnet_
   ambiguë Vb/Vin (AMSNet, sans noms : indécidable), une netlist AMSNet fausse (PMOS déclaré NMOS).
   Test navigateur intermittent (`eda-validate plugin via /editor: reroute…`, délai de 60 s) : à surveiller.
 
+- ÉTAPE C — MOTEUR « stages » (9 oct. ; `lib/place-stages.js`) : placement initial tiré de la lecture topologique
+  (étages de gauche à droite par rang, polarisation à gauche, une colonne par branche DC, rail haut en haut, parties
+  hors branche près de ce qu'elles relient), affiné et câblé par place-sa (`opts.saInit`, recuit court et froid).
+  Corrections de `stages.js` pour les colonnes : une branche s'arrête sur une broche de courant (IB1 d'AnalogGenie),
+  le courant ne remonte pas (on entre dans un PMOS par la source, dans un NMOS par le drain), chaînes lues depuis la
+  masse alignées par le bas. SEUL, il est MOINS bon que l'auto actuel sur réglage ≤ 25 (lecture sûre, 875 circuits) :
+  zéro erreur 78,7 % contre 93,6 %, fil +40 %, croisements et coudes +45 % ; l'espacement n'y change rien (la finition
+  de place-sa réétale) ; LVS toujours juste. Candidat d'auto derrière `AUTO_STAGES=1` (désactivé), seulement si la
+  lecture est sûre (`stagesConfident`).
+- ÉTAPE D — CRITÈRE `AUTO_CRITERION=eric` (désactivé) : pas d'erreur grave (superposition, coude sur un autre net, fil à
+  travers un composant), puis feuille ≤ 3:1, puis fil le plus court, puis vérificateur. Banc ≤ 25 (runs `dE-*`, `dES-*`) :
+    | réglage (1 021) | actuel | D | D + étages |
+    | zéro erreur | 91,8 % | 74,4 % | 74,8 % |
+    | erreurs graves | 1,0 % | 0,3 % | 0,3 % |
+    | > 3:1 | 5,9 % | 0,5 % | 0,4 % |
+    | fil/c | 454 | 371 | 368 |
+    | croisements/c | 2,50 | 2,43 | 2,39 |
+  Test (648) : même tendance (fil 456 → 387, > 3:1 7,6 → 0,9 %, graves 2,2 → 0,8 %, zéro erreur 90,3 → 77,8 %).
+  D+étages change 70 % des dessins ; le moteur stages est choisi dans ~4 % des cas.
+  Déterminisme corrigé : à égalité, auto garde le candidat de l'ordre fixe (avant : le premier FINI, le même circuit
+  pouvait être dessiné autrement d'un tirage à l'autre ; c'était la règle documentée « puis le candidat le plus tôt »).
+- SÉRIE 3 PRÊTE (`/drawio/eric-paires` → `eric-paires-3`) : 10 paires ≤ 25 « auto actuel » contre « D + étages »,
+  netlists exactes avec figure de référence (AnalogGenie à image propre ; AMSNet lues dans le zip), familles
+  analogiques, 3 paires dessinées par le moteur stages ; jamais de scellé.
+
 ## Chantier en cours
 
 1. **Gabarits de structure** : bandgap (famille `reference`), comparateur (`comparator`). LDO seulement mesuré.
