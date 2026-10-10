@@ -299,8 +299,9 @@ async function autoPlaceOnce(parsed, only = null) {
   // the cross-coupled pair / LC VCO (lib/place-pair.js, cross mode): DEFAULT since
   // Eric's yes (2026-10-10), same rule (AUTO_VCO=0 disables)
   if (process.env.AUTO_VCO !== '0' && vcoReading(parsed)) specs.push(['vco', null, {}, {}]);
-  // the StrongARM latch comparator (lib/place-strongarm.js): OFF until Eric approves (AUTO_STRONGARM=1)
-  if (process.env.AUTO_STRONGARM === '1' && strongarmReading(parsed)) specs.push(['strongarm', null, {}, {}]);
+  // the StrongARM latch comparator (lib/place-strongarm.js): Eric's yes
+  // (2026-10-11), same rule (AUTO_STRONGARM=0 disables)
+  if (process.env.AUTO_STRONGARM !== '0' && strongarmReading(parsed)) specs.push(['strongarm', null, {}, {}]);
   // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
   // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
   // on one thread the budget only ever saw v2 finish on the big converters.

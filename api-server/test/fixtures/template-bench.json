@@ -40,5 +40,12 @@
   "gatePass": 7,
   "fails": 11,
   "lvs": 12
+ },
+ "strongarm": {
+  "circuits": 20,
+  "chosen": 3,
+  "gatePass": 0,
+  "fails": 74,
+  "lvs": 20
  }
 }

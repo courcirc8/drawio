@@ -42,8 +42,9 @@ corps = JSON ou `{sim, netlist}`), `DELETE` pour retirer ; couche inerte après 
 **Pages** : /drawio/review (lecture des lots, téléphone), /drawio/eric-lectures (lectures-3/4 retirées de la file : ne republier
 qu'avec 8-10 lectures passant (a)+(b) ; 1/26 passe aujourd'hui).
 
-**En cours (branche `gabarit-strongarm`)** : gabarit **StrongARM** (lib/place-strongarm.js, ÉTEINT tant qu'Eric n'a pas dit oui :
-`AUTO_STRONGARM=1`). Paire croisée PMOS au-dessus de la paire croisée NMOS sur deux colonnes de sortie, les deux X dessinés ;
+**#35 (oui d'Eric 2026-10-11, activé par défaut, `AUTO_STRONGARM=0` désactive)** : gabarit **StrongARM** (lib/place-strongarm.js).
+Banc des gabarits après fusion de dev : StrongARM 20 lus, choisi 3 fois, contrôles 81 → 74, LVS 20/20 ; autres gabarits inchangés ;
+base figée avec lui. Paire croisée PMOS au-dessus de la paire croisée NMOS sur deux colonnes de sortie, les deux X dessinés ;
 paire d'entrée sous les nœuds internes, queue horloge centrée ; précharges des sorties à l'extérieur, celles des nœuds internes
 juste à l'intérieur (source droite au rail) ; ligne de sortie = ligne de drain du X PMOS, ports OUT dessus ; inverseurs de sortie
 (s'il y en a sur les deux sorties) au-delà des bus d'horloge ; horloge CÂBLÉE (pas de connexion par nom) : un bus de chaque côté
