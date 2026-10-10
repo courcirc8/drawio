@@ -43,6 +43,7 @@ import { wireNamedNets } from './wirenames.js';
 import { straighten, checkerErrors, fixDots } from './straighten.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
+import { withGroundAlias } from './ground-alias.js';
 
 export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' || t.eng === 'latch' || t.eng === 'ota' || t.eng === 'miller' || t.eng === 'lna' || t.eng === 'pair' || t.eng === 'vco' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
 
@@ -224,6 +225,41 @@ function checkPyErrors(doc) {
 /** Returns {doc, placed, label, trials:{label:{errors, conventions}}} or throws
  *  when every candidate failed. */
 export async function autoPlace(parsed) {
+  // a ground spelled vss / gnd (alone, no `0`) drawn as ground: one GND rail
+  // (lib/ground-alias.js); AUTO_GND=0 draws it as written (before / after renders)
+  const aliased = process.env.AUTO_GND !== '0' ? withGroundAlias(parsed) : parsed;
+  if (aliased === parsed) return autoPlaceOnce(parsed);
+  // SAME RULE AS THE TEMPLATES (orchestrator 2026-10-10): the alias changes the
+  // candidates' drawings, so auto may elect another engine and draw worse. The
+  // deck is drawn as written too; when the aliased drawing fails more
+  // quality-gate checks, (1) the engine elected as written is redrawn WITH the
+  // alias and kept if it does at least as well as the drawing as written, else
+  // (2) the drawing as written is kept when its LVS still matches (its ground
+  // named by a port or a label). The connectivity gain stays in every case:
+  // a drawing as written that loses the ground's name is never returned.
+  const lvsOk = (r) => { try { return compare(extractNetlist(getPage(r.doc)), parsed).match; } catch { return false; } };
+  const fails = (r) => { try { return Object.values(qualityGate(getPage(r.doc), parsed).checks).filter((c) => !c.ok).length; } catch { return 99; } };
+  // one after the other: two passes at once share the CPU and the time budget
+  const now = await autoPlaceOnce(aliased), old = await autoPlaceOnce(parsed).catch(() => null);
+  const ground = { alias: aliased.groundAlias, fails: fails(now), asWritten: old ? fails(old) : null, asWrittenLabel: old ? old.label : null };
+  if (!old || ground.fails <= ground.asWritten) return { ...now, ground };
+  if (old.label !== now.label) try {
+    const same = await autoPlaceOnce(aliased, old.label), f = fails(same);
+    ground.sameEngine = f;
+    if (f < ground.fails) {
+      if (f <= ground.asWritten || !lvsOk(old)) return { ...same, ground: { ...ground, fails: f, fellBack: 'engine' } };
+      return { ...old, ground: { ...ground, fails: ground.asWritten, fellBack: 'as-written' } };
+    }
+  } catch { /* the aliased drawing stays */ }
+  // the drawing as written, when it is still right (its ground named, by a
+  // port or a label: LVS matches) and fails fewer checks
+  if (lvsOk(old)) return { ...old, ground: { ...ground, fails: ground.asWritten, fellBack: 'as-written' } };
+  return { ...now, ground };
+}
+
+/** One auto pass on `parsed` as given; `only` restricts the candidates to the
+ *  one with that label (the ground fallback above). */
+async function autoPlaceOnce(parsed, only = null) {
   // every candidate is started at once, judged as soon as it is drawn; TIME
   // BUDGET (Eric 2026-10-08, AUTO_BUDGET_MS, default 60 s): past it, auto keeps
   // the best drawing finished so far (candidates still running are ignored;
@@ -278,6 +314,11 @@ export async function autoPlace(parsed) {
       w.once('exit', (code) => { if (workers.has(w)) fail(new Error('trial thread exit ' + code)); });
     });
   };
+  if (only) {
+    const keep = specs.filter(([eng, restMode, sp, extra]) => candidateLabel({ eng, restMode, sp, extra }) === only);
+    if (!keep.length) throw new Error('auto: no candidate ' + only);
+    specs.splice(0, specs.length, ...keep);
+  }
   const done = [];
   const running = specs.map((spec, k) => run1(spec).then(judge).then((t) => { t.order = k; done.push(t); return t; }));
   let timer;

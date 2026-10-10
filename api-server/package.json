@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "bench:templates": "node tools/template-bench.mjs --check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

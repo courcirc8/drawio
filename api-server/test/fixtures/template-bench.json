@@ -1,0 +1,44 @@
+{
+ "latch": {
+  "circuits": 18,
+  "chosen": 1,
+  "gatePass": 0,
+  "fails": 70,
+  "lvs": 18
+ },
+ "ota": {
+  "circuits": 119,
+  "chosen": 47,
+  "gatePass": 21,
+  "fails": 225,
+  "lvs": 119
+ },
+ "miller": {
+  "circuits": 15,
+  "chosen": 6,
+  "gatePass": 0,
+  "fails": 39,
+  "lvs": 15
+ },
+ "lna": {
+  "circuits": 8,
+  "chosen": 3,
+  "gatePass": 2,
+  "fails": 8,
+  "lvs": 8
+ },
+ "pair": {
+  "circuits": 41,
+  "chosen": 30,
+  "gatePass": 20,
+  "fails": 35,
+  "lvs": 41
+ },
+ "vco": {
+  "circuits": 12,
+  "chosen": 7,
+  "gatePass": 7,
+  "fails": 11,
+  "lvs": 12
+ }
+}

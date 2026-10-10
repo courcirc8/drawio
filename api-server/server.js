@@ -31,6 +31,7 @@ import * as annotate from './lib/annotate.js';
 import * as critic from './lib/critic.js';
 import * as exportAsc from './lib/export-asc.js';
 import { rewire } from './lib/rewire.js';
+import { withGroundAlias } from './lib/ground-alias.js';
 
 const argPort = process.argv.indexOf('--port');
 const PORT = argPort > -1 ? parseInt(process.argv[argPort + 1], 10)
@@ -366,7 +367,8 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   const m = model.getPage(entry.doc, req.query.page);
   const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
   if (spice == null || spice === '') throw model.httpError(400, 'SPICE netlist required (text body or {"spice": …})');
-  const parsed = netlist.parseSpice(spice);
+  // a ground spelled vss / gnd (alone) is drawn as ground: one GND rail (lib/ground-alias.js)
+  const parsed = withGroundAlias(netlist.parseSpice(spice));
   // kept with the document: the simulation annotations (lib/sim-annotate.js)
   // find nodes through the netlist that was drawn
   (entry.importNetlist ||= {})[req.query.page || ''] = spice;
