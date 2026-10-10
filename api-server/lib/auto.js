@@ -33,6 +33,7 @@ import { importNetlistSA } from './place-sa.js';
 import { importNetlistStages, stagesConfident } from './place-stages.js';
 import { importNetlistLatch, latchReading } from './place-latch.js';
 import { alignPorts } from './align-ports.js';
+import { drawRails } from './rails.js';
 import { qualityGate } from './quality.js';
 import { importNetlistOta, otaReading } from './place-ota.js';
 import { crossCoupledX } from './crossx.js';
@@ -293,6 +294,9 @@ export async function autoPlace(parsed) {
       polish.straighten = await straighten(page);
       // ports at the height of the pin they drive, straight wire (Eric)
       polish.ports = await alignPorts(page, { errorCount: checkerErrors });
+      // supply and ground: one rail line with one label (Eric's default) or a
+      // symbol per branch (AUTO_RAILS=branch)
+      polish.rails = await drawRails(page, { errorCount: checkerErrors, fixDots });
     } catch (e) { polish.error = String(e.message || e); /* the unfinished drawing stays as chosen */ }
   }
   return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, polish, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire }])) };
