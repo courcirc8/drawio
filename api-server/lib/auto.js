@@ -246,10 +246,12 @@ export async function autoPlace(parsed) {
   // "oui, gabarit OTA" (2026-10-10), taking priority only when its finished
   // drawing passes the quality gate (AUTO_OTA=0 disables)
   if (process.env.AUTO_OTA !== '0' && otaReading(parsed)) specs.push(['ota', null, {}, {}]);
-  // the two-stage Miller OTA template: OFF until Eric approves (AUTO_MILLER=1)
-  if (process.env.AUTO_MILLER === '1' && millerReading(parsed)) specs.push(['miller', null, {}, {}]);
-  // the cascode LNA with inductive degeneration (lib/place-lna.js): OFF until Eric approves (AUTO_LNA=1)
-  if (process.env.AUTO_LNA === '1' && lnaReading(parsed)) specs.push(['lna', null, {}, {}]);
+  // the two-stage Miller OTA template: DEFAULT since Eric's yes (2026-10-10),
+  // taking priority only when it does at least as well (AUTO_MILLER=0 disables)
+  if (process.env.AUTO_MILLER !== '0' && millerReading(parsed)) specs.push(['miller', null, {}, {}]);
+  // the cascode LNA with inductive degeneration (lib/place-lna.js): DEFAULT since
+  // Eric's yes (2026-10-10), same rule (AUTO_LNA=0 disables)
+  if (process.env.AUTO_LNA !== '0' && lnaReading(parsed)) specs.push(['lna', null, {}, {}]);
   // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
   // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
   // on one thread the budget only ever saw v2 finish on the big converters.
