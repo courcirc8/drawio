@@ -24,7 +24,7 @@ import { execFile, spawnSync } from 'node:child_process';
 const require_spawn = (c, a) => spawnSync(c, a, { encoding: 'utf8' }).stdout;
 import { allCells, cellInfo, updateCell, addVertex, serialize } from './model.js';
 import { classify, activePins } from './components.js';
-import { routePage, pinAbs, rotatedAabb } from './route.js';
+import { routePage, pinAbs, rotatedAabb, polylineOf } from './route.js';
 import { checkDocument } from './check.js';
 import { rebuildLocalDots } from './generic-refinement.js';
 
@@ -328,7 +328,13 @@ export async function straighten(model, opts = {}) {
 
 /** Each refdes label touches its part (keeps the side it was on). */
 export function glueLabels(model, gap = 3) {
-  const verts = allCells(model).map(cellInfo).filter((c) => c.kind === 'vertex' && c.x != null);
+  const cells = allCells(model).map(cellInfo), byId = new Map(cells.map((c) => [c.id, c]));
+  const verts = cells.filter((c) => c.kind === 'vertex' && c.x != null);
+  // the wires' segments: a label is not put across one (lib/quality.js, labels)
+  const segs = cells.filter((c) => c.kind === 'edge').flatMap((e) => { const p = polylineOf(e, byId) || []; return p.slice(1).map((b, k) => [p[k], b]); });
+  const onWire = (q, w, h) => segs.some(([a, b]) => (Math.abs(a.x - b.x) < 0.5
+    ? a.x > q.x + 1 && a.x < q.x + w - 1 && Math.max(a.y, b.y) > q.y + 1 && Math.min(a.y, b.y) < q.y + h - 1
+    : Math.abs(a.y - b.y) < 0.5 && a.y > q.y + 1 && a.y < q.y + h - 1 && Math.max(a.x, b.x) > q.x + 1 && Math.min(a.x, b.x) < q.x + w - 1));
   for (const l of verts.filter((c) => String(c.id).startsWith('LBL_'))) {
     const ref = String(l.id).slice(4);
     const p = verts.find((c) => c.id === ref || String(c.refdes || '') === ref);
@@ -343,14 +349,25 @@ export function glueLabels(model, gap = 3) {
       const b0 = rotatedAabb(p);
       // first free spot: beside the lead (away from the gate), then below,
       // then above the part — never on a port, a symbol or another part
+      // then, when a wire runs there (a rail, a net along the lead), the same
+      // spots pushed further out, then the gate side of the lead
       const spots = [
         { x: side > 0 ? leadX + gap + 2 : leadX - gap - 2 - l.w, y: midY - l.h / 2 },
         { x: (d.x + g.x) / 2 - l.w / 2, y: Math.max(d.y, s0.y) + gap },
         { x: (d.x + g.x) / 2 - l.w / 2, y: Math.min(d.y, s0.y) - gap - l.h },
+        ...[10, 20].flatMap((k) => [
+          { x: side > 0 ? leadX + gap + 2 + k : leadX - gap - 2 - k - l.w, y: midY - l.h / 2 },
+          { x: side > 0 ? leadX + gap + 2 : leadX - gap - 2 - l.w, y: midY - l.h / 2 + k },
+          { x: side > 0 ? leadX + gap + 2 : leadX - gap - 2 - l.w, y: midY - l.h / 2 - k },
+        ]),
+        { x: (d.x + g.x) / 2 - l.w / 2, y: Math.max(d.y, s0.y) + gap + 10 },
+        { x: (d.x + g.x) / 2 - l.w / 2, y: Math.min(d.y, s0.y) - gap - l.h - 10 },
+        { x: side > 0 ? g.x - gap - l.w : g.x + gap, y: midY + 6 },
+        { x: side > 0 ? g.x - gap - l.w : g.x + gap, y: midY - l.h - 6 },
       ];
-      const others = verts.filter((o) => o.id !== l.id && o.id !== p.id && classify(o).role !== 'junction' && !String(o.id).startsWith('LBL_'));
+      const others = verts.filter((o) => o.id !== l.id && o.id !== p.id && classify(o).role !== 'junction');
       const free = (q) => !others.some((o) => { const r = rotatedAabb(o); return q.x < r.x + r.w && r.x < q.x + l.w && q.y < r.y + r.h && r.y < q.y + l.h; });
-      const q = spots.find(free) || spots[0];
+      const q = spots.find((q) => free(q) && !onWire(q, l.w, l.h)) || spots.find(free) || spots[0];
       void b0;
       updateCell(model, l.id, { x: Math.round(q.x), y: Math.round(q.y) });
       continue;

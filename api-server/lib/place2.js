@@ -1,4 +1,5 @@
 import { alignSignalPaths } from './signal-alignment.js';
+import { SUPPLY_NAME } from './ground-alias.js';
 import { reserveChannels } from './floorplan.js';
 import { applyPortStyle } from './port-style.js';
 import { preserveElectricalData } from './electrical-data.js';
@@ -811,7 +812,7 @@ function importNetlist2Impl(model, parsed, opts = {}) {
   // place4 imposes the page's supply on a block that only touches it through
   // the far end of a resistor (never a conduction top): without it, Vcc of a
   // split block became an anonymous wire and the composed page failed LVS
-  const vddNet = [...byTopNet.keys()].find((n) => /^a?v(dd|cc)d?$/i.test(n)) ??
+  const vddNet = [...byTopNet.keys()].find((n) => SUPPLY_NAME.test(n)) ??
     (P.vddNet != null && comps.some((c) => c.nodes.includes(P.vddNet)) ? P.vddNet : null);
   // a resistor/cap/inductor written `R2 n3 Vcc` (or `R3 0 n5`) is electrically
   // the same part upside down: turn it so the supply is its TOP and ground its

@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSpice, extractNetlist } from '../lib/netlist.js';
@@ -8,17 +9,9 @@ import { autoPlace } from '../lib/auto.js';
 import { qualityGate } from '../lib/quality.js';
 
 // a CML clocked comparator (input pair + cross-coupled pair on the same
-// drains, clock switches, tail) — the circuit Eric refused on 2026-10-09
-const CML = `R1 vdd n1 5k
-R2 vdd n2 5k
-M1 n1 vin1 n3 n3 nmos
-M2 n2 vin2 n3 n3 nmos
-M3 n1 n2 n5 n5 nmos
-M4 n2 n1 n5 n5 nmos
-M5 n3 clk n4 n4 nmos
-M6 n5 clkb n4 n4 nmos
-M7 n4 bias gnd gnd nmos
-.end`;
+// drains, clock switches, tail) — the circuit Eric refused on 2026-10-09, then
+// validated drawn by the latch template: his reference (test/fixtures)
+const CML = fs.readFileSync(new URL('./fixtures/cml-comparator.sp', import.meta.url), 'utf8');
 
 test('latch: the CML comparator core is read (pairs, loads, switches, tail)', () => {
   const L = latchReading(parseSpice(CML));

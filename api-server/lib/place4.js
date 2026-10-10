@@ -28,6 +28,7 @@
  * (anchors of a bulk on an outside net are only resolvable there), then the
  * caller's strict LVS gate. Falls back to place2 for single-block netlists.
  */
+import { SUPPLY_NAME } from './ground-alias.js';
 import { newDocument, getPage, normalizeOrigin, allCells, cellInfo, addWire, portId } from './model.js';
 import { importNetlist2 } from './place2.js';
 import { routePage, pinAbs } from './route.js';
@@ -65,7 +66,7 @@ function subNetlist(parsed, refs) {
  *  is NOT one of them — it stays a boundary net and gets wired. */
 function railNets(parsed) {
   const rails = new Set(['0']);
-  for (const n of new Set(parsed.components.flatMap((c) => c.nodes))) if (/^a?v(dd|cc)d?$/i.test(n)) rails.add(n);
+  for (const n of new Set(parsed.components.flatMap((c) => c.nodes))) if (SUPPLY_NAME.test(n)) rails.add(n);
   return rails;
 }
 
