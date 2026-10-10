@@ -40,7 +40,7 @@ export function attachPassives(model, parsed, tpl, opts = {}) {
   const anchors = [];
   for (const r of tpl) {
     const c = byRef(r), pc = comp.get(r); if (!c || !pc) continue;
-    activePins(classify(c)).forEach((p, k) => { if (pc.nodes[k] != null) { const at = pinAbs(c, p); anchors.push({ ref: r, net: pc.nodes[k], at, side: Math.abs(at.x - c.x) < 2 ? -1 : Math.abs(at.x - (c.x + c.w)) < 2 && Math.abs(at.y - c.y) >= 2 && Math.abs(at.y - (c.y + c.h)) >= 2 ? 1 : 0 }); } });
+    activePins(classify(c)).forEach((p, k) => { if (pc.nodes[k] != null && !RAIL.test(pc.nodes[k])) { const at = pinAbs(c, p); anchors.push({ ref: r, net: pc.nodes[k], at, side: Math.abs(at.x - c.x) < 2 ? -1 : Math.abs(at.x - (c.x + c.w)) < 2 && Math.abs(at.y - c.y) >= 2 && Math.abs(at.y - (c.y + c.h)) >= 2 ? 1 : 0 }); } });
   }
   const tplCells = tpl.map(byRef).filter(Boolean);
   if (!tplCells.length) return { attached: [] };
@@ -69,8 +69,10 @@ export function attachPassives(model, parsed, tpl, opts = {}) {
   const place = (me, cx, cy, pc, upNet) => {
     const k = pc.nodes.indexOf(upNet);
     const lying = me.w > me.h;
-    for (const rot of lying ? [90, 270] : [0, 'flip']) {
-      updateCell(model, me.id, { style: rot === 'flip' ? { flipV: 1 } : lying ? { rotation: rot } : { flipV: null } });
+    // (a standing part: upright or turned 180° — any earlier turn or flip
+    // cleared, a source drawn by the placer upside down kept its + below)
+    for (const rot of lying ? [90, 270] : [0, 180]) {
+      updateCell(model, me.id, { style: lying ? { rotation: rot } : { rotation: rot || null, flipV: null } });
       const c = byRef(String(me.refdes)), ps = activePins(classify(c)).map((q) => pinAbs(c, q));
       if (k < 0 || ps.length < 2 || ps[k].y <= ps[1 - k].y) break;
     }
@@ -122,8 +124,14 @@ export function attachPassives(model, parsed, tpl, opts = {}) {
       }
     }
   }
+  // passes: a part attached becomes an anchor for the next (a gate bias
+  // resistor, then the bias source under it)
+  for (let pass = 0; pass < 3; pass++) {
+  const before = attached.length;
   for (const pc of parsed.components) {
-    if (tplSet.has(pc.ref) || !['R', 'C', 'L', 'I', 'V'].includes(pc.prefix) || pc.nodes.length < 2) continue;
+    // (rails are not anchors — a part hung from the ground node — and a source
+    // between two rails, the supply, is left with the rest)
+    if (tplSet.has(pc.ref) || attached.includes(pc.ref) || !['R', 'C', 'L', 'I', 'V'].includes(pc.prefix) || pc.nodes.length < 2 || (RAIL.test(pc.nodes[0]) && RAIL.test(pc.nodes[1]))) continue;
     const me = byRef(pc.ref); if (!me) continue;
     const [n1, n2] = pc.nodes;
     const a1 = anchors.filter((a) => a.net === n1), a2 = anchors.filter((a) => a.net === n2);
@@ -140,18 +148,30 @@ export function attachPassives(model, parsed, tpl, opts = {}) {
       const cand = as.filter((a) => a.at.x > xMax - 1).sort((u, v) => s * (u.at.y - v.at.y));
       for (const A of cand) {
         const cy = A.at.y + s * (sz.h / 2 + 14);
-        for (const cx of [A.at.x + (A.side === 1 ? 70 : 60), colX, colX + 80, colX + 160]) if (free(me, cx, cy, sz)) { spot = [cx, cy, s > 0 ? A.net : rail]; break; }
+        // under (over) the end of a part already attached first (a bias source
+        // under its resistor), else to the right of a device's pin
+        const own = !/^[MQJ]$/.test(comp.get(A.ref)?.prefix || '') && A.side === 0;
+        const xs = own ? [A.at.x, A.at.x - 70, A.at.x + 70, colX, colX + 80]
+          : A.side === -1 ? [A.at.x - 40, A.at.x - 60, A.at.x - 130, A.at.x - 200, A.at.x - 270, A.at.x - 340]   // a pin facing left: on its left
+          : [A.at.x + (A.side === 1 ? 70 : 60), colX, colX + 80, colX + 160];
+        for (const cx of xs) if (free(me, cx, cy, sz)) { spot = [cx, cy, s > 0 ? A.net : rail]; break; }
         if (spot) break;
       }
     } else if (a1.length && a2.length) {
       // node to node: between the two heights, in the closest free column
       let best = null;
-      for (const p of a1) for (const q of a2) { const d = Math.abs(p.at.x - q.at.x) + Math.abs(p.at.y - q.at.y); if (!best || d < best.d) best = { p, q, d }; }
+      // the pair on transistors' own pins first (a base-emitter capacitor sits
+      // by its transistor, not by the ends of resistors on the same nodes)
+      const actA = (a) => /^[MQJ]$/.test(comp.get(a.ref)?.prefix || '') ? 1 : 0;
+      for (const p of a1) for (const q of a2) { const d = Math.abs(p.at.x - q.at.x) + Math.abs(p.at.y - q.at.y) - 10000 * (actA(p) + actA(q)); if (!best || d < best.d) best = { p, q, d }; }
       const cy = (best.p.at.y + best.q.at.y) / 2;
       // inside the template only between two internal nodes; a part on a
       // pin that faces outwards (an input gate) goes on that side, outside
       const out = [best.p, best.q].find((a) => a.side === 1 && a.at.x > (box.x0 + box.x1) / 2);
+      // on a pin facing LEFT (a base, a gate on the left): beside it, on the left
+      const lft = !out && [best.p, best.q].find((a) => a.side === -1);
       const xs = out ? [out.at.x + 70, Math.max(out.at.x + 70, colX), colX + 80, colX + 160]
+        : lft ? [lft.at.x - 50, lft.at.x - 120, lft.at.x - 190, Math.max(best.p.at.x, best.q.at.x) + 60, Math.max(best.p.at.x, best.q.at.x) + 130, colX, colX + 80]
         : [(box.x0 + box.x1) / 2, Math.max(best.p.at.x, best.q.at.x) + 60, colX, colX + 80, colX + 160];
       // on an outward pin the part ENDS at that pin's height (a divider: the
       // upper part from the output down to the gate, the lower one below it)
@@ -159,11 +179,36 @@ export function attachPassives(model, parsed, tpl, opts = {}) {
       if (out) { const other = out === best.p ? best.q : best.p; cy2 = out.at.y + (other.at.y < out.at.y ? -1 : 1) * (sz.h / 2 + 14); }
       const upper = best.p.at.y <= best.q.at.y ? best.p.net : best.q.net;
       for (const cx of xs) if (free(me, cx, cy2, sz)) { spot = [cx, cy2, upper]; break; }
+    } else if (pass > 0 && (a1.length || a2.length) && !(RAIL.test(n1) && RAIL.test(n2))) {
+      // only ONE end on the template (a gate bias resistor towards a bias
+      // node): hanging from that node, downwards (upwards towards a supply)
+      const [as, far] = a1.length ? [a1, n2] : [a2, n1];
+      const s = RAIL.test(far) && !GND.test(far) ? -1 : 1;
+      // a device's own pin first (a gate), not the end of a part already there
+      const act = (a) => /^[MQJ]$/.test(comp.get(a.ref)?.prefix || '');
+      const cand = [...as].sort((u, v) => act(v) - act(u) || (u.side === 0) - (v.side === 0) || s * (u.at.y - v.at.y) || u.at.x - v.at.x);
+      for (const A of cand) {
+        // a little lower than a rail part: clear of a chain drawn at the pin's height
+        // the closest column first, then a little lower
+        const xs = A.side === -1 ? [A.at.x - 30, A.at.x - 50, A.at.x - 130, A.at.x - 210] : [A.at.x + 60, colX, colX + 80];
+        for (const cx of xs) {
+          for (const dyc of [14, 30, 46, 62]) {
+            const cy = A.at.y + s * (sz.h / 2 + dyc);
+            if (free(me, cx, cy, sz)) { spot = [cx, cy, s > 0 ? A.net : far]; break; }
+          }
+          if (spot) break;
+        }
+        if (spot) break;
+      }
     }
     if (!spot) continue;
     place(me, spot[0], spot[1], pc, spot[2]);
     if (spot[0] >= colX - 1) colX = spot[0] + 80;
     attached.push(pc.ref);
+    // its pins become anchors (side 0: a 2-terminal part's pins are its ends)
+    { const c = byRef(pc.ref); activePins(classify(c)).forEach((q, k) => { if (pc.nodes[k] != null && !RAIL.test(pc.nodes[k])) anchors.push({ ref: pc.ref, net: pc.nodes[k], at: pinAbs(c, q), side: 0 }); }); }
+  }
+  if (attached.length === before && pass > 0) break;
   }
   return { attached };
 }

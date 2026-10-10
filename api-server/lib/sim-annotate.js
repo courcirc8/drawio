@@ -63,17 +63,33 @@ export function annotateSim(model, sim, { netlist, show = new Set(['nodes', 'dev
   // obstacles: every vertex and wire segment; each placed label joins them
   // (a part's label: its text box estimated from its length — the cell is a fixed 20 px)
   const boxes = verts.filter((c) => c.style.map.get('contactDot') !== '1').map((c) => {
-    if (!String(c.id).startsWith('LBL_')) return { x: c.x, y: c.y, w: c.w, h: c.h };
-    const tw = Math.max(c.w, 7 * String(c.value || '').length), al = c.style.map.get('align') || 'center';
-    return { x: al === 'right' ? c.x + c.w - tw : al === 'left' ? c.x : c.x + c.w / 2 - tw / 2, y: c.y, w: tw, h: c.h };
+    if (!String(c.id).startsWith('LBL_')) {
+      // the DRAWN box (a part turned by 90° keeps its unrotated geometry)
+      const r = ((Number(c.style.map.get('rotation') || 0) % 180) + 180) % 180;
+      return r === 90 ? { x: c.x + c.w / 2 - c.h / 2, y: c.y + c.h / 2 - c.w / 2, w: c.h, h: c.w } : { x: c.x, y: c.y, w: c.w, h: c.h };
+    }
+    const tw = Math.max(c.w, 9 * String(c.value || '').length) + 6, al = c.style.map.get('align') || 'center';
+    return { x: al === 'right' ? c.x + c.w - tw : al === 'left' ? c.x : c.x + c.w / 2 - tw / 2, y: c.y - 2, w: tw, h: c.h + 4 };
   });
+  // a part's value drawn BY the part (no separate label cell): its text box
+  // beside the body, from the label position style
+  for (const c of verts) {
+    if (String(c.id).startsWith('LBL_') || c.style.map.get('noLabel') === '1' || !String(c.value || '').trim() || classify(c).role !== 'component') continue;
+    const r = ((Number(c.style.map.get('rotation') || 0) % 180) + 180) % 180;
+    const b = r === 90 ? { x: c.x + c.w / 2 - c.h / 2, y: c.y + c.h / 2 - c.w / 2, w: c.h, h: c.w } : { x: c.x, y: c.y, w: c.w, h: c.h };
+    const tw = 9 * String(c.value).length + 8, th = 18, lp = c.style.map.get('labelPosition') || 'center', vp = c.style.map.get('verticalLabelPosition') || 'middle';
+    const x = lp === 'left' ? b.x - tw : lp === 'right' ? b.x + b.w : b.x + b.w / 2 - tw / 2;
+    const y = vp === 'top' ? b.y - th : vp === 'bottom' ? b.y + b.h : b.y + b.h / 2 - th / 2;
+    boxes.push({ x, y, w: tw, h: th });
+  }
   const segs = [];
   for (const e of cells.filter((c) => c.kind === 'edge')) { const p = polylineOf(e, byId); if (p) for (let i = 1; i < p.length; i++) segs.push([p[i - 1], p[i]]); }
-  const hitsSeg = (b) => segs.some(([a, c]) => (Math.abs(a.x - c.x) < 0.5
+  // (2 px around the text: a wire ending exactly at its edge touched it)
+  const hitsSeg = (b0) => { const b = { x: b0.x - 2, y: b0.y - 2, w: b0.w + 4, h: b0.h + 4 }; return segs.some(([a, c]) => (Math.abs(a.x - c.x) < 0.5
     ? a.x > b.x && a.x < b.x + b.w && Math.max(a.y, c.y) > b.y && Math.min(a.y, c.y) < b.y + b.h
-    : Math.abs(a.y - c.y) < 0.5 && a.y > b.y && a.y < b.y + b.h && Math.max(a.x, c.x) > b.x && Math.min(a.x, c.x) < b.x + b.w));
+    : Math.abs(a.y - c.y) < 0.5 && a.y > b.y && a.y < b.y + b.h && Math.max(a.x, c.x) > b.x && Math.min(a.x, c.x) < b.x + b.w)); };
   const clear = (b) => !boxes.some((o) => o.x < b.x + b.w && o.x + o.w > b.x && o.y < b.y + b.h && o.y + o.h > b.y) && !hitsSeg(b);
-  const textW = (s, size) => Math.ceil(String(s).length * size * 0.58) + 6;
+  const textW = (s, size) => Math.ceil(String(s).length * size * 0.66) + 8;   // rendered text is wider than 0.58 em per character
   const put = (text, at, offsets, { size = 10, color = '#1f5fa8', bold = false } = {}) => {
     const w = textW(text, size), h = size + 6;
     for (const [dx, dy] of offsets) {
@@ -127,8 +143,9 @@ export function annotateSim(model, sim, { netlist, show = new Set(['nodes', 'dev
       const c0 = { x: cell.x - at.x, y: cell.y - at.y };
       for (const [fx, fy] of [[1, 0.5], [0, 1], [0, -0.2], [-1, 0.5], [1, 1], [1, -0.2], [-1, 1], [-1, -0.2]]) {
         const bx = fx === 1 ? cell.w + 6 : fx === -1 ? -tw - 6 : 0, by = fy === 1 ? cell.h + 4 : fy < 0 ? -20 : cell.h / 2 - 8;
-        for (const k of [0, 14, -14, 28]) offs.push([c0.x + bx, c0.y + by + k]);
+        for (const k of [0, 14, -14, 28, -28, 42]) offs.push([c0.x + bx, c0.y + by + k]);
       }
+      for (const [dx, dy] of [[0, cell.h + 30], [0, -50], [cell.w + 30, 0], [-tw - 40, 0], [0, cell.h + 50], [-tw - 40, cell.h], [cell.w + 30, cell.h]]) offs.push([c0.x + dx, c0.y + dy]);
       if (put(txt, at, offs, { color: abnormal ? '#d9730d' : '#2e7d32', bold: abnormal })) nDev++;
       else unmatched.devices.push(ref);
     }
