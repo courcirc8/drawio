@@ -42,7 +42,20 @@ corps = JSON ou `{sim, netlist}`), `DELETE` pour retirer ; couche inerte après 
 **Pages** : /drawio/review (lecture des lots, téléphone), /drawio/eric-lectures (lectures-3/4 retirées de la file : ne republier
 qu'avec 8-10 lectures passant (a)+(b) ; 1/26 passe aujourd'hui).
 
-**Branche `regress-pair-gnd` (PR séparée de #35, prête)** :
+**#35 (oui d'Eric 2026-10-11, activé par défaut, `AUTO_STRONGARM=0` désactive)** : gabarit **StrongARM** (lib/place-strongarm.js).
+Banc des gabarits après fusion de dev : StrongARM 20 lus, choisi 3 fois, contrôles 81 → 74, LVS 20/20 ; autres gabarits inchangés ;
+base figée avec lui. Paire croisée PMOS au-dessus de la paire croisée NMOS sur deux colonnes de sortie, les deux X dessinés ;
+paire d'entrée sous les nœuds internes, queue horloge centrée ; précharges des sorties à l'extérieur, celles des nœuds internes
+juste à l'intérieur (source droite au rail) ; ligne de sortie = ligne de drain du X PMOS, ports OUT dessus ; inverseurs de sortie
+(s'il y en a sur les deux sorties) au-delà des bus d'horloge ; horloge CÂBLÉE (pas de connexion par nom) : un bus de chaque côté
+réuni sous la queue → 2 « détours » (uWires) inévitables ; masse en net simple (`vss` sans symbole) câblée par une ligne sous
+l'horloge quand seuls des transistors du gabarit y sont. crossx : un fil de grille déjà sur le drain partenaire est supprimé
+(plus de boucle). Corpus : 20 StrongARM lus, LVS 20/20, gabarit choisi 3 fois (les 3 propres), échecs 87 → 79 au total.
+Limites : capacités de neutralisation, interrupteur de reset entre sorties, verrou SR, sources de banc de test, masse `VSS`
+en net simple avec d'autres pièces → l'ancien moteur reste choisi (règle de la porte). Piste transversale : place2 ne donne un
+symbole de masse qu'au net `0` (renommer casserait le LVS, pas d'alias dans lib/lvs.js).
+
+**#36 fusionnée (régression paire, banc des gabarits, masse vss)** :
 1. Régression du gabarit paire (porte 20 → 18 sur dev) : cause = #34 (réseau de queue pendu SOUS la paire : une chaîne
    C → L vers VDD revenait en grand U à travers une entrée, analoggenie 509/510). Corrigé dans lib/place-pair.js : une chaîne
    de la source vers le rail OPPOSÉ est dessinée entre les colonnes, vers ce rail (hors mode croisé) ; 509/510 repassent la porte.

@@ -80,6 +80,9 @@ export async function crossCoupledX(model, parsed, { errorCount, fixDots } = {})
     // gate by the X — and rerouted
     const reroute = [];
     for (const [e, dev, gRel, partner, dRel] of [[eL, L, pl.rel[1], R, pr.rel[0]], [eR, R, pr.rel[1], L, pl.rel[0]]]) {
+      // already on the partner's drain at its other end: the X replaces it
+      const other = e.source === dev.id ? { id: e.target, end: 'entry' } : { id: e.source, end: 'exit' };
+      if (other.id === partner.id && near(e, other.end, dRel)) { deleteCell(model, e.id); continue; }
       const keep = Array.from(model.childNodes).map((n) => n.cloneNode(true));
       deleteCell(model, e.id);
       let still = false; try { still = compare(extractNetlist(model), parsed).match; } catch { still = false; }
@@ -99,6 +102,9 @@ export async function crossCoupledX(model, parsed, { errorCount, fixDots } = {})
       for (const [dev, gRel, partner, dRel] of [[L, pl.rel[1], R, pr.rel[0]], [R, pr.rel[1], L, pl.rel[0]]]) {
         const atSource = e.source === dev.id && near(e, 'exit', gRel), atTarget = e.target === dev.id && near(e, 'entry', gRel);
         if (!atSource && !atTarget) continue;
+        // already on the partner's drain at its other end: it would become a loop
+        const other = atSource ? { id: e.target, end: 'entry' } : { id: e.source, end: 'exit' };
+        if (other.id === partner.id && near(e, other.end, dRel)) { deleteCell(model, e.id); break; }
         updateCell(model, e.id, atSource
           ? { source: partner.id, style: { exitX: dRel.x, exitY: dRel.y, edgeStyle: 'orthogonalEdgeStyle', drawioApiFixedRoute: null }, points: [] }
           : { target: partner.id, style: { entryX: dRel.x, entryY: dRel.y, edgeStyle: 'orthogonalEdgeStyle', drawioApiFixedRoute: null }, points: [] });
