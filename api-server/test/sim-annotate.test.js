@@ -35,3 +35,12 @@ test('sim annotations: nodes through the drawing netlist, device line, summary; 
   assert.equal(clearSim(m), n);
   assert.throws(() => annotateSim(m, { format: 'other/2' }), /format/);
 });
+
+test('sim annotations: a port-only node is not annotated; summary_extra lines shown as given', async () => {
+  const NET2 = 'VDD vdd 0 1.2\nCIN in g1 1p\nM1 d1 g1 0 0 nmos\nRD vdd d1 2k\nRG vdd g1 10k\n.end';
+  const p = parseSpice(NET2);
+  const r = await autoPlace(p), m = getPage(r.doc);
+  const out = annotateSim(m, { ...SIM, nodes: { ...SIM.nodes, in: { V: 0 } }, summary_extra: ['IIP3 −6,3 dBm'] }, { netlist: NET2 });
+  assert.equal(out.annotated_nodes, 3);   // vdd, d1, g1 — not "in"
+  assert.ok(out.summary.includes('IIP3 −6,3 dBm'));
+});

@@ -12,7 +12,8 @@
  *            name, ORANGE when its region is abnormal (bipolar not "actif
  *            direct", MOS not "saturation");
  *   summary  a box above the drawing: corner / temperature, S21, S11, NF,
- *            supply current.
+ *            supply current, and the optional `summary_extra` lines as given.
+ * A node carrying only a port (one part pin) is not annotated.
  * Nodes are found through the DRAWING NETLIST (the one imported — internal
  * nodes are renamed in the drawing): pin k of part R is on node n ⇒ the drawn
  * part R's pin k. Names compared without case. Keys absent are not shown.
@@ -114,8 +115,13 @@ export function annotateSim(model, sim, { netlist, show = new Set(['nodes', 'dev
       const ps = activePins(classify(cell));
       pc.nodes.forEach((n, k) => { if (ps[k]) { const key = String(n).toLowerCase(); if (!pinsOf.has(key)) pinsOf.set(key, []); pinsOf.get(key).push(pinAbs(cell, ps[k])); } });
     }
+    // a node carrying only a port (one part pin: the IN / OUT of a coupling
+    // capacitor) is not annotated — its "0 V" said nothing (Simulation's wish)
+    const degree = new Map();
+    for (const pc of parsed ? parsed.components : []) for (const n of pc.nodes) degree.set(String(n).toLowerCase(), (degree.get(String(n).toLowerCase()) || 0) + 1);
     for (const [name, v] of Object.entries(sim.nodes)) {
       if (v == null || v.V == null || /^(0|gnd)$/i.test(name)) continue;
+      if (parsed && degree.get(name.toLowerCase()) === 1) continue;
       const at = pinsOf.get(name.toLowerCase());
       const txt = eng(v.V, 'V');
       let ok = false;
@@ -162,6 +168,8 @@ export function annotateSim(model, sim, { netlist, show = new Set(['nodes', 'dev
     if (rf.length) lines.push(rf.join(' · ') + (ac.f_Hz ? ` à ${eng(ac.f_Hz, 'Hz')}` : ''));
     const I = Object.values(sim.supplies || {}).reduce((t, x) => t + (Number(x.I) || 0), 0);
     if (I) lines.push(`alimentation ${eng(I, 'A')}`);
+    // free lines given by the simulation, shown as they are (IIP3, P1dB…)
+    for (const l of Array.isArray(sim.summary_extra) ? sim.summary_extra : []) if (String(l).trim()) lines.push(String(l).trim().replace(/[<>]/g, ''));
     if (lines.length) {
       const x0 = Math.min(...verts.map((c) => c.x)), y0 = Math.min(...verts.map((c) => c.y));
       const w = Math.max(...lines.map((l) => textW(l, 11))) + 12, h = lines.length * 16 + 10;
