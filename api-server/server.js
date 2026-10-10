@@ -281,6 +281,23 @@ mountVerify(app, wrap);
 // read-only review sets for the orchestrator (lib/review.js, tools/review-batch.mjs)
 const { mountReview } = await import('./lib/review.js');
 mountReview(app, wrap);
+// simulation results on the drawing (simulator <-> drawio bridge, lib/sim-annotate.js):
+// body = a drawio-sim-annotations/1 object, or {sim, netlist}; ?show=nodes,devices,summary
+const { annotateSim, clearSim } = await import('./lib/sim-annotate.js');
+app.post('/documents/:id/annotations/sim', wrap(async (req, res) => {
+  const entry = documents.getDoc(req.params.id);
+  const m = model.getPage(entry.doc, req.query.page);
+  const b = req.body || {};
+  const sim = b.sim || b;
+  const text = b.netlist || (entry.importNetlist || {})[req.query.page || ''] || null;
+  const show = new Set(String(req.query.show || 'nodes,devices,summary').split(',').map((x) => x.trim()));
+  const out = annotateSim(m, sim, { netlist: text, show });
+  res.json({ ...out, netlist: text ? 'ok' : 'absente : seuls les noms identiques sont reliés' });
+}));
+app.delete('/documents/:id/annotations/sim', wrap(async (req, res) => {
+  const entry = documents.getDoc(req.params.id);
+  res.json({ removed: clearSim(model.getPage(entry.doc, req.query.page)) });
+}));
 // Eric's before/after page (tools/eric-pairs-batch.mjs): the blind /compare page
 // on the eric-paires batch; relative redirect so it works behind /drawio/
 // (the newest eric-paires* batch; earlier batches keep their answers)
@@ -350,6 +367,9 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
   if (spice == null || spice === '') throw model.httpError(400, 'SPICE netlist required (text body or {"spice": …})');
   const parsed = netlist.parseSpice(spice);
+  // kept with the document: the simulation annotations (lib/sim-annotate.js)
+  // find nodes through the netlist that was drawn
+  (entry.importNetlist ||= {})[req.query.page || ''] = spice;
   const engine = req.query.engine || 'v1';
   const iters = parseInt(req.query.optimize || '0', 10);
   // ?seed=<name> — seeded pre-placement from the frozen hand-drawn reference
