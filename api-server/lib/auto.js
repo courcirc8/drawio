@@ -33,13 +33,15 @@ import { importNetlistSA } from './place-sa.js';
 import { importNetlistStages, stagesConfident } from './place-stages.js';
 import { importNetlistLatch, latchReading } from './place-latch.js';
 import { alignPorts } from './align-ports.js';
+import { qualityGate } from './quality.js';
+import { importNetlistOta, otaReading } from './place-ota.js';
 import { crossCoupledX } from './crossx.js';
 import { wireNamedNets } from './wirenames.js';
 import { straighten, checkerErrors, fixDots } from './straighten.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 
-export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' || t.eng === 'latch' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
+export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' || t.eng === 'latch' || t.eng === 'ota' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
 
 export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   const doc = newDocument(); const m = getPage(doc);
@@ -49,6 +51,7 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
     else if (eng === 'sa') placed = await importNetlistSA(m, parsed, { ...sp, ...extra });
     else if (eng === 'stages') placed = await importNetlistStages(m, parsed, { ...sp, ...extra });
     else if (eng === 'latch') placed = await importNetlistLatch(m, parsed, { ...sp, ...extra });
+    else if (eng === 'ota') placed = await importNetlistOta(m, parsed, { ...sp, ...extra });
     else { placed = importNetlist2(m, parsed, { ...sp, ...extra }); await routePage(m, placed.wires, {}); normalizeOrigin(m); }
   } catch (e) { return { eng, restMode, sp, extra, errs: Infinity, error: String(e.message || e) }; }
   // a candidate that does not draw the netlist (LVS) is never chosen: a
@@ -56,6 +59,9 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   // no connection by name (Eric): labels joining an internal net are replaced
   // by wires before the drawing is judged (AUTO_WIRE_NAMES=0 keeps the labels)
   if (process.env.AUTO_WIRE_NAMES !== '0') { try { await wireNamedNets(m); } catch { /* judged as drawn */ } }
+  // a template is judged FINISHED (straightened, ports aligned): its quality
+  // gate decides whether it takes priority
+  if (eng === 'ota' && process.env.AUTO_JUDGE !== 'js') { try { await straighten(m); await alignPorts(m, { errorCount: checkerErrors }); } catch { /* judged as drawn */ } }
   let lvsOk = true;
   try { lvsOk = compare(extractNetlist(m), parsed).match; } catch { lvsOk = false; }
   if (!lvsOk) return { eng, restMode, sp, extra, doc, placed, errs: Infinity, conv: 0, lvsFailed: true };
@@ -65,7 +71,9 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   if (process.env.AUTO_BASICS !== '0') { try { basics = basicsReport(m, parsed).count; } catch { /* no geometry */ } }
   let rules = null;
   if (process.env.AUTO_RULES === '1') { try { rules = layoutRulesScore(m).score; } catch { /* no geometry */ } }
-  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, aspect: sheetAspect(m), wire: wirePerPart(m, parsed), bends: bendsPerWire(m), byName: namedLinks(m) };
+  let gate = null;
+  if (eng === 'ota') { try { gate = qualityGate(m, parsed).pass; } catch { gate = false; } }   // the latch keeps its approved behaviour
+  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, gate, aspect: sheetAspect(m), wire: wirePerPart(m, parsed), bends: bendsPerWire(m), byName: namedLinks(m) };
 }
 
 /** Total wire length per part, as the bench measures it (Manhattan length of
@@ -148,7 +156,10 @@ const betterEric = (b, a) => {
   if ((b.byName ?? 0) !== (a.byName ?? 0)) return (b.byName ?? 0) < (a.byName ?? 0);
   // then a recognised MOTIF drawn by its template (the textbook drawing,
   // Eric 2026-10-09 on the CML comparator) over a generic placement
-  const tb = b.eng === 'latch', ta = a.eng === 'latch';
+  // (only a template drawing that passes the quality gate: a template forced
+  // on a circuit it does not fit is worse than a generic placement)
+  const TEMPLATES = new Set(['latch', 'ota']);
+  const tb = TEMPLATES.has(b.eng) && b.gate !== false, ta = TEMPLATES.has(a.eng) && a.gate !== false;
   if (tb !== ta) return tb;
   const wb = b.aspect > 3, wa = a.aspect > 3;
   if (wb !== wa) return !wb;
@@ -216,6 +227,10 @@ export async function autoPlace(parsed) {
   // the CML latch / clocked comparator template (lib/place-latch.js), when the
   // netlist has that core (Eric 2026-10-09; AUTO_LATCH=0 disables)
   if (process.env.AUTO_LATCH !== '0' && latchReading(parsed)) specs.push(['latch', null, {}, {}]);
+  // the 5-transistor OTA template (lib/place-ota.js): DEFAULT since Eric's
+  // "oui, gabarit OTA" (2026-10-10), taking priority only when its finished
+  // drawing passes the quality gate (AUTO_OTA=0 disables)
+  if (process.env.AUTO_OTA !== '0' && otaReading(parsed)) specs.push(['ota', null, {}, {}]);
   // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
   // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
   // on one thread the budget only ever saw v2 finish on the big converters.
