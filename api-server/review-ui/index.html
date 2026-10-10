@@ -23,7 +23,7 @@ ul{margin:6px 0 0 18px;padding:0;font-size:13px}
 <div class="f" id="filt"></div></header>
 <main id="list"></main>
 <script>
-const why={labels:'étiquettes superposées',wireOnBody:'fil sur un composant',netlist:'netlist absurde',avoidable:'coudes évitables',crossX:'X manquant sur une paire croisée',pairRow:'paire différentielle hors rangée',symmetry:'paire pas symétrique',uWires:'fil en détour',ports:'port pas aligné sur sa broche'};
+const why={mirrorRef:'ERREUR DE NETLIST : miroir sans courant de référence',labels:'étiquettes superposées',wireOnBody:'fil sur un composant',netlist:'netlist absurde',avoidable:'coudes évitables',crossX:'X manquant sur une paire croisée',pairRow:'paire différentielle hors rangée',symmetry:'paire pas symétrique',uWires:'fil en détour',ports:'port pas aligné sur sa broche'};
 const q=new URLSearchParams(location.search), batch=q.get('batch');
 const base=location.pathname.replace(/\/review\/?(index\.html)?$/,'');
 let data, mode='all';

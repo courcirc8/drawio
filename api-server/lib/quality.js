@@ -16,6 +16,7 @@
  *   wireOnBody no wire along / through a part's body over > 6 px
  *   netlist    the parts form ONE group joined by non-rail nets (else the
  *              reading is absurd)
+ *   mirrorRef  no current mirror without a reference current (a netlist error)
  *   uWires     no detour: a wire longer than the Manhattan distance of its
  *              ends by more than 1.5 median part sizes (long U loops)
  *
@@ -27,6 +28,7 @@ import { pinAbs, polylineOf } from './route.js';
 import { detectStructures } from './patterns.js';
 import { avoidableBends } from './straighten.js';
 import { misalignedPorts } from './align-ports.js';
+import { mirrorsWithoutReference } from './netcheck.js';
 
 export function qualityGate(model, parsed) {
   const cs = allCells(model).map(cellInfo), byId = new Map(cs.map((c) => [c.id, c]));
@@ -150,6 +152,11 @@ export function qualityGate(model, parsed) {
   for (const c of comps) for (const n of c.nodes) if (!RAILN.test(n)) { if (byNet.has(n)) uf.set(fd(c.ref), fd(byNet.get(n))); else byNet.set(n, c.ref); }
   const groups = new Set(comps.map((c) => fd(c.ref))).size;
   checks.netlist = { ok: groups <= 1, n: groups > 1 ? groups : 0, detail: groups > 1 ? [`${groups} groupes de composants sans net commun (hors rails)`] : [] };
+
+  // a NETLIST error: a mirror whose reference branch has no imposed current
+  // (lib/netcheck.js — reported, never repaired)
+  const mr = mirrorsWithoutReference(parsed);
+  checks.mirrorRef = { ok: !mr.length, n: mr.length, detail: mr.map((x) => x.message) };
 
   // ports at the height of their pin, outside, straight wire (Eric)
   const mp = misalignedPorts(model);
