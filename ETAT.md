@@ -1,7 +1,49 @@
 # ÉTAT du chantier « qualité de la génération » — fork drawio (api-server)
 
-Mis à jour le 2026-10-08 (reprise après le redémarrage d'ai-station ; branche et données vérifiées intactes). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
+Mis à jour le 2026-10-10 (section « ÉTAT AU 2026-10-10 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
 Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
+
+## ÉTAT AU 2026-10-10 (à lire en premier ; le reste du fichier est l'historique)
+
+**PR fusionnées dans `dev`** (accord d'Eric, fusion par l'orchestrateur) :
+- #22-#23 : critère D d'Eric par défaut (graves rejetés → pas de connexion par nom → feuille ≤ 3:1 → coudes/fil → fil),
+  règle 14 (paire diff. hors rangée) GRAVE, moteur par étages ≤ 12 composants, X symétrique (crossx), redressement,
+  plus de connexions par nom (lib/wirenames.js), pas de valeurs inventées ; gabarit **verrou CML** (lib/place-latch.js,
+  comparateur CICC 2007 validé par Eric) ; ports alignés sur leur broche (lib/align-ports.js) ; porte qualité (lib/quality.js).
+- #24 : porte qualité + étiquettes superposées, fil sur un corps, netlist absurde ; tools/motif-census.mjs.
+- #25-#26 : gabarit **OTA 5T** (lib/place-ota.js) actif ; pièces autour des gabarits accrochées à leur nœud (lib/template-attach.js).
+- #27 : **rails** (lib/rails.js) — mode « rail » par défaut (UN label VDD, une ligne ; une ligne de masse), `AUTO_RAILS=branch|off` ;
+  contrôle de netlist **miroir sans courant de référence** (lib/netcheck.js), 11 netlists exclues (`excluded-mirror-ref.jsonl`, JOURNAL.md).
+- #28/#30/#31 (via #31) : gabarits **OTA 2 étages Miller** et **LNA cascode à dégénérescence inductive** (lib/place-lna.js) actifs ;
+  couche d'**annotations de simulation** (lib/sim-annotate.js).
+- #29 : parseSpice saute les blocs `.control … .endc`.
+- #32 : annotations — nœud ne portant qu'un port non annoté, `summary_extra`, valeurs sans place listées dans l'encadré
+  (`unplaced` distinct de `unmatched`).
+
+**En attente du oui d'Eric** : **#33** gabarit **paire différentielle à charges passives** (lib/place-pair.js, `AUTO_PAIR=1` ;
+41 circuits, choisi 28 fois, porte 17 → 20, LVS 41/41 ; rendus /drawio/review?batch=gabarit-pair).
+
+**Règle d'activation des gabarits** (Eric) : un gabarit n'est activé qu'après son « oui » sur 3-6 rendus référence / avant / après
+(page /drawio/review?batch=…, avis honnête de Claude écrit sous chaque rendu ; outil tools/template-renders.mjs, `--ids`,
+`--allow-noref`). Activé, il n'est choisi que s'il fait au moins aussi bien : moins ou autant de contrôles de la porte échoués
+que l'autre candidat (`gateFails`, calculé pour tout candidat ; un gabarit est jugé APRÈS redressement, ports et rails) ;
+entre deux gabarits : moins d'échecs, puis le plus spécifique (latch > lna > miller > ota > pair). Le verrou garde sa priorité
+validée. Désactivation : `AUTO_OTA=0`, `AUTO_MILLER=0`, `AUTO_LNA=0`, `AUTO_LATCH=0`. Ne jamais montrer à Eric un schéma brouillon.
+
+**Méthode** (validée par Eric) : cycles REVUE → AMÉLIORATION → REVUE. Contrôle (a) automatique (porte qualité) + (b) visuel par
+Claude à côté de la référence avant toute publication. Comparateur CICC 2007 (`/tmp/cml/net.sp`) : vérifier à chaque changement
+qu'il reste dessiné par `latch` (image validée par Eric).
+
+**Passerelle simulateur ↔ drawio** (session « Simulation », ~/ClaudeCode/simulation/passerelle/INTERFACE.md) :
+netlist de dessin (sim2drawio.py) importée par `POST /documents/:id/netlist/import?engine=auto` (la netlist est gardée avec
+le document) ; résultats `drawio-sim-annotations/1` par `POST /documents/:id/annotations/sim` (`?show=nodes,devices,summary`,
+corps = JSON ou `{sim, netlist}`), `DELETE` pour retirer ; couche inerte après routage. Rendus : /drawio/review?batch=sim-annotations.
+
+**Pages** : /drawio/review (lecture des lots, téléphone), /drawio/eric-lectures (lectures-3/4 retirées de la file : ne republier
+qu'avec 8-10 lectures passant (a)+(b) ; 1/26 passe aujourd'hui).
+
+**Suite** : gabarit paire croisée / VCO LC (61 + 128 circuits), puis StrongARM (60), suiveur / source commune, bandgap,
+miroir cascode (liste et comptes : tools/motif-census.mjs). Puis chantier placement 10-25 composants.
 
 ## Contraintes fermes d'Eric (plan qualité validé)
 
