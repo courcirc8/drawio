@@ -225,8 +225,9 @@ function checkPyErrors(doc) {
 /** Returns {doc, placed, label, trials:{label:{errors, conventions}}} or throws
  *  when every candidate failed. */
 export async function autoPlace(parsed) {
-  // a ground spelled vss / gnd (alone, no `0`) drawn as ground: one GND rail (lib/ground-alias.js)
-  parsed = withGroundAlias(parsed);
+  // a ground spelled vss / gnd (alone, no `0`) drawn as ground: one GND rail (lib/ground-alias.js);
+  // AUTO_GND=0 draws it as written (before / after renders)
+  if (process.env.AUTO_GND !== '0') parsed = withGroundAlias(parsed);
   // every candidate is started at once, judged as soon as it is drawn; TIME
   // BUDGET (Eric 2026-10-08, AUTO_BUDGET_MS, default 60 s): past it, auto keeps
   // the best drawing finished so far (candidates still running are ignored;
