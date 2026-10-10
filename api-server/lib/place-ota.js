@@ -30,6 +30,7 @@ import { classify, activePins } from './components.js';
 import { pinAbs, routePage } from './route.js';
 import { rebuildLocalDots } from './generic-refinement.js';
 import { alignPorts } from './align-ports.js';
+import { attachPassives } from './template-attach.js';
 
 const D = (c) => c.nodes[0], G = (c) => c.nodes[1], S = (c) => c.nodes[2];
 const isMos = (c) => c.prefix === 'M' || c.prefix === 'Q' || c.prefix === 'J';
@@ -51,7 +52,12 @@ export function otaReading(parsed) {
       const iB = iA === p ? q : p;
       if (D(out) !== D(iB)) continue;
       const used = new Set([p.ref, q.ref, dio.ref, out.ref]);
-      const tail = parsed.components.find((c) => !used.has(c.ref) && (isMos(c) ? D(c) === S(p) : c.nodes.includes(S(p))));
+      // the tail: a transistor's drain on the source net, or a source /
+      // resistor from the source net to a rail (a resistor between the pair's
+      // sources and a mirror node is not a tail: AnalogGenie 155)
+      const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss)$/i;
+      const tail = parsed.components.find((c) => !used.has(c.ref) && (isMos(c) ? D(c) === S(p)
+        : ['I', 'R'].includes(c.prefix) && c.nodes.includes(S(p)) && c.nodes.some((n) => n !== S(p) && RAILN.test(n))));
       if (tail) used.add(tail.ref);
       // the tail's bias diode: same gate, gate = drain, same polarity
       const bias = tail && isMos(tail) ? parsed.components.find((c) => !used.has(c.ref) && isMos(c) && G(c) === G(tail) && D(c) === G(c) && isPmosLike(c) === isPmosLike(tail)) : null;
@@ -83,11 +89,11 @@ export async function importNetlistOta(model, parsed, opts = {}) {
   const O = otaReading(parsed);
   if (!O) throw new Error('ota: no 5T OTA core');
   const placed = await importNetlistSA(model, parsed, { ...opts, saInit: otaLayout(parsed, O), saT0: opts.saT0 ?? 0.01, saIters: opts.saIters ?? 1 });
-  await imposeOta(model, O);
+  await imposeOta(model, O, parsed);
   return placed;
 }
 
-async function imposeOta(model, O) {
+async function imposeOta(model, O, parsed) {
   const cells = () => allCells(model).map(cellInfo);
   const find = (ref) => cells().find((c) => c.kind === 'vertex' && String(c.refdes || '') === ref);
   const pinsOf = (c) => activePins(classify(c)).map((p) => pinAbs(c, p));
@@ -139,13 +145,15 @@ async function imposeOta(model, O) {
       move(O.ref, drain(O.bias).x - near.x, (drain(O.bias).y - s * 40) - near.y);
     }
   }
+  // the passives around the template, each attached to its node (Eric)
+  const att = new Set(attachPassives(model, parsed, [O.iA, O.iB, O.mA, O.mB, O.tail, O.bias, O.ref].filter(Boolean)).attached);
   // parts outside the template that now overlap it go to its right (the
   // template moved under them: a BJT OTA's input followers sat on Q2)
   {
     const tpl = [O.iA, O.iB, O.mA, O.mB, O.tail, O.bias, O.ref].filter(Boolean).map(find);
     const box = { x0: Math.min(...tpl.map((c) => c.x)) - 30, x1: Math.max(...tpl.map((c) => c.x + c.w)) + 30, y0: Math.min(...tpl.map((c) => c.y)) - 30, y1: Math.max(...tpl.map((c) => c.y + c.h)) + 30 };
     let xr = box.x1 + 60;
-    const others = cells().filter((c) => c.kind === 'vertex' && classify(c).role === 'component' && !O.used.has(String(c.refdes || '')))
+    const others = cells().filter((c) => c.kind === 'vertex' && classify(c).role === 'component' && !O.used.has(String(c.refdes || '')) && !att.has(String(c.refdes || '')))
       .sort((u, v) => u.x - v.x);
     for (const c0 of others) {
       const c = find(String(c0.refdes));
@@ -221,9 +229,8 @@ function mirrorNet(model, IA, MA, MB, s) {
   const pdI = pinAbs(IA, dI), pdA = pinAbs(MA, dA), pgA = pinAbs(MA, gA), pgB = pinAbs(MB, gB);
   if (Math.abs(pdI.x - pdA.x) > 0.5 || Math.abs(pgA.y - pgB.y) > 0.5) return;
   const pins = [[IA, dI], [MA, dA], [MA, gA], [MB, gB]];
-  // only when the net is exactly these four pins
-  const before = allCells(model).map(cellInfo).filter((e) => e.kind === 'edge' && pins.some(([c, r]) => atPin(e, 'exit', c, r) || atPin(e, 'entry', c, r)));
-  if (before.some((e) => !pins.some(([c, r]) => atPin(e, 'exit', c, r)) || !pins.some(([c, r]) => atPin(e, 'entry', c, r)))) return;
+  // the wires among these four pins are redrawn; a wire to another part of
+  // the net (a resistor to the tail: AnalogGenie 155) stays on its pin
   dropAmong(model, pins);
   addWire(model, { source: IA.id, target: MA.id, sourcePin: dI, targetPin: dA, style: STF, points: [] });
   addWire(model, { source: MA.id, target: MB.id, sourcePin: gA, targetPin: gB, style: STF, points: [] });

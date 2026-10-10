@@ -91,12 +91,17 @@ const summary = {
   circuits: rows.length, elected: count((x) => x.elected),
   gateBefore: count((x) => x.a.q.pass), gateAfter: count((x) => x.b.q.pass),
   lvsBefore: count((x) => x.a.lvs), lvsAfter: count((x) => x.b.lvs),
+  // checks failed, all circuits together (a drawing may fail one check and
+  // still be far better than another failing four)
+  failsBefore: rows.reduce((n, x) => n + Object.values(x.a.q.checks).filter((c) => !c.ok).length, 0),
+  failsAfter: rows.reduce((n, x) => n + Object.values(x.b.q.checks).filter((c) => !c.ok).length, 0),
 };
 // ---- renders for Eric: clean reference, smallest first, the template elected
 const index = { batch: BATCH, created: new Date().toISOString(), note: `gabarit ${ENGINE} — rendus avant / après pour Eric (lecture seule)`, summary, items: [] };
 let k = 0;
 // those the template improves first (old drawing refused by the gate), then the smallest
-for (const x of rows.filter((x) => x.elected && x.b.q.pass).sort((u, v) => (u.a.q.pass - v.a.q.pass) || u.parts - v.parts || (u.id < v.id ? -1 : 1))) {
+const fails = (q) => Object.values(q.checks).filter((c) => !c.ok).length;
+for (const x of rows.filter((x) => x.elected && fails(x.b.q) <= 1).sort((u, v) => (u.a.q.pass - v.a.q.pass) || (fails(u.b.q) - fails(v.b.q)) || (fails(v.a.q) - fails(u.a.q)) || u.parts - v.parts || (u.id < v.id ? -1 : 1))) {
   if (k >= N) break;
   const ref = refOf(x.id); if (!ref) continue;
   k++;
