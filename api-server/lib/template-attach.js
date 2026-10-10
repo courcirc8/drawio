@@ -59,7 +59,9 @@ export function attachPassives(model, parsed, tpl, opts = {}) {
   };
   // the drawn (rotated) box of a part centred at (cx, cy), upright
   const upright = (c) => ({ w: Math.min(c.w, c.h), h: Math.max(c.w, c.h) });
-  const free = (me, cx, cy, sz) => !cells().some((o) => o.kind === 'vertex' && o.id !== me.id && o.x != null && !String(o.id).startsWith('LBL_')
+  // free of every other vertex, OTHER parts' labels included (a load capacitor
+  // landed on M6's name)
+  const free = (me, cx, cy, sz) => !cells().some((o) => o.kind === 'vertex' && o.id !== me.id && o.x != null && String(o.id) !== 'LBL_' + me.refdes && String(o.id) !== 'LBL_' + me.id
     && o.style.map.get('contactDot') !== '1' && !groupOf(me).includes(o.id)
     && o.x < cx + sz.w / 2 + 14 && o.x + o.w > cx - sz.w / 2 - 14 && o.y < cy + sz.h / 2 + 14 && o.y + o.h > cy - sz.h / 2 - 14);
   // upright, the end on net `upNet` on top (rotation 90 or 270 for a part
@@ -101,14 +103,20 @@ export function attachPassives(model, parsed, tpl, opts = {}) {
           const me = byRef(c.ref); if (!me) return;
           // lying, its end on `inNet` on the left
           const k = c.nodes.indexOf(inNet);
-          for (const rot of me.w >= me.h ? [0, 180] : [90, 270]) {
-            updateCell(model, me.id, { style: { rotation: rot || null } });
+          // ends swapped by MIRRORING a lying part (a 180° turn drew its value
+          // upside down: "1p" read "dı"), by 90 / 270 for a standing one
+          for (const v of me.w >= me.h ? [{ rotation: null, flipH: null }, { rotation: null, flipH: 1 }] : [{ rotation: 90 }, { rotation: 270 }]) {
+            updateCell(model, me.id, { style: v });
             const cc = byRef(c.ref), ps = activePins(classify(cc)).map((q) => pinAbs(cc, q));
             if (k < 0 || ps.length < 2 || ps[k].x <= ps[1 - k].x) break;
           }
           const now = byRef(c.ref), cx = xa + (xb - xa) * (i + 1) / (chain.length + 1);
           const dx = Math.round(cx - (now.x + now.w / 2)), dy = Math.round(y - (now.y + now.h / 2));
           for (const id of groupOf(now)) updateCell(model, id, { dx, dy });
+          // its value just above it, centred (left of a lying resistor it
+          // covered the resistor's end)
+          const placed = byRef(c.ref), lbl = cells().find((x) => x.kind === 'vertex' && (String(x.id) === 'LBL_' + c.ref || String(x.id) === 'LBL_' + placed.id));
+          if (lbl) updateCell(model, lbl.id, { x: Math.round(placed.x + placed.w / 2 - lbl.w / 2), y: Math.round(placed.y - lbl.h - 2), style: { align: 'center' } });
           attached.push(c.ref); tplSet.add(c.ref);
         });
       }
@@ -124,10 +132,17 @@ export function attachPassives(model, parsed, tpl, opts = {}) {
     if ((a1.length && RAIL.test(n2)) || (a2.length && RAIL.test(n1))) {
       // node to rail: hang from the node towards the rail
       const [as, rail] = a1.length && RAIL.test(n2) ? [a1, n2] : [a2, n1];
-      const A = as.reduce((u, v) => (v.at.x > u.at.x ? v : u));   // its rightmost pin: room to the right
+      // its rightmost pins (room to the right), the farthest from the rail
+      // first: the part hangs from the top of the node towards ground (from
+      // the bottom towards the supply) — from M6's drain it sat on M6's name
       const s = GND.test(rail) ? 1 : -1;
-      const cy = A.at.y + s * (sz.h / 2 + 14);
-      for (const cx of [A.at.x + (A.side === 1 ? 70 : 60), colX, colX + 80, colX + 160]) if (free(me, cx, cy, sz)) { spot = [cx, cy, s > 0 ? A.net : rail]; break; }
+      const xMax = Math.max(...as.map((a) => a.at.x));
+      const cand = as.filter((a) => a.at.x > xMax - 1).sort((u, v) => s * (u.at.y - v.at.y));
+      for (const A of cand) {
+        const cy = A.at.y + s * (sz.h / 2 + 14);
+        for (const cx of [A.at.x + (A.side === 1 ? 70 : 60), colX, colX + 80, colX + 160]) if (free(me, cx, cy, sz)) { spot = [cx, cy, s > 0 ? A.net : rail]; break; }
+        if (spot) break;
+      }
     } else if (a1.length && a2.length) {
       // node to node: between the two heights, in the closest free column
       let best = null;

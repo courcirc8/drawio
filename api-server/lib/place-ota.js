@@ -204,7 +204,7 @@ async function imposeOta(model, O, parsed) {
   // template moved under them: a BJT OTA's input followers sat on Q2)
   {
     const tpl = [O.iA, O.iB, O.mA, O.mB, O.tail, O.bias, O.ref, O.m6, O.m7].filter(Boolean).map(find);
-    const box = { x0: Math.min(...tpl.map((c) => c.x)) - 30, x1: Math.max(...tpl.map((c) => c.x + c.w)) + 30, y0: Math.min(...tpl.map((c) => c.y)) - 30, y1: Math.max(...tpl.map((c) => c.y + c.h)) + 30 };
+    const box = { x0: Math.min(...tpl.map((c) => c.x)) - 60, x1: Math.max(...tpl.map((c) => c.x + c.w)) + 60, y0: Math.min(...tpl.map((c) => c.y)) - 30, y1: Math.max(...tpl.map((c) => c.y + c.h)) + 30 };   // 60 px clear on the sides (an LDO pass device sat 30 px from the second stage)
     let xr = box.x1 + 60;
     const others = cells().filter((c) => c.kind === 'vertex' && classify(c).role === 'component' && !O.used.has(String(c.refdes || '')) && !att.has(String(c.refdes || '')))
       .sort((u, v) => u.x - v.x);
@@ -240,7 +240,7 @@ async function imposeOta(model, O, parsed) {
   // two-stage Miller: ONE line at the first output's height — first output,
   // Rz, Cc, second output, its port
   const yC = Math.round((drain(O.iB).y + drain(O.mB).y) / 2);
-  if (O.m6) outputNet(model, find(O.m7), find(O.m6), s, yC);
+  if (O.m6) outputNet(model, find(O.m7), find(O.m6), s, yC, O.out2);
   if (O.m6) { const rr = millerGate(model, find(O.m6), find(O.iB), find(O.mB), yC); if (rr.length) await routePage(model, rr, {}); }
   // the compensation line is exact: its parts and the output port are pinned
   // (the straightening pass slid them to the load's drain, off the gate tee)
@@ -309,7 +309,7 @@ function mirrorNet(model, IA, MA, MB, s) {
 
 /** The output node: load drain straight to input drain, the output port on
  *  the right at the middle of that line, a straight wire teeing into it. */
-function outputNet(model, IB, MB, s, yPort) {
+function outputNet(model, IB, MB, s, yPort, netName) {
   const dI = relPin(IB, 0), dB = relPin(MB, 0);
   const pdI = pinAbs(IB, dI), pdB = pinAbs(MB, dB);
   if (Math.abs(pdI.x - pdB.x) > 0.5) return;
@@ -318,12 +318,26 @@ function outputNet(model, IB, MB, s, yPort) {
   const pins = [[IB, dI], [MB, dB]];
   const onPins = (e) => pins.some(([c, r]) => atPin(e, 'exit', c, r) || atPin(e, 'entry', c, r));
   // a port whose wires all end on these pins
-  const port = cs.find((v) => v.kind === 'vertex' && classify(v).role === 'port' && (() => { const es = edges.filter((e) => e.source === v.id || e.target === v.id); return es.length && es.every(onPins); })());
+  // the node's port: its wires all end on these pins, or (its wire may go to
+  // another part of the node, the Miller capacitor) it bears the net's name
+  const port = cs.find((v) => v.kind === 'vertex' && classify(v).role === 'port' && (() => { const es = edges.filter((e) => e.source === v.id || e.target === v.id); return es.length && es.every(onPins); })())
+    || (netName && cs.find((v) => v.kind === 'vertex' && classify(v).role === 'port' && String(v.value || '').trim().toLowerCase() === String(netName).toLowerCase()));
   const portEdges = port ? edges.filter((e) => e.source === port.id || e.target === port.id) : [];
   // the wires among these pins and the port's are redrawn; a wire to another
   // part on the node (a load capacitor, the Miller capacitor) stays on its pin
   dropAmong(model, pins);
-  for (const e of portEdges) deleteCell(model, e.id);
+  // a port wire to another part of the node (the Miller capacitor) was that
+  // part's link: the part is joined to the node itself, along its own height
+  for (const e of portEdges) {
+    const [oid, oend] = e.source === port.id ? [e.target, 'entry'] : [e.source, 'exit'];
+    const orel = { x: Number(e.style.map.get(oend + 'X') ?? 0.5), y: Number(e.style.map.get(oend + 'Y') ?? 0.5) };
+    deleteCell(model, e.id);
+    if (pins.some(([c, r]) => c.id === oid && Math.abs(r.x - orel.x) < 0.02 && Math.abs(r.y - orel.y) < 0.02)) continue;
+    const O2 = allCells(model).map(cellInfo).find((c) => c.id === oid);
+    if (!O2) continue;
+    const op = pinAbs(O2, orel);
+    addWire(model, { source: oid, target: IB.id, sourcePin: orel, targetPin: dI, style: STF, points: [{ x: pdI.x, y: Math.round(op.y) }] });
+  }
   addWire(model, { source: MB.id, target: IB.id, sourcePin: dB, targetPin: dI, style: STF, points: [] });
   if (port) {
     const y = yPort ?? Math.round((pdI.y + pdB.y) / 2), x = Math.round(Math.max(IB.x + IB.w, MB.x + MB.w) + 40);
