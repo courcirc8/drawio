@@ -32,9 +32,13 @@ const isAct = (c) => c.prefix === 'M' || c.prefix === 'Q' || c.prefix === 'J';
 const TWO = new Set(['R', 'L', 'C']);
 const D = (c) => c.nodes[0], G = (c) => c.nodes[1], S = (c) => c.nodes[2];
 
+/** The LC VCO / cross-coupled pair reading (same template, gates facing for
+ *  the X drawn by lib/crossx.js), or null. */
+export const vcoReading = (parsed) => pairReading(parsed, { cross: true });
+
 /** The pair reading, or null. */
-export function pairReading(parsed) {
-  if (otaReading(parsed)) return null;   // a mirror load: the OTA template
+export function pairReading(parsed, { cross = false } = {}) {
+  if (!cross && otaReading(parsed)) return null;   // a mirror load: the OTA template
   let st; try { st = detectStructures(parsed); } catch { return null; }
   const comps = parsed.components, byRef = new Map(comps.map((c) => [c.ref, c]));
   const on = (n) => comps.filter((c) => c.nodes.slice(0, isAct(c) ? 3 : 2).includes(n));
@@ -52,8 +56,11 @@ export function pairReading(parsed) {
     }
     return out;
   };
-  for (const dp of st.diffPairs) {
-    if (st.crossCoupled.some((cc) => cc.refs.some((r) => dp.refs.includes(r)))) continue;
+  // cross mode (LC VCO, latch core): the CROSS-COUPLED pairs with a common
+  // source; normal mode: the differential pairs that are not cross-coupled
+  const cands = cross ? st.crossCoupled.filter((cc) => { const [a, b] = cc.refs.map((r) => byRef.get(r)); return S(a) === S(b); }) : st.diffPairs;
+  for (const dp of cands) {
+    if (!cross && st.crossCoupled.some((cc) => cc.refs.some((r) => dp.refs.includes(r)))) continue;
     const [a, b] = dp.refs.map((r) => byRef.get(r));
     const pIn = isPmosLike(a);
     const la = loadsOf(D(a), pIn), lb = loadsOf(D(b), pIn);
@@ -69,7 +76,19 @@ export function pairReading(parsed) {
     // template (a passive mixer whose pair is a detail drew worse with it)
     const acts = comps.filter(isAct).length, actUsed = [...used].filter((r) => isAct(byRef.get(r))).length;
     if (acts && actUsed / acts < 0.6) continue;
-    return { iA: a.ref, iB: b.ref, loadsA: la.map((ch) => ch.map((p) => p.ref)), loadsB: lb.map((ch) => ch.map((p) => p.ref)), tail: tail?.ref, bias: bias?.ref, ref: ref?.ref, pIn, nodes: { dA: D(a), dB: D(b), s: S(a) }, used };
+    // (cross: the capacitors between the two outputs, laid across)
+    const across = cross ? comps.filter((c) => c.prefix === 'C' && !used.has(c.ref) && c.nodes.includes(D(a)) && c.nodes.includes(D(b))).map((c) => c.ref) : [];
+    for (const r of across) used.add(r);
+    // varactors: two C / D in series between the outputs through a middle node
+    // (the tuning voltage) — laid across too, each chain apart
+    const acrossChains = [];
+    if (cross) for (const p1 of comps.filter((c) => ['C', 'D'].includes(c.prefix) && !used.has(c.ref) && c.nodes.slice(0, 2).includes(D(a)))) {
+      const m = p1.nodes.slice(0, 2).find((x) => x !== D(a));
+      if (!m || RAIL.test(m)) continue;
+      const p2 = comps.find((c) => c !== p1 && ['C', 'D'].includes(c.prefix) && !used.has(c.ref) && c.nodes.slice(0, 2).includes(m) && c.nodes.slice(0, 2).includes(D(b)));
+      if (p2) { acrossChains.push([p1.ref, p2.ref]); used.add(p1.ref); used.add(p2.ref); }
+    }
+    return { cross, across, acrossChains, iA: a.ref, iB: b.ref, loadsA: la.map((ch) => ch.map((p) => p.ref)), loadsB: lb.map((ch) => ch.map((p) => p.ref)), tail: tail?.ref, bias: bias?.ref, ref: ref?.ref, pIn, nodes: { dA: D(a), dB: D(b), s: S(a) }, used };
   }
   return null;
 }
@@ -83,6 +102,14 @@ export function pairLayout(parsed, P) {
   let k = 0;
   for (const c of parsed.components) if (!pos.has(c.ref)) pos.set(c.ref, { x: 4.5 + 1.5 * (k % 3), y: 1.5 * Math.floor(k++ / 3) });
   return pos;
+}
+
+export async function importNetlistVco(model, parsed, opts = {}) {
+  const P = vcoReading(parsed);
+  if (!P) throw new Error('vco: no cross-coupled pair with loads');
+  const placed = await importNetlistSA(model, parsed, { ...opts, saInit: pairLayout(parsed, P), saT0: opts.saT0 ?? 0.01, saIters: opts.saIters ?? 1 });
+  await imposePair(model, parsed, P);
+  return placed;
 }
 
 export async function importNetlistPair(model, parsed, opts = {}) {
@@ -122,12 +149,13 @@ async function imposePair(model, parsed, P) {
       const ps = pins(r); if (k < 0 || ps[k].y <= ps[1 - k].y) break;
     }
   };
-  face(P.iA, 'left'); face(P.iB, 'right');
+  // (cross-coupled: gates FACING, the X between them drawn by crossx)
+  if (P.cross) { face(P.iA, 'right'); face(P.iB, 'left'); } else { face(P.iA, 'left'); face(P.iB, 'right'); }
   if (P.bias) { face(P.bias, 'right'); face(P.tail, 'left'); }
   const s = P.pIn ? -1 : 1, GAP = 40;
   const W = Math.max(find(P.iA).w, find(P.iB).w);
   const a = ctr(P.iA);
-  { const b = ctr(P.iB); move(P.iB, a.x + Math.max(2.6 * W, 200) - b.x, a.y - b.y); }
+  { const b = ctr(P.iB); move(P.iB, a.x + (P.cross ? Math.max(3.4 * W, 260) : Math.max(2.6 * W, 200)) - b.x, a.y - b.y); }
   // loads: chain j over (under, PMOS pair) its drain, parallel chains outwards
   for (const [chains, dev, dn, out] of [[P.loadsA, P.iA, P.nodes.dA, -1], [P.loadsB, P.iB, P.nodes.dB, 1]]) {
     chains.forEach((ch, j) => {
@@ -137,7 +165,8 @@ async function imposePair(model, parsed, P) {
         const pc = comp.get(r), other = pc.nodes.find((m) => m !== n);
         upright(r, s > 0 ? other : n);
         const k = pc.nodes.indexOf(n), ps = pins(r);
-        move(r, x - ps[k].x, (yEdge - s * (GAP + 10)) - ps[k].y);
+        // (cross: the first load higher — the X's upper line runs just over the drains)
+        move(r, x - ps[k].x, (yEdge - s * (GAP + 10 + (P.cross && n === dn ? 50 : 0))) - ps[k].y);
         n = other; yEdge = pins(r)[1 - k].y;
       }
     });
@@ -151,11 +180,57 @@ async function imposePair(model, parsed, P) {
     if (P.bias) { const bb = ctr(P.bias); const g = pins(P.tail)[1]; move(P.bias, (g.x - Math.max(1.6 * W, 120)) - pins(P.bias)[1].x, ctr(P.tail).y - bb.y); }
     if (P.bias && P.ref) { const R = find(P.ref), ps = activePins(classify(R)).map((q) => pinAbs(R, q)); const near = ps.reduce((u, v) => (s * v.y > s * u.y ? v : u)); const d = pins(P.bias)[0]; move(P.ref, d.x - near.x, (d.y - s * 40) - near.y); }
   }
-  const tpl = [...P.used];
-  const att = new Set(attachPassives(model, parsed, tpl).attached);
+  // the TAIL NETWORK when the tail is not one part (an inductor to a node of
+  // current sources / capacitors): under the middle of the source line, a
+  // series part straight down, the parallel parts under it side by side; a
+  // part from the source node straight to the rail beside it
+  const extra = new Set();
+  if (!P.tail) {
+    const sa = pins(P.iA)[2], sb = pins(P.iB)[2], xm = (sa.x + sb.x) / 2, y0 = sa.y + s * 30;
+    const onS = parsed.components.filter((c) => !P.used.has(c.ref) && !isAct(c) && c.nodes.slice(0, 2).includes(P.nodes.s));
+    let side = 0;
+    for (const c of onS) {
+      const o = c.nodes.slice(0, 2).find((n) => n !== P.nodes.s);
+      upright(c.ref, s > 0 ? P.nodes.s : o);
+      const k = c.nodes.indexOf(P.nodes.s), ps = pins(c.ref);
+      if (RAIL.test(o)) { side++; move(c.ref, (xm - side * 110) - ps[k].x, y0 - ps[k].y); extra.add(c.ref); continue; }
+      move(c.ref, xm - ps[k].x, y0 - ps[k].y); extra.add(c.ref);
+      const bot = pins(c.ref)[1 - k];
+      const par = parsed.components.filter((d) => !P.used.has(d.ref) && !extra.has(d.ref) && d !== c && d.nodes.slice(0, 2).includes(o) && d.nodes.slice(0, 2).some((n) => n !== o && RAIL.test(n)));
+      par.forEach((d, j) => {
+        upright(d.ref, s > 0 ? o : d.nodes.slice(0, 2).find((n) => n !== o));
+        const kd = d.nodes.indexOf(o), pd = pins(d.ref);
+        move(d.ref, (xm + (j - (par.length - 1) / 2) * 110) - pd[kd].x, (bot.y + s * 40) - pd[kd].y); extra.add(d.ref);
+      });
+    }
+  }
+  // capacitors (resistors) from an OUTPUT to the rail: just outside its
+  // column, hanging from the output line
+  for (const [dev, net, out] of [[P.iA, P.nodes.dA, -1], [P.iB, P.nodes.dB, 1]]) {
+    const dp = pins(dev)[0];
+    const la = (out < 0 ? P.loadsA : P.loadsB)[0]?.[0];
+    const yl = la ? pins(la)[comp.get(la).nodes.indexOf(net)].y : dp.y - s * 60;
+    let j = 0;
+    for (const c of parsed.components.filter((d) => !P.used.has(d.ref) && !extra.has(d.ref) && ['C', 'R'].includes(d.prefix) && d.nodes.slice(0, 2).includes(net) && d.nodes.slice(0, 2).some((n) => n !== net && RAIL.test(n) && GND.test(n) === (s > 0))))
+    {
+      j++; upright(c.ref, s > 0 ? net : c.nodes.slice(0, 2).find((n) => n !== net));
+      const k = c.nodes.indexOf(net), ps = pins(c.ref);
+      move(c.ref, (dp.x + out * (130 + 90 * j)) - ps[k].x, (yl + s * 20) - ps[k].y); extra.add(c.ref);
+    }
+  }
+  const tpl = [...P.used, ...extra];
+  // across capacitors between the outputs, half-way between drains and loads
+  const dYa = pins(P.iA)[0].y, la0 = P.loadsA[0]?.[0];
+  // (cross: at the loads' lower ends, clear of the X; else half-way)
+  const yLoad = la0 ? pins(la0)[comp.get(la0).nodes.indexOf(P.nodes.dA)].y : dYa - s * 80;
+  const yAcross = P.cross ? Math.round(yLoad + s * 10) : Math.round((dYa + yLoad) / 2);
+  const chainRefs = (P.acrossChains || []).flat();
+  const tplA = tpl.filter((r) => !(P.across || []).includes(r) && !chainRefs.includes(r));
+  const att = new Set(attachPassives(model, parsed, tplA, { across: P.across || [], acrossY: yAcross }).attached);
+  (P.acrossChains || []).forEach((ch, k) => { for (const r of attachPassives(model, parsed, [...tplA, ...att], { across: ch, acrossY: yAcross - s * 60 * (k + 1) }).attached) att.add(r); });
   // remaining parts together, on the right of the template
   const T = tpl.map(find).filter(Boolean);
-  const rest = cells().filter((v) => v.kind === 'vertex' && classify(v).role === 'component' && !P.used.has(String(v.refdes || '')) && !att.has(String(v.refdes || '')));
+  const rest = cells().filter((v) => v.kind === 'vertex' && classify(v).role === 'component' && !P.used.has(String(v.refdes || '')) && !att.has(String(v.refdes || '')) && !extra.has(String(v.refdes || '')));
   if (rest.length) {
     const all = [...T, ...cells().filter((v) => att.has(String(v.refdes || '')))];
     const xMax = Math.max(...all.map((c) => c.x + c.w)), y0 = Math.min(...T.map((c) => c.y)), y1 = Math.max(...T.map((c) => c.y + c.h));
@@ -176,7 +251,8 @@ async function imposePair(model, parsed, P) {
     const D0 = find(dev), dRel = activePins(classify(D0))[0], dp = pinAbs(D0, dRel);   // (used below)
     const load = (out < 0 ? P.loadsA : P.loadsB)[0]?.[0];
     const lp = load ? pins(load)[comp.get(load).nodes.indexOf(net)] : { y: dp.y - 2 * GAP };
-    const y = Math.round((dp.y + lp.y) / 2), x = out < 0 ? Math.round(dp.x - 40 - port.w) : Math.round(dp.x + 40);
+    // (cross: both outputs on the line of the capacitor across, symmetric)
+    const y = P.cross ? Math.round(lp.y + s * 10) : Math.round((dp.y + lp.y) / 2), x = out < 0 ? Math.round(dp.x - 40 - port.w) : Math.round(dp.x + 40);
     // a port wire to another part (the load) was that part's link to the drain:
     // the part is joined to the drain line itself
     for (const e of es.filter((e) => e.source === port.id || e.target === port.id)) {

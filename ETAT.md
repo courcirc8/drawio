@@ -28,7 +28,7 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 `--allow-noref`). Activé, il n'est choisi que s'il fait au moins aussi bien : moins ou autant de contrôles de la porte échoués
 que l'autre candidat (`gateFails`, calculé pour tout candidat ; un gabarit est jugé APRÈS redressement, ports et rails) ;
 entre deux gabarits : moins d'échecs, puis le plus spécifique (latch > lna > miller > ota > pair). Le verrou garde sa priorité
-validée. Désactivation : `AUTO_OTA=0`, `AUTO_MILLER=0`, `AUTO_LNA=0`, `AUTO_PAIR=0`, `AUTO_LATCH=0`. Ne jamais montrer à Eric un schéma brouillon.
+validée. Désactivation : `AUTO_OTA=0`, `AUTO_MILLER=0`, `AUTO_LNA=0`, `AUTO_PAIR=0`, `AUTO_VCO=0`, `AUTO_LATCH=0`. #34 (oui d'Eric) : gabarit **paire croisée / VCO LC** (lib/place-pair.js, mode croisé ; varactors en travers, réseau de queue sous la queue). Ne jamais montrer à Eric un schéma brouillon.
 
 **Méthode** (validée par Eric) : cycles REVUE → AMÉLIORATION → REVUE. Contrôle (a) automatique (porte qualité) + (b) visuel par
 Claude à côté de la référence avant toute publication. Comparateur CICC 2007 (`/tmp/cml/net.sp`) : vérifier à chaque changement
@@ -42,7 +42,7 @@ corps = JSON ou `{sim, netlist}`), `DELETE` pour retirer ; couche inerte après 
 **Pages** : /drawio/review (lecture des lots, téléphone), /drawio/eric-lectures (lectures-3/4 retirées de la file : ne republier
 qu'avec 8-10 lectures passant (a)+(b) ; 1/26 passe aujourd'hui).
 
-**Suite** : gabarit paire croisée / VCO LC (61 + 128 circuits), puis StrongARM (60), suiveur / source commune, bandgap,
+**Suite** (ordre d'Eric) : StrongARM (60), suiveur / source commune, bandgap,
 miroir cascode (liste et comptes : tools/motif-census.mjs). Puis chantier placement 10-25 composants.
 
 ## Contraintes fermes d'Eric (plan qualité validé)
