@@ -71,9 +71,10 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   if (process.env.AUTO_BASICS !== '0') { try { basics = basicsReport(m, parsed).count; } catch { /* no geometry */ } }
   let rules = null;
   if (process.env.AUTO_RULES === '1') { try { rules = layoutRulesScore(m).score; } catch { /* no geometry */ } }
-  let gate = null;
-  if (eng === 'ota') { try { gate = qualityGate(m, parsed).pass; } catch { gate = false; } }   // the latch keeps its approved behaviour
-  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, gate, aspect: sheetAspect(m), wire: wirePerPart(m, parsed), bends: bendsPerWire(m), byName: namedLinks(m) };
+  // quality gate: number of checks failed (lib/quality.js), every candidate
+  let gateFails = null;
+  try { const q = qualityGate(m, parsed); gateFails = Object.values(q.checks).filter((c) => !c.ok).length; } catch { gateFails = 99; }
+  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, gateFails, aspect: sheetAspect(m), wire: wirePerPart(m, parsed), bends: bendsPerWire(m), byName: namedLinks(m) };
 }
 
 /** Total wire length per part, as the bench measures it (Manhattan length of
@@ -156,11 +157,14 @@ const betterEric = (b, a) => {
   if ((b.byName ?? 0) !== (a.byName ?? 0)) return (b.byName ?? 0) < (a.byName ?? 0);
   // then a recognised MOTIF drawn by its template (the textbook drawing,
   // Eric 2026-10-09 on the CML comparator) over a generic placement
-  // (only a template drawing that passes the quality gate: a template forced
-  // on a circuit it does not fit is worse than a generic placement)
-  const TEMPLATES = new Set(['latch', 'ota']);
-  const tb = TEMPLATES.has(b.eng) && b.gate !== false, ta = TEMPLATES.has(a.eng) && a.gate !== false;
-  if (tb !== ta) return tb;
+  // — the OTA template only when its drawing fails no more quality-gate
+  // checks than the other one (a template forced on a circuit it does not fit
+  // is worse than a generic placement); the latch keeps its approved priority
+  const isT = (t) => t.eng === 'latch' || t.eng === 'ota';
+  if (isT(b) !== isT(a)) {
+    const t = isT(b) ? b : a, o = isT(b) ? a : b;
+    if (t.eng === 'latch' || (t.gateFails ?? 99) <= (o.gateFails ?? 99)) return isT(b);
+  }
   const wb = b.aspect > 3, wa = a.aspect > 3;
   if (wb !== wa) return !wb;
   if (b.bends != null && a.bends != null && Math.abs(b.bends - a.bends) > 0.05) return b.bends < a.bends;
