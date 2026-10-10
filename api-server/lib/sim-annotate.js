@@ -52,7 +52,8 @@ export function clearSim(model) {
  * @param sim     the drawio-sim-annotations/1 object
  * @param opts.netlist  the drawing netlist text (the one imported)
  * @param opts.show     Set of 'nodes' | 'devices' | 'summary' (default all)
- * @returns {annotated_nodes, annotated_devices, unmatched, summary}
+ * @returns {annotated_nodes, annotated_devices, unmatched (not in the drawing),
+ *           unplaced (no clear spot: listed in the summary box), summary}
  */
 export function annotateSim(model, sim, { netlist, show = new Set(['nodes', 'devices', 'summary']) } = {}) {
   if (!sim || !FORMAT.test(String(sim.format || ''))) { const e = new Error(`format ${sim?.format} : drawio-sim-annotations/1 attendu`); e.status = 422; throw e; }
@@ -60,7 +61,9 @@ export function annotateSim(model, sim, { netlist, show = new Set(['nodes', 'dev
   const cells = allCells(model).map(cellInfo), byId = new Map(cells.map((c) => [c.id, c]));
   const verts = cells.filter((c) => c.kind === 'vertex' && c.x != null);
   const parts = new Map(verts.filter((c) => classify(c).role === 'component' && c.refdes).map((c) => [String(c.refdes).toLowerCase(), c]));
-  const unmatched = { nodes: [], devices: [] };
+  // unmatched: not in the drawing; unplaced: in it, but no clear spot nearby
+  // (12 transistors in parallel, Simulation's lna_v6) — their lines go to the summary box
+  const unmatched = { nodes: [], devices: [] }, unplaced = { nodes: [], devices: [] }, overflow = [];
   // obstacles: every vertex and wire segment; each placed label joins them
   // (a part's label: its text box estimated from its length — the cell is a fixed 20 px)
   const boxes = verts.filter((c) => c.style.map.get('contactDot') !== '1').map((c) => {
@@ -126,7 +129,7 @@ export function annotateSim(model, sim, { netlist, show = new Set(['nodes', 'dev
       const txt = eng(v.V, 'V');
       let ok = false;
       for (const p of at || []) if (put(txt, p, ring(textW(txt, 10)))) { ok = true; break; }
-      if (ok) nNodes++; else unmatched.nodes.push(name);
+      if (ok) nNodes++; else if (at && at.length) { unplaced.nodes.push(name); overflow.push(`${name} : ${txt}`); } else unmatched.nodes.push(name);
     }
   }
 
@@ -153,7 +156,7 @@ export function annotateSim(model, sim, { netlist, show = new Set(['nodes', 'dev
       }
       for (const [dx, dy] of [[0, cell.h + 30], [0, -50], [cell.w + 30, 0], [-tw - 40, 0], [0, cell.h + 50], [-tw - 40, cell.h], [cell.w + 30, cell.h]]) offs.push([c0.x + dx, c0.y + dy]);
       if (put(txt, at, offs, { color: abnormal ? '#d9730d' : '#2e7d32', bold: abnormal })) nDev++;
-      else unmatched.devices.push(ref);
+      else { unplaced.devices.push(ref); overflow.push(`${ref} : ${txt}`); }
     }
   }
 
@@ -170,6 +173,8 @@ export function annotateSim(model, sim, { netlist, show = new Set(['nodes', 'dev
     if (I) lines.push(`alimentation ${eng(I, 'A')}`);
     // free lines given by the simulation, shown as they are (IIP3, P1dB…)
     for (const l of Array.isArray(sim.summary_extra) ? sim.summary_extra : []) if (String(l).trim()) lines.push(String(l).trim().replace(/[<>]/g, ''));
+    // the values with no clear spot on the drawing, listed here (never dropped)
+    for (const l of overflow) lines.push(l);
     if (lines.length) {
       const x0 = Math.min(...verts.map((c) => c.x)), y0 = Math.min(...verts.map((c) => c.y));
       const w = Math.max(...lines.map((l) => textW(l, 11))) + 12, h = lines.length * 16 + 10;
@@ -178,5 +183,5 @@ export function annotateSim(model, sim, { netlist, show = new Set(['nodes', 'dev
       summary = lines;
     }
   }
-  return { annotated_nodes: nNodes, annotated_devices: nDev, unmatched, summary };
+  return { annotated_nodes: nNodes, annotated_devices: nDev, unmatched, unplaced, summary };
 }
