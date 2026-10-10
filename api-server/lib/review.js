@@ -25,7 +25,7 @@ export function mountReview(app, wrap) {
     const j = JSON.parse(fs.readFileSync(path.join(ROOT, b, 'index.json'), 'utf8'));
     // URLs relative to where the portal serves this API (/drawio/ behind it)
     const base = (req.headers['x-forwarded-prefix'] || (req.query.base ?? '/drawio')) + `/review/${b}/`;
-    for (const it of j.items || []) { it.refUrl = base + it.ref; it.drawioUrl = base + it.drawio; if (it.before) it.beforeUrl = base + it.before; }
+    for (const it of j.items || []) { it.refUrl = it.ref ? base + it.ref : null; it.drawioUrl = base + it.drawio; if (it.before) it.beforeUrl = base + it.before; }
     j.batches = batches();
     res.json(j);
   };

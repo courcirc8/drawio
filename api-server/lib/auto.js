@@ -35,14 +35,15 @@ import { importNetlistLatch, latchReading } from './place-latch.js';
 import { alignPorts } from './align-ports.js';
 import { drawRails } from './rails.js';
 import { qualityGate } from './quality.js';
-import { importNetlistOta, otaReading } from './place-ota.js';
+import { importNetlistOta, otaReading, importNetlistMiller, millerReading } from './place-ota.js';
+import { importNetlistLna, lnaReading } from './place-lna.js';
 import { crossCoupledX } from './crossx.js';
 import { wireNamedNets } from './wirenames.js';
 import { straighten, checkerErrors, fixDots } from './straighten.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 
-export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' || t.eng === 'latch' || t.eng === 'ota' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
+export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' || t.eng === 'latch' || t.eng === 'ota' || t.eng === 'miller' || t.eng === 'lna' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
 
 export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   const doc = newDocument(); const m = getPage(doc);
@@ -53,6 +54,8 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
     else if (eng === 'stages') placed = await importNetlistStages(m, parsed, { ...sp, ...extra });
     else if (eng === 'latch') placed = await importNetlistLatch(m, parsed, { ...sp, ...extra });
     else if (eng === 'ota') placed = await importNetlistOta(m, parsed, { ...sp, ...extra });
+    else if (eng === 'miller') placed = await importNetlistMiller(m, parsed, { ...sp, ...extra });
+    else if (eng === 'lna') placed = await importNetlistLna(m, parsed, { ...sp, ...extra });
     else { placed = importNetlist2(m, parsed, { ...sp, ...extra }); await routePage(m, placed.wires, {}); normalizeOrigin(m); }
   } catch (e) { return { eng, restMode, sp, extra, errs: Infinity, error: String(e.message || e) }; }
   // a candidate that does not draw the netlist (LVS) is never chosen: a
@@ -62,7 +65,7 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   if (process.env.AUTO_WIRE_NAMES !== '0') { try { await wireNamedNets(m); } catch { /* judged as drawn */ } }
   // a template is judged FINISHED (straightened, ports aligned): its quality
   // gate decides whether it takes priority
-  if (eng === 'ota' && process.env.AUTO_JUDGE !== 'js') { try { await straighten(m); await alignPorts(m, { errorCount: checkerErrors }); } catch { /* judged as drawn */ } }
+  if ((eng === 'ota' || eng === 'miller' || eng === 'lna') && process.env.AUTO_JUDGE !== 'js') { try { await straighten(m); await alignPorts(m, { errorCount: checkerErrors }); await drawRails(m, { errorCount: checkerErrors, fixDots }); } catch { /* judged as drawn */ } }
   let lvsOk = true;
   try { lvsOk = compare(extractNetlist(m), parsed).match; } catch { lvsOk = false; }
   if (!lvsOk) return { eng, restMode, sp, extra, doc, placed, errs: Infinity, conv: 0, lvsFailed: true };
@@ -161,7 +164,14 @@ const betterEric = (b, a) => {
   // — the OTA template only when its drawing fails no more quality-gate
   // checks than the other one (a template forced on a circuit it does not fit
   // is worse than a generic placement); the latch keeps its approved priority
-  const isT = (t) => t.eng === 'latch' || t.eng === 'ota';
+  const isT = (t) => t.eng === 'latch' || t.eng === 'ota' || t.eng === 'miller' || t.eng === 'lna';
+  // two templates: fewer quality-gate checks failed, then the more specific
+  // one (the two-stage Miller OTA contains the 5T OTA)
+  if (isT(b) && isT(a) && b.eng !== a.eng) {
+    if ((b.gateFails ?? 99) !== (a.gateFails ?? 99)) return (b.gateFails ?? 99) < (a.gateFails ?? 99);
+    const rank = { latch: 3, lna: 2, miller: 1, ota: 0 };
+    return rank[b.eng] > rank[a.eng];
+  }
   if (isT(b) !== isT(a)) {
     const t = isT(b) ? b : a, o = isT(b) ? a : b;
     if (t.eng === 'latch' || (t.gateFails ?? 99) <= (o.gateFails ?? 99)) return isT(b);
@@ -236,6 +246,12 @@ export async function autoPlace(parsed) {
   // "oui, gabarit OTA" (2026-10-10), taking priority only when its finished
   // drawing passes the quality gate (AUTO_OTA=0 disables)
   if (process.env.AUTO_OTA !== '0' && otaReading(parsed)) specs.push(['ota', null, {}, {}]);
+  // the two-stage Miller OTA template: DEFAULT since Eric's yes (2026-10-10),
+  // taking priority only when it does at least as well (AUTO_MILLER=0 disables)
+  if (process.env.AUTO_MILLER !== '0' && millerReading(parsed)) specs.push(['miller', null, {}, {}]);
+  // the cascode LNA with inductive degeneration (lib/place-lna.js): DEFAULT since
+  // Eric's yes (2026-10-10), same rule (AUTO_LNA=0 disables)
+  if (process.env.AUTO_LNA !== '0' && lnaReading(parsed)) specs.push(['lna', null, {}, {}]);
   // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
   // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
   // on one thread the budget only ever saw v2 finish on the big converters.
@@ -299,5 +315,5 @@ export async function autoPlace(parsed) {
       polish.rails = await drawRails(page, { errorCount: checkerErrors, fixDots });
     } catch (e) { polish.error = String(e.message || e); /* the unfinished drawing stays as chosen */ }
   }
-  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, polish, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire }])) };
+  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, polish, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire, gateFails: t.gateFails }])) };
 }
