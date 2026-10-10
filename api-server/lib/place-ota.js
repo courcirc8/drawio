@@ -21,6 +21,7 @@
  * the pair's sources), each part with its satellites (rail symbols, ports
  * wired to it alone) and label — and every wire is routed again. The
  * cross-coupled X, ports and straightening are auto's polish.
+ * On by default since Eric's yes (2026-10-10); AUTO_OTA=0 disables.
  */
 import { detectStructures, isPmosLike } from './patterns.js';
 import { importNetlistSA } from './place-sa.js';

@@ -71,7 +71,7 @@ const ex = bankExclusions(B);
 const man = new Map(fs.readdirSync(B).filter((f) => /^manifest.*\.jsonl$/.test(f)).flatMap((f) => jsonl(`${B}/${f}`)).map((r) => [r.id, r.file]));
 const inv = jsonl(`${B}/inventory.jsonl`).filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && r.parts >= 3 && r.parts <= 25);
 const draw = async (p, on) => {
-  if (on) process.env[ENV] = '1'; else delete process.env[ENV];
+  process.env[ENV] = on ? '1' : '0';
   const r = await autoPlace(p), m = getPage(r.doc);
   return { r, m, q: qualityGate(m, p), lvs: compare(extractNetlist(m), p).match };
 };

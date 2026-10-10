@@ -227,9 +227,10 @@ export async function autoPlace(parsed) {
   // the CML latch / clocked comparator template (lib/place-latch.js), when the
   // netlist has that core (Eric 2026-10-09; AUTO_LATCH=0 disables)
   if (process.env.AUTO_LATCH !== '0' && latchReading(parsed)) specs.push(['latch', null, {}, {}]);
-  // the 5-transistor OTA template (lib/place-ota.js): OFF until Eric approves
-  // its renders (AUTO_OTA=1 enables)
-  if (process.env.AUTO_OTA === '1' && otaReading(parsed)) specs.push(['ota', null, {}, {}]);
+  // the 5-transistor OTA template (lib/place-ota.js): DEFAULT since Eric's
+  // "oui, gabarit OTA" (2026-10-10), taking priority only when its finished
+  // drawing passes the quality gate (AUTO_OTA=0 disables)
+  if (process.env.AUTO_OTA !== '0' && otaReading(parsed)) specs.push(['ota', null, {}, {}]);
   // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
   // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
   // on one thread the budget only ever saw v2 finish on the big converters.

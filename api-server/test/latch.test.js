@@ -49,16 +49,13 @@ test('quality gate: an absurd reading (parts in two groups joined by no net) is 
   assert.equal(q.pass, false);
 });
 
-test('ota template: the 5T OTA is read and, enabled, drawn LVS-clean through the quality gate', async () => {
+test('ota template: the 5T OTA is read and, enabled, drawn by default, LVS-clean, through the quality gate', async () => {
   const { otaReading } = await import('../lib/place-ota.js');
   const p = parseSpice(`M1 n1 inp tail 0 nmos\nM2 out inn tail 0 nmos\nM3 n1 n1 vdd vdd pmos\nM4 out n1 vdd vdd pmos\nM5 tail vb 0 0 nmos\nM6 vb vb 0 0 nmos\nI1 vdd vb 10u\n.end`);
   const O = otaReading(p);
   assert.deepEqual([O.iA, O.iB, O.mA, O.mB, O.tail, O.bias], ['M1', 'M2', 'M3', 'M4', 'M5', 'M6']);
-  process.env.AUTO_OTA = '1';
-  try {
-    const r = await autoPlace(p);
-    assert.equal(r.label, 'ota');
-    assert.ok(compare(extractNetlist(getPage(r.doc)), p).match);
-    assert.ok(qualityGate(getPage(r.doc), p).pass);
-  } finally { delete process.env.AUTO_OTA; }
+  const r = await autoPlace(p);   // on by default
+  assert.equal(r.label, 'ota');
+  assert.ok(compare(extractNetlist(getPage(r.doc)), p).match);
+  assert.ok(qualityGate(getPage(r.doc), p).pass);
 });
