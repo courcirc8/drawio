@@ -31,7 +31,7 @@ entre deux gabarits : moins d'échecs, puis le plus spécifique (latch > lna > m
 validée. Désactivation : `AUTO_OTA=0`, `AUTO_MILLER=0`, `AUTO_LNA=0`, `AUTO_PAIR=0`, `AUTO_VCO=0`, `AUTO_LATCH=0`. #34 (oui d'Eric) : gabarit **paire croisée / VCO LC** (lib/place-pair.js, mode croisé ; varactors en travers, réseau de queue sous la queue). Ne jamais montrer à Eric un schéma brouillon.
 
 **Méthode** (validée par Eric) : cycles REVUE → AMÉLIORATION → REVUE. Contrôle (a) automatique (porte qualité) + (b) visuel par
-Claude à côté de la référence avant toute publication. Comparateur CICC 2007 (`/tmp/cml/net.sp`) : vérifier à chaque changement
+Claude à côté de la référence avant toute publication. Comparateur CICC 2007 (`api-server/test/fixtures/cml-comparator.sp`, testé par test/latch.test.js : élu `latch`, LVS, porte) : vérifier à chaque changement
 qu'il reste dessiné par `latch` (image validée par Eric).
 
 **Passerelle simulateur ↔ drawio** (session « Simulation », ~/ClaudeCode/simulation/passerelle/INTERFACE.md) :
