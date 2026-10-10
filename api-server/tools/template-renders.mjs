@@ -21,13 +21,15 @@ import { compare } from '../lib/lvs.js';
 import { exportDocument } from '../lib/render.js';
 import { bankExclusions, sealedStatus } from '../lib/sealed.js';
 import { qualityGate } from '../lib/quality.js';
-import { otaReading } from '../lib/place-ota.js';
+import { otaReading, millerReading } from '../lib/place-ota.js';
 
 const argv = process.argv.slice(2);
 const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
+const NOREF = argv.includes('--allow-noref');
+const IDS = arg('--ids') ? new Set(arg('--ids').split(',')) : null;   // render exactly these (elected or not)   // circuits without a reference figure too (shown as such)
 const ENGINE = arg('--engine', 'ota'), N = Number(arg('--n', 4)), BATCH = arg('--batch', `gabarit-${ENGINE}`);
-const READ = { ota: otaReading }[ENGINE];
-const ENV = { ota: 'AUTO_OTA' }[ENGINE];
+const READ = { ota: otaReading, miller: millerReading }[ENGINE];
+const ENV = { ota: 'AUTO_OTA', miller: 'AUTO_MILLER' }[ENGINE];
 if (!READ) { console.error('unknown template ' + ENGINE); process.exit(1); }
 const ROOT = process.env.REVIEW_ROOT || '/AI/datasets/judge/review', OUT = `${ROOT}/${BATCH}`;
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(`${OUT}/img`, { recursive: true });
@@ -101,13 +103,13 @@ const index = { batch: BATCH, created: new Date().toISOString(), note: `gabarit 
 let k = 0;
 // those the template improves first (old drawing refused by the gate), then the smallest
 const fails = (q) => Object.values(q.checks).filter((c) => !c.ok).length;
-for (const x of rows.filter((x) => x.elected && fails(x.b.q) <= 1).sort((u, v) => (u.a.q.pass - v.a.q.pass) || (fails(u.b.q) - fails(v.b.q)) || (fails(v.a.q) - fails(u.a.q)) || u.parts - v.parts || (u.id < v.id ? -1 : 1))) {
+for (const x of rows.filter((x) => (IDS ? IDS.has(x.id) : x.elected && (fails(x.b.q) <= 1 || fails(x.b.q) < fails(x.a.q)))).sort((u, v) => (u.a.q.pass - v.a.q.pass) || (fails(u.b.q) - fails(v.b.q)) || (fails(v.a.q) - fails(u.a.q)) || u.parts - v.parts || (u.id < v.id ? -1 : 1))) {
   if (k >= N) break;
-  const ref = refOf(x.id); if (!ref) continue;
+  const ref = refOf(x.id); if (!ref && !NOREF) continue;
   k++;
-  writeRef(ref, `${OUT}/img/${k}-ref.png`);
+  if (ref) writeRef(ref, `${OUT}/img/${k}-ref.png`);
   for (const [tag, d] of [['before', x.a], ['drawio', x.b]]) fs.writeFileSync(`${OUT}/img/${k}-${tag}.png`, (await exportDocument(d.r.doc, d.m, { format: 'png', scale: 1.6 })).buffer);
-  index.items.push({ n: k, id: x.id, family: x.family, parts: x.parts, refSource: ref.source, ref: `img/${k}-ref.png`, before: `img/${k}-before.png`, drawio: `img/${k}-drawio.png`,
+  index.items.push({ n: k, id: x.id, family: x.family, parts: x.parts, refSource: ref ? ref.source : 'pas de figure de référence', ref: ref ? `img/${k}-ref.png` : null, before: `img/${k}-before.png`, drawio: `img/${k}-drawio.png`,
     engine: x.b.r.label, engineBefore: x.a.r.label, quality: x.b.q, qualityBefore: x.a.q, metrics: {}, motifs: [ENGINE], crossX: { pairs: 0, drawn: 0, refused: {} } });
 }
 fs.writeFileSync(`${OUT}/index.json`, JSON.stringify(index, null, 1));

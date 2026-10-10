@@ -27,9 +27,11 @@ const GND = /^(0|gnd\w*|vss\w*|vee\w*|avss|dvss)$/i;
  * @param model   the page
  * @param parsed  the netlist
  * @param tpl     refs of the template's parts (already placed)
+ * @param opts.across  parts to lay HORIZONTALLY in a chain between two nodes
+ *                      far apart (a Miller capacitor, with its series resistor)
  * @returns {attached: [refs]}
  */
-export function attachPassives(model, parsed, tpl) {
+export function attachPassives(model, parsed, tpl, opts = {}) {
   const cells = () => allCells(model).map(cellInfo);
   const byRef = (ref) => cells().find((c) => c.kind === 'vertex' && String(c.refdes || '') === ref);
   const comp = new Map(parsed.components.map((c) => [c.ref, c]));
@@ -78,6 +80,40 @@ export function attachPassives(model, parsed, tpl) {
   // that part gets its own symbol (one wire), which then moves with it — a
   // shared symbol tied the attached parts' rail ends across the drawing
   splitRails(model, new Set(tpl.map((r) => byRef(r)?.id).filter(Boolean)));
+  // ACROSS: a chain lying between two template nodes, at the height of the
+  // first node's line (a Miller capacitor between the two stage outputs)
+  if (opts.across?.length) {
+    const parts = opts.across.map((r) => comp.get(r)).filter(Boolean);
+    const nets = parts.flatMap((c) => c.nodes.slice(0, 2));
+    const ends = [...new Set(nets)].filter((n) => nets.filter((x) => x === n).length === 1 && anchors.some((a) => a.net === n));
+    if (ends.length === 2) {
+      const xOf = (n) => anchors.filter((a) => a.net === n && a.side === 0);
+      let [L, R] = ends.map((n) => ({ n, as: xOf(n).length ? xOf(n) : anchors.filter((a) => a.net === n) }));
+      if (Math.max(...L.as.map((a) => a.at.x)) > Math.max(...R.as.map((a) => a.at.x))) [L, R] = [R, L];
+      // between the left node's line and the left edge of the right node's parts
+      const xa = Math.max(...L.as.map((a) => a.at.x)) + 40, xb = Math.min(...R.as.map((a) => { const c = byRef(a.ref); return c ? Math.min(a.at.x, c.x) - 20 : a.at.x; }));
+      const y = opts.acrossY ?? L.as.reduce((t, a) => t + a.at.y, 0) / L.as.length;
+      // order the chain from the left node
+      const chain = []; let cur = L.n; const left = [...parts];
+      while (left.length) { const k = left.findIndex((c) => c.nodes.slice(0, 2).includes(cur)); if (k < 0) break; const c = left.splice(k, 1)[0]; chain.push([c, cur]); cur = c.nodes.slice(0, 2).find((n) => n !== cur); }
+      if (chain.length === parts.length && xb - xa > 60 * chain.length) {
+        chain.forEach(([c, inNet], i) => {
+          const me = byRef(c.ref); if (!me) return;
+          // lying, its end on `inNet` on the left
+          const k = c.nodes.indexOf(inNet);
+          for (const rot of me.w >= me.h ? [0, 180] : [90, 270]) {
+            updateCell(model, me.id, { style: { rotation: rot || null } });
+            const cc = byRef(c.ref), ps = activePins(classify(cc)).map((q) => pinAbs(cc, q));
+            if (k < 0 || ps.length < 2 || ps[k].x <= ps[1 - k].x) break;
+          }
+          const now = byRef(c.ref), cx = xa + (xb - xa) * (i + 1) / (chain.length + 1);
+          const dx = Math.round(cx - (now.x + now.w / 2)), dy = Math.round(y - (now.y + now.h / 2));
+          for (const id of groupOf(now)) updateCell(model, id, { dx, dy });
+          attached.push(c.ref); tplSet.add(c.ref);
+        });
+      }
+    }
+  }
   for (const pc of parsed.components) {
     if (tplSet.has(pc.ref) || !['R', 'C', 'L', 'I', 'V'].includes(pc.prefix) || pc.nodes.length < 2) continue;
     const me = byRef(pc.ref); if (!me) continue;

@@ -163,7 +163,8 @@ export async function straighten(model, opts = {}) {
     }
     return n;
   };
-  const movable = (c) => c.kind === 'vertex' && ['power', 'ground', 'port', 'component'].includes(role(c));
+  // a part a template pinned (drawioApiPinned=1: the Miller compensation line) stays
+  const movable = (c) => c.kind === 'vertex' && ['power', 'ground', 'port', 'component'].includes(role(c)) && c.style.map.get('drawioApiPinned') !== '1';
   const overlaps = (c) => {
     const b = rotatedAabb(c), m = 2;
     return verts.some((o) => o.id !== c.id && !String(o.id).startsWith('LBL_') && role(o) !== 'junction' && role(o) !== 'other' && (() => {
@@ -306,7 +307,7 @@ export async function straighten(model, opts = {}) {
     // a flip (it moves no centre) is judged by the pin pairs it puts on one
     // line, without making any pair nearly-aligned
     const ap0 = alignedPins();
-    for (const v of verts.filter(isDevice)) {
+    for (const v of verts.filter((x) => isDevice(x) && x.style.map.get('drawioApiPinned') !== '1')) {
       const rec = flip(v.id);
       const after = misaligned(), ap = alignedPins(), ok = !overlaps(byId.get(v.id)) && !satellites(v.id).some((g) => overlaps(byId.get(g)));
       unflip(rec);
