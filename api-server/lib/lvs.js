@@ -5,6 +5,8 @@
  * internal names may be synthetic; ground and declared ports retain their identities).
  */
 
+import { groundMapper } from './ground-alias.js';
+
 /** @param extracted {components:[{ref,prefix,nodes,value}]} — from extractNetlist
  *  @param golden {components:[…]} — from parseSpice */
 export function compare(extracted, golden) {
@@ -40,9 +42,11 @@ export function compare(extracted, golden) {
   const SYMMETRIC = new Set(['R', 'C', 'L']);
   const termId = (c, ref, i) => SYMMETRIC.has(c.prefix) ? ref + '.x' : ref + '.' + i;
   const termsA = new Map(), termsB = new Map(); // net -> terminal multiset
+  // a ground spelled vss / gnd (alone, no `0`) is the ground on either side (lib/ground-alias.js)
+  const gA = groundMapper(extracted.components), gB = groundMapper(golden.components);
   for (const ref of common) {
-    (ex.get(ref).fullNodes || ex.get(ref).nodes).forEach((netName, i) => addTerm(termsA, netName, termId(ex.get(ref), ref, i)));
-    (go.get(ref).fullNodes || go.get(ref).nodes).forEach((netName, i) => addTerm(termsB, netName, termId(go.get(ref), ref, i)));
+    (ex.get(ref).fullNodes || ex.get(ref).nodes).forEach((netName, i) => addTerm(termsA, gA(netName), termId(ex.get(ref), ref, i)));
+    (go.get(ref).fullNodes || go.get(ref).nodes).forEach((netName, i) => addTerm(termsB, gB(netName), termId(go.get(ref), ref, i)));
   }
   const sigA = signatures(termsA), sigB = signatures(termsB);
   for (const [sig, nets] of sigA) {
@@ -69,7 +73,7 @@ export function compare(extracted, golden) {
   }
 
   report.named_net_mismatches = [];
-  for (const name of extracted.namedNets || []) {
+  for (const name of (extracted.namedNets || []).filter((n) => gA(n) !== '0')) {
     const a = [...termsA.keys()].find(n => n.toUpperCase() === name.toUpperCase());
     const b = [...termsB.keys()].find(n => n.toUpperCase() === name.toUpperCase());
     if (a && (!b || setSig(termsA.get(a)) !== setSig(termsB.get(b))))
