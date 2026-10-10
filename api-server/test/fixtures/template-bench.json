@@ -3,21 +3,21 @@
   "circuits": 18,
   "chosen": 1,
   "gatePass": 0,
-  "fails": 77,
+  "fails": 70,
   "lvs": 18
  },
  "ota": {
   "circuits": 119,
-  "chosen": 44,
+  "chosen": 47,
   "gatePass": 21,
-  "fails": 254,
+  "fails": 225,
   "lvs": 119
  },
  "miller": {
   "circuits": 15,
   "chosen": 6,
   "gatePass": 0,
-  "fails": 45,
+  "fails": 39,
   "lvs": 15
  },
  "lna": {
@@ -31,14 +31,14 @@
   "circuits": 41,
   "chosen": 30,
   "gatePass": 20,
-  "fails": 37,
+  "fails": 35,
   "lvs": 41
  },
  "vco": {
   "circuits": 12,
   "chosen": 7,
   "gatePass": 7,
-  "fails": 12,
+  "fails": 11,
   "lvs": 12
  }
 }

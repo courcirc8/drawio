@@ -47,16 +47,19 @@ qu'avec 8-10 lectures passant (a)+(b) ; 1/26 passe aujourd'hui).
    C → L vers VDD revenait en grand U à travers une entrée, analoggenie 509/510). Corrigé dans lib/place-pair.js : une chaîne
    de la source vers le rail OPPOSÉ est dessinée entre les colonnes, vers ce rail (hors mode croisé) ; 509/510 repassent la porte.
 2. Non-régression : tools/template-bench.mjs, base figée dans test/fixtures/template-bench.json (`npm run bench:templates`,
-   test opt-in TEMPLATE_BENCH=1). Banc complet dev → branche (lignes /tmp/sa/bench-dev, bench-new) : paire porte 18 → 20,
-   contrôles 39 → 37 ; OTA porte 20 → 21 ; verrou, LNA, VCO inchangés ; Miller porte 0 → 0, contrôles 43 → 45 (effet de la
-   masse sur amp_033 : le choix du moteur change). LVS partout identique.
+   test opt-in TEMPLATE_BENCH=1). Dev → branche finale : paire porte 18 → 20 (contrôles 39 → 35) ; OTA 20 → 21 (255 → 225) ;
+   Miller 0 → 0 (43 → 39) ; verrou 78 → 70 ; LNA inchangé ; VCO 12 → 11. LVS partout identique.
 3. Masse : lib/ground-alias.js — vss/gnd/vgnd/agnd… dessinée comme masse (symbole + rail GND unique) quand le deck n'a pas
-   de net `0` et une seule orthographe de masse ; appliqué dans autoPlace (`AUTO_GND=0` le coupe, pour les rendus avant) et
-   l'import serveur ; lib/lvs.js applique la même règle des deux côtés. Alimentation : + vpwr, vdda, dvdd, vcca.
-   Mesure tools/ground-renders.mjs sur les 315 circuits concernés : porte 21 → 32, LVS 155 → 315 (avant, le net VSS perdait
-   son nom : net anonyme), contrôles échoués 814 → 723 ; 97 mieux, 52 moins bien (39 fois « étiquette sur un fil » :
-   le choix du moteur par auto ne regarde pas les étiquettes ; à traiter à part). Rendus /drawio/review?batch=masse-vss
-   (3, vérifiés). Pas reconnu : VDPWR comme alimentation.
+   de net `0` et une seule orthographe de masse ; import serveur et autoPlace ; lib/lvs.js applique la même règle des deux
+   côtés. Alimentation : + vpwr, vdda, dvdd, vcca. MÊME RÈGLE QUE LES GABARITS (orchestrateur) : autoPlace dessine aussi le
+   deck tel qu'écrit ; si le dessin avec alias échoue à plus de contrôles, le moteur élu tel qu'écrit est redessiné avec
+   l'alias, sinon le dessin tel qu'écrit est gardé s'il reste juste au LVS (jamais un dessin qui perd le nom de la masse).
+   `AUTO_GND=0` coupe l'alias. Étiquettes (lib/straighten.js glueLabels) : un emplacement libre de fils et des autres
+   étiquettes est cherché (39 des 52 premiers reculs étaient « étiquette sur un fil »).
+   Mesure tools/ground-renders.mjs (315 circuits) : porte 26 → 43, aucun circuit ne la perd ; LVS 155 → 315 ; contrôles
+   échoués 798 → 595 ; 135 mieux, 2 moins bien (ldo_009 : +3 fils en U, vco_stage : +1 fil sur un corps, résultat variable
+   d'une passe à l'autre ; les deux anciens dessins sont faux au LVS). Rendus /drawio/review?batch=masse-vss (4, vérifiés).
+   Pas reconnu : VDPWR comme alimentation. Decks de cellules sky130/sg13g2 : drain/source souvent inversés, dessins médiocres.
 
 **Suite** (ordre d'Eric) : StrongARM (60), suiveur / source commune, bandgap,
 miroir cascode (liste et comptes : tools/motif-census.mjs). Puis chantier placement 10-25 composants.

@@ -73,6 +73,7 @@ const man = new Map(fs.readdirSync(B).filter((f) => /^manifest.*\.jsonl$/.test(f
 const inv = jsonl(`${B}/inventory.jsonl`).filter((r) => r.usable && !r.duplicateOf && !ex.has(r.id) && r.parts >= 3 && r.parts <= 25 && (!IDS || IDS.has(r.id)))
   .sort((u, v) => u.parts - v.parts || (u.id < v.id ? -1 : 1));
 const fails = (q) => Object.values(q.checks).filter((c) => !c.ok).length;
+const failed = (q) => Object.keys(q.checks).filter((k) => !q.checks[k].ok);
 const draw = async (p, on) => {
   process.env.AUTO_GND = on ? '1' : '0';
   const r = await autoPlace(p), m = getPage(r.doc);
@@ -100,7 +101,7 @@ const summary = {
   better: count((x) => fails(x.b.q) < fails(x.a.q)), worse: count((x) => fails(x.b.q) > fails(x.a.q)),
   aliases: rows.reduce((o, x) => ((o[x.alias.toLowerCase()] = (o[x.alias.toLowerCase()] || 0) + 1), o), {}),
 };
-fs.writeFileSync(`${OUT}/rows.jsonl`, rows.map((x) => JSON.stringify({ id: x.id, parts: x.parts, alias: x.alias, before: { pass: x.a.q.pass, fails: fails(x.a.q), lvs: x.a.lvs, engine: x.a.r.label }, after: { pass: x.b.q.pass, fails: fails(x.b.q), lvs: x.b.lvs, engine: x.b.r.label } })).join('\n') + '\n');
+fs.writeFileSync(`${OUT}/rows.jsonl`, rows.map((x) => JSON.stringify({ id: x.id, parts: x.parts, alias: x.alias, before: { pass: x.a.q.pass, fails: fails(x.a.q), failed: failed(x.a.q), lvs: x.a.lvs, engine: x.a.r.label }, after: { pass: x.b.q.pass, fails: fails(x.b.q), failed: failed(x.b.q), ground: x.b.r.ground, lvs: x.b.lvs, engine: x.b.r.label } })).join('\n') + '\n');
 // ---- renders for Eric: clean reference, the alias no worse, smallest first
 const index = { batch: BATCH, created: new Date().toISOString(), note: 'masse vss/gnd dessinée comme masse — rendus avant / après pour Eric (lecture seule)', summary, items: [] };
 let k = 0;
