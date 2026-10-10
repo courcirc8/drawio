@@ -189,6 +189,22 @@ async function imposePair(model, parsed, P) {
     const sa = pins(P.iA)[2], sb = pins(P.iB)[2], xm = (sa.x + sb.x) / 2, y0 = sa.y + s * 30;
     const onS = parsed.components.filter((c) => !P.used.has(c.ref) && !isAct(c) && c.nodes.slice(0, 2).includes(P.nodes.s));
     let side = 0;
+    // a chain from the source node to the OPPOSITE rail (analoggenie 510: C to
+    // a node, L from it to VDD under an NMOS pair) hung below came back up in
+    // a long U across an input: drawn instead between the columns, towards
+    // that rail (not in cross mode: the X fills the middle)
+    const opp = (n) => RAIL.test(n) && GND.test(n) !== (s > 0);
+    const c1 = onS.length === 1 ? onS[0] : null, o1 = c1 && c1.nodes.slice(0, 2).find((n) => n !== P.nodes.s);
+    const onO = c1 && !RAIL.test(o1) ? parsed.components.filter((d) => d !== c1 && !P.used.has(d.ref) && d.nodes.includes(o1)) : [];
+    if (!P.cross && onO.length === 1 && !isAct(onO[0]) && onO[0].nodes.slice(0, 2).some(opp)) {
+      const d = onO[0], r = d.nodes.slice(0, 2).find(opp);
+      upright(c1.ref, s > 0 ? o1 : P.nodes.s); upright(d.ref, s > 0 ? r : o1);
+      const k = c1.nodes.indexOf(P.nodes.s), pc = pins(c1.ref);
+      move(c1.ref, xm - pc[k].x, (pins(P.iA)[0].y - s * 20) - pc[k].y);   // above the drains: clear of the pair's labels
+      const top = pins(c1.ref)[1 - k], kd = d.nodes.indexOf(o1), pd = pins(d.ref);
+      move(d.ref, xm - pd[kd].x, (top.y - s * 30) - pd[kd].y);
+      extra.add(c1.ref); extra.add(d.ref); onS.length = 0;
+    }
     for (const c of onS) {
       const o = c.nodes.slice(0, 2).find((n) => n !== P.nodes.s);
       upright(c.ref, s > 0 ? P.nodes.s : o);
@@ -196,7 +212,7 @@ async function imposePair(model, parsed, P) {
       if (RAIL.test(o)) { side++; move(c.ref, (xm - side * 110) - ps[k].x, y0 - ps[k].y); extra.add(c.ref); continue; }
       move(c.ref, xm - ps[k].x, y0 - ps[k].y); extra.add(c.ref);
       const bot = pins(c.ref)[1 - k];
-      const par = parsed.components.filter((d) => !P.used.has(d.ref) && !extra.has(d.ref) && d !== c && d.nodes.slice(0, 2).includes(o) && d.nodes.slice(0, 2).some((n) => n !== o && RAIL.test(n)));
+      const par = parsed.components.filter((d) => !P.used.has(d.ref) && !extra.has(d.ref) && d !== c && d.nodes.slice(0, 2).includes(o) && d.nodes.slice(0, 2).some((n) => n !== o && RAIL.test(n) && !opp(n)));
       par.forEach((d, j) => {
         upright(d.ref, s > 0 ? o : d.nodes.slice(0, 2).find((n) => n !== o));
         const kd = d.nodes.indexOf(o), pd = pins(d.ref);

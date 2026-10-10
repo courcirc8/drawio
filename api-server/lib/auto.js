@@ -43,6 +43,7 @@ import { wireNamedNets } from './wirenames.js';
 import { straighten, checkerErrors, fixDots } from './straighten.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
+import { withGroundAlias } from './ground-alias.js';
 
 export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' || t.eng === 'latch' || t.eng === 'ota' || t.eng === 'miller' || t.eng === 'lna' || t.eng === 'pair' || t.eng === 'vco' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
 
@@ -224,6 +225,8 @@ function checkPyErrors(doc) {
 /** Returns {doc, placed, label, trials:{label:{errors, conventions}}} or throws
  *  when every candidate failed. */
 export async function autoPlace(parsed) {
+  // a ground spelled vss / gnd (alone, no `0`) drawn as ground: one GND rail (lib/ground-alias.js)
+  parsed = withGroundAlias(parsed);
   // every candidate is started at once, judged as soon as it is drawn; TIME
   // BUDGET (Eric 2026-10-08, AUTO_BUDGET_MS, default 60 s): past it, auto keeps
   // the best drawing finished so far (candidates still running are ignored;

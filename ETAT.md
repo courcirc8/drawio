@@ -42,6 +42,19 @@ corps = JSON ou `{sim, netlist}`), `DELETE` pour retirer ; couche inerte après 
 **Pages** : /drawio/review (lecture des lots, téléphone), /drawio/eric-lectures (lectures-3/4 retirées de la file : ne republier
 qu'avec 8-10 lectures passant (a)+(b) ; 1/26 passe aujourd'hui).
 
+**En cours (branche `regress-pair-gnd`, demande de l'orchestrateur, PR séparée de #35)** :
+1. Régression du gabarit paire (porte 20 → 18 sur dev) : cause = #34 (réseau de queue pendu SOUS la paire : une chaîne
+   C → L vers VDD revenait en grand U à travers une entrée, analoggenie 509/510). Corrigé dans lib/place-pair.js : une chaîne
+   de la source vers le rail OPPOSÉ est dessinée entre les colonnes, vers ce rail (hors mode croisé) ; 509/510 repassent la porte.
+2. Non-régression : tools/template-bench.mjs (une passe d'auto par circuit de la banque lu par un gabarit ; par gabarit : lus,
+   choisis, porte, contrôles échoués, LVS), `--check` contre test/fixtures/template-bench.json (agrégats seulement),
+   `npm run bench:templates`, test opt-in TEMPLATE_BENCH=1. RESTE : figer la base (`--write`) après le banc complet
+   dev / branche (lancé, interrompu par le redémarrage : relancer, lignes dans /tmp/sa/bench-dev et bench-new).
+3. Masse : lib/ground-alias.js — vss/gnd/vgnd/agnd… dessinée comme masse (symbole + rail GND unique) quand le deck n'a pas
+   de net `0` et une seule orthographe de masse ; appliqué dans autoPlace et l'import serveur ; lib/lvs.js applique la même
+   règle des deux côtés. Alimentation : SUPPLY_NAME partagé place2/place4, + vpwr (sky130, 168 decks), vdda, dvdd, vcca.
+   Tests : test/ground-alias.test.js ; suite 287/0. RESTE : rendus avant / après, PR, message à l'orchestrateur.
+
 **Suite** (ordre d'Eric) : StrongARM (60), suiveur / source commune, bandgap,
 miroir cascode (liste et comptes : tools/motif-census.mjs). Puis chantier placement 10-25 composants.
 
