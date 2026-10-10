@@ -21,7 +21,7 @@
  */
 import { isPmosLike } from './patterns.js';
 import { importNetlistSA } from './place-sa.js';
-import { allCells, cellInfo, updateCell } from './model.js';
+import { allCells, cellInfo, updateCell, deleteCell, addWire } from './model.js';
 import { classify, activePins } from './components.js';
 import { pinAbs, routePage } from './route.js';
 import { rebuildLocalDots } from './generic-refinement.js';
@@ -176,7 +176,7 @@ async function imposeCs(model, parsed, R) {
     }
   };
   let x0 = null, prevOutY = null;
-  const outY = new Map();
+  const feeds = [];   // [load ref | device ref, pin index, next device]: the straight wire into the next gate
   for (const [i, st] of R.stages.entries()) {
     const s = st.pmos ? -1 : 1;
     // NMOS: drain on top; PMOS: source on top
@@ -195,9 +195,14 @@ async function imposeCs(model, parsed, R) {
     const topY = s > 0 ? p[0].y : p[2].y, botY = s > 0 ? p[2].y : p[0].y;
     stack(st.kind === 'cs' ? (s > 0 ? st.top : st.bottom) : (s > 0 ? [] : st.bottom), topNet, lead, topY, -1);
     stack(st.kind === 'cs' ? (s > 0 ? st.bottom : st.top) : (s > 0 ? st.bottom : []), botNet, lead, botY, 1);
-    // the output's height: the drain (CS) or the source (follower) pin
-    prevOutY = pins(st.dev)[st.kind === 'cs' ? 0 : 2].y;
-    outY.set(st.out, prevOutY);
+    // the output's height: where the load meets the output node (the next
+    // gate wire then runs straight from that pin, the device's lead straight
+    // up / down to it), else the drain (CS) / source (follower) pin
+    const loadOnOut = (st.kind === 'cs' ? st.top : st.bottom)[0];
+    const lk = loadOnOut ? comp.get(loadOnOut).nodes.indexOf(st.out) : -1;
+    prevOutY = loadOnOut && lk >= 0 && lk < 3 ? pins(loadOnOut)[lk].y : pins(st.dev)[st.kind === 'cs' ? 0 : 2].y;
+    const nx = R.stages[i + 1];
+    if (nx && nx.in === st.out) feeds.push(loadOnOut && lk >= 0 && lk < 3 ? [loadOnOut, lk, nx.dev] : [st.dev, st.kind === 'cs' ? 0 : 2, nx.dev]);
   }
   // supply / ground symbols wired to the template: just over (under) the
   // highest (lowest) pin they feed, not where the annealing left them
@@ -228,6 +233,30 @@ async function imposeCs(model, parsed, R) {
   const ids = cells().filter((c) => c.kind === 'edge').map((e) => e.id);
   for (const id of ids) updateCell(model, id, { style: { edgeStyle: 'orthogonalEdgeStyle', drawioApiFixedRoute: null }, points: [] });
   await routePage(model, ids, {});
+  // each stage's output straight into the next gate: the wires the router
+  // drew at that gate are replaced by one from the load's pin; whatever they
+  // joined is joined to that pin instead (routed again)
+  const wireStyle = 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;endFill=0;';
+  for (const [src, k, dev] of feeds) {
+    const S0 = find(src), G0 = find(dev); if (!S0 || !G0) continue;
+    const sRel = activePins(classify(S0))[k], gRel = activePins(classify(G0))[1], gp = pinAbs(G0, gRel);
+    const cs = cells(), es = cs.filter((c) => c.kind === 'edge'), byId = new Map(cs.map((c) => [c.id, c]));
+    const endAt = (e, end) => { const id = end === 'exit' ? e.source : e.target; return pinAbs(byId.get(id), { x: Number(e.style.map.get(end + 'X') ?? 0.5), y: Number(e.style.map.get(end + 'Y') ?? 0.5) }); };
+    const atGate = es.filter((e) => (e.source === G0.id && Math.hypot(endAt(e, 'exit').x - gp.x, endAt(e, 'exit').y - gp.y) < 2) || (e.target === G0.id && Math.hypot(endAt(e, 'entry').x - gp.x, endAt(e, 'entry').y - gp.y) < 2));
+    const rejoin = [];
+    for (const e of atGate) {
+      const [oid, oend] = e.source === G0.id ? [e.target, 'entry'] : [e.source, 'exit'];
+      const orel = { x: Number(e.style.map.get(oend + 'X') ?? 0.5), y: Number(e.style.map.get(oend + 'Y') ?? 0.5) };
+      deleteCell(model, e.id);
+      if (!(oid === S0.id && Math.abs(orel.x - sRel.x) < 1e-6 && Math.abs(orel.y - sRel.y) < 1e-6)) rejoin.push([oid, orel]);
+    }
+    const sp = pinAbs(S0, sRel);
+    addWire(model, { source: S0.id, target: G0.id, sourcePin: sRel, targetPin: gRel, style: wireStyle + 'drawioApiFixedRoute=1;drawioApiTemplate=1;', points: Math.abs(sp.y - gp.y) < 1 ? [] : [{ x: Math.round(sp.x), y: Math.round(gp.y) }] });
+    const added = [];
+    for (const [oid, orel] of rejoin) added.push(addWire(model, { source: oid, target: S0.id, sourcePin: orel, targetPin: sRel, style: wireStyle }));
+    const ids = added.map((w) => (typeof w === 'string' ? w : w?.id)).filter(Boolean);
+    if (ids.length) await routePage(model, ids, {});
+  }
   await alignPorts(model);
   for (const r of R.used) { const c = find(r); if (c) updateCell(model, c.id, { style: { drawioApiPinned: 1 } }); }
   rebuildLocalDots(model);

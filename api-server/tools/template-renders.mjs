@@ -102,6 +102,12 @@ const summary = {
   failsBefore: rows.reduce((n, x) => n + Object.values(x.a.q.checks).filter((c) => !c.ok).length, 0),
   failsAfter: rows.reduce((n, x) => n + Object.values(x.b.q.checks).filter((c) => !c.ok).length, 0),
 };
+// per circuit (no image): engine and failed checks before / after, the template's own trial
+const failedOf = (q) => Object.keys(q.checks).filter((k) => !q.checks[k].ok);
+fs.writeFileSync(`${OUT}/rows.jsonl`, rows.map((x) => JSON.stringify({ id: x.id, family: x.family, parts: x.parts, elected: x.elected,
+  before: { engine: x.a.r.label, pass: x.a.q.pass, failed: failedOf(x.a.q), lvs: x.a.lvs },
+  after: { engine: x.b.r.label, pass: x.b.q.pass, failed: failedOf(x.b.q), lvs: x.b.lvs },
+  trial: x.b.r.trials ? x.b.r.trials[ENGINE] || null : null })).join('\n') + '\n');
 // ---- renders for Eric: clean reference, smallest first, the template elected
 const index = { batch: BATCH, created: new Date().toISOString(), note: `gabarit ${ENGINE} — rendus avant / après pour Eric (lecture seule)`, summary, items: [] };
 let k = 0;
