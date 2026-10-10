@@ -20,7 +20,7 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 - #32 : annotations — nœud ne portant qu'un port non annoté, `summary_extra`, valeurs sans place listées dans l'encadré
   (`unplaced` distinct de `unmatched`).
 
-**En attente du oui d'Eric** : **#33** gabarit **paire différentielle à charges passives** (lib/place-pair.js, `AUTO_PAIR=1` ;
+**#33** (oui d'Eric, activé par défaut) : gabarit **paire différentielle à charges passives** (lib/place-pair.js, `AUTO_PAIR=0` désactive ;
 41 circuits, choisi 28 fois, porte 17 → 20, LVS 41/41 ; rendus /drawio/review?batch=gabarit-pair).
 
 **Règle d'activation des gabarits** (Eric) : un gabarit n'est activé qu'après son « oui » sur 3-6 rendus référence / avant / après
@@ -28,7 +28,7 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 `--allow-noref`). Activé, il n'est choisi que s'il fait au moins aussi bien : moins ou autant de contrôles de la porte échoués
 que l'autre candidat (`gateFails`, calculé pour tout candidat ; un gabarit est jugé APRÈS redressement, ports et rails) ;
 entre deux gabarits : moins d'échecs, puis le plus spécifique (latch > lna > miller > ota > pair). Le verrou garde sa priorité
-validée. Désactivation : `AUTO_OTA=0`, `AUTO_MILLER=0`, `AUTO_LNA=0`, `AUTO_LATCH=0`. Ne jamais montrer à Eric un schéma brouillon.
+validée. Désactivation : `AUTO_OTA=0`, `AUTO_MILLER=0`, `AUTO_LNA=0`, `AUTO_PAIR=0`, `AUTO_LATCH=0`. Ne jamais montrer à Eric un schéma brouillon.
 
 **Méthode** (validée par Eric) : cycles REVUE → AMÉLIORATION → REVUE. Contrôle (a) automatique (porte qualité) + (b) visuel par
 Claude à côté de la référence avant toute publication. Comparateur CICC 2007 (`/tmp/cml/net.sp`) : vérifier à chaque changement

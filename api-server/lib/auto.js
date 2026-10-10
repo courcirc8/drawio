@@ -254,8 +254,9 @@ export async function autoPlace(parsed) {
   // the cascode LNA with inductive degeneration (lib/place-lna.js): DEFAULT since
   // Eric's yes (2026-10-10), same rule (AUTO_LNA=0 disables)
   if (process.env.AUTO_LNA !== '0' && lnaReading(parsed)) specs.push(['lna', null, {}, {}]);
-  // the differential pair with passive loads (lib/place-pair.js): OFF until Eric approves (AUTO_PAIR=1)
-  if (process.env.AUTO_PAIR === '1' && pairReading(parsed)) specs.push(['pair', null, {}, {}]);
+  // the differential pair with passive loads (lib/place-pair.js): DEFAULT since
+  // Eric's yes (2026-10-10), same rule (AUTO_PAIR=0 disables)
+  if (process.env.AUTO_PAIR !== '0' && pairReading(parsed)) specs.push(['pair', null, {}, {}]);
   // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
   // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
   // on one thread the budget only ever saw v2 finish on the big converters.
