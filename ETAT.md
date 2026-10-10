@@ -42,6 +42,18 @@ corps = JSON ou `{sim, netlist}`), `DELETE` pour retirer ; couche inerte après 
 **Pages** : /drawio/review (lecture des lots, téléphone), /drawio/eric-lectures (lectures-3/4 retirées de la file : ne republier
 qu'avec 8-10 lectures passant (a)+(b) ; 1/26 passe aujourd'hui).
 
+**En cours (branche `gabarit-strongarm`)** : gabarit **StrongARM** (lib/place-strongarm.js, ÉTEINT tant qu'Eric n'a pas dit oui :
+`AUTO_STRONGARM=1`). Paire croisée PMOS au-dessus de la paire croisée NMOS sur deux colonnes de sortie, les deux X dessinés ;
+paire d'entrée sous les nœuds internes, queue horloge centrée ; précharges des sorties à l'extérieur, celles des nœuds internes
+juste à l'intérieur (source droite au rail) ; ligne de sortie = ligne de drain du X PMOS, ports OUT dessus ; inverseurs de sortie
+(s'il y en a sur les deux sorties) au-delà des bus d'horloge ; horloge CÂBLÉE (pas de connexion par nom) : un bus de chaque côté
+réuni sous la queue → 2 « détours » (uWires) inévitables ; masse en net simple (`vss` sans symbole) câblée par une ligne sous
+l'horloge quand seuls des transistors du gabarit y sont. crossx : un fil de grille déjà sur le drain partenaire est supprimé
+(plus de boucle). Corpus : 20 StrongARM lus, LVS 20/20, gabarit choisi 3 fois (les 3 propres), échecs 87 → 79 au total.
+Limites : capacités de neutralisation, interrupteur de reset entre sorties, verrou SR, sources de banc de test, masse `VSS`
+en net simple avec d'autres pièces → l'ancien moteur reste choisi (règle de la porte). Piste transversale : place2 ne donne un
+symbole de masse qu'au net `0` (renommer casserait le LVS, pas d'alias dans lib/lvs.js).
+
 **Suite** (ordre d'Eric) : StrongARM (60), suiveur / source commune, bandgap,
 miroir cascode (liste et comptes : tools/motif-census.mjs). Puis chantier placement 10-25 composants.
 
