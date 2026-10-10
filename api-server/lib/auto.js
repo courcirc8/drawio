@@ -258,8 +258,9 @@ export async function autoPlace(parsed) {
   // the differential pair with passive loads (lib/place-pair.js): DEFAULT since
   // Eric's yes (2026-10-10), same rule (AUTO_PAIR=0 disables)
   if (process.env.AUTO_PAIR !== '0' && pairReading(parsed)) specs.push(['pair', null, {}, {}]);
-  // the cross-coupled pair / LC VCO (lib/place-pair.js, cross mode): OFF until Eric approves (AUTO_VCO=1)
-  if (process.env.AUTO_VCO === '1' && vcoReading(parsed)) specs.push(['vco', null, {}, {}]);
+  // the cross-coupled pair / LC VCO (lib/place-pair.js, cross mode): DEFAULT since
+  // Eric's yes (2026-10-10), same rule (AUTO_VCO=0 disables)
+  if (process.env.AUTO_VCO !== '0' && vcoReading(parsed)) specs.push(['vco', null, {}, {}]);
   // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
   // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
   // on one thread the budget only ever saw v2 finish on the big converters.
