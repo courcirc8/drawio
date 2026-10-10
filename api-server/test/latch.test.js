@@ -59,3 +59,8 @@ test('ota template: the 5T OTA is read and, enabled, drawn by default, LVS-clean
   assert.ok(compare(extractNetlist(getPage(r.doc)), p).match);
   assert.ok(qualityGate(getPage(r.doc), p).pass);
 });
+
+test('netlist: an ngspice .control … .endc block is skipped (no "let" read as an inductor)', () => {
+  const p = parseSpice('R1 a b 1k\n.control\nlet x = 2\nlet lmax = 5\nrun\n.endc\nC1 b 0 1p\n.end');
+  assert.deepEqual(p.components.map((c) => c.ref), ['R1', 'C1']);
+});

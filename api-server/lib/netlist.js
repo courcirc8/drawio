@@ -25,9 +25,15 @@ import { pinAbs } from './route.js';
 export function parseSpice(text, opts = {}) {
   const caseOf = new Map();   // lower-case node -> first spelling (see mapNet)
   const rawLines = String(text).split(/\r?\n/);
-  // join continuations
+  // join continuations; an ngspice .control … .endc block (simulator
+  // commands: "let x = 2" read as an inductor L…, found by the Simulation
+  // session, 2026-10-10) is dropped whole
   const lines = [];
+  let inControl = false;
   for (const raw of rawLines) {
+    const lw = raw.trim().toLowerCase();
+    if (inControl) { if (lw.startsWith('.endc')) inControl = false; continue; }
+    if (lw.startsWith('.control')) { inControl = true; continue; }
     if (/^\s*\+/.test(raw) && lines.length > 0) {
       lines[lines.length - 1] += ' ' + raw.replace(/^\s*\+/, '');
     } else {
