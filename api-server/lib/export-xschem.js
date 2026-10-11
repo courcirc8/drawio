@@ -152,16 +152,18 @@ export function writeSch(N, parsed) {
     // bulk is on a rail, else a label (text outward)
     if (e.bulk) {
       const t = xform(sp[e.bulk], f.rot, f.flip), bnet = c.spice.hidden?.[3] ?? c.pins.SE?.net;
-      const b = [f.at[0] + t[0], f.at[1] + t[1]], out = t[0] >= 0 ? 1 : -1;
+      const tg = xform(sp.G, f.rot, f.flip);
+      const b = [f.at[0] + t[0], f.at[1] + t[1]], out = t[0] >= tg[0] ? 1 : -1;   // away from the gate (never across the body)
       const rail = N.rails.find((r) => String(r.net).toLowerCase() === String(bnet).toLowerCase()), gnd = bnet === '0' || rail?.kind === 'ground';
-      // first free stub (no point or wire of another net on it): outward, then inward, longer
+      // first free stub (no point or wire of another net on it), outward only, several lengths
       let done = false;
-      for (const side of [out, -out]) for (const len of [60, 80, 100, 40, 30, 20]) {
+      // (a rail bulk: the symbol 30 below / above the stub's end, else right AT its end)
+      for (const drop of (gnd || rail ? [30, 0] : [0])) for (const len of [60, 80, 100, 40, 30, 20]) {
         if (done) break;
-        const end = [b[0] + side * len, b[1]], tip = gnd ? [end[0], end[1] + 30] : rail ? [end[0], end[1] - 30] : end;
-        const path = [[b, end], ...(tip !== end ? [[end, tip]] : [])];
+        const side = out, end = [b[0] + side * len, b[1]], tip = gnd ? [end[0], end[1] + drop] : rail ? [end[0], end[1] - drop] : end;
+        const path = [[b, end], ...(drop && tip !== end ? [[end, tip]] : [])];
         if (path.some(([p, q]) => clash(p, q, bnet))) continue;
-        bulks.push({ net: bnet, points: tip !== end ? [b, end, tip] : [b, end] }); taken.push(...path.map(([p, q]) => ({ p, q, net: bnet })));
+        bulks.push({ net: bnet, points: drop && tip !== end ? [b, end, tip] : [b, end] }); taken.push(...path.map(([p, q]) => ({ p, q, net: bnet })));
         if (gnd) C('gnd.sym', tip, 0, 0, `name=g${++lab} lab=GND`);
         else if (rail) C('vdd.sym', tip, 0, 0, `name=v${++lab} lab=${netName(rail.net)}`);
         else label(end, bnet, side > 0 ? 1 : 0);

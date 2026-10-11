@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { parseSpice } from '../lib/netlist.js';
 import { compare } from '../lib/lvs.js';
 import { exportXschem } from '../lib/export-xschem.js';
@@ -52,7 +53,9 @@ export function canonMos(p, src = p) {
   return p;
 }
 
-const [deck, out] = process.argv.slice(2);
+// command line only when run directly (not when imported by tools/xschem-renders.mjs)
+const MAIN = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const [deck, out] = MAIN ? process.argv.slice(2) : [];
 if (deck && deck !== '--bank') {
   const parsed = parseSpice(fs.readFileSync(deck, 'utf8') + '\n.end');
   const r = await exportXschem(parsed);

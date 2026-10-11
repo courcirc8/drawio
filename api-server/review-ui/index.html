@@ -43,8 +43,8 @@ function render(){
     return `<div class="card"><div class="t">n° ${x.n} · ${x.family} · ${x.parts} composants</div>
     <div class="s">${x.id} · source ${x.refSource} · moteur ${x.engine}</div>
     <div class="imgs">${x.refUrl?`<figure><img loading="lazy" src="${x.refUrl}"><figcaption>Référence</figcaption></figure>`:'<figure><figcaption>(pas de figure de référence)</figcaption></figure>'}
-    ${x.beforeUrl?`<figure><img loading="lazy" src="${x.beforeUrl}"><figcaption>avant (${x.engineBefore})</figcaption></figure>`:''}
-    <figure><img loading="lazy" src="${x.drawioUrl}"><figcaption>${x.beforeUrl?'après — gabarit':'drawio'}</figcaption></figure></div>
+    ${x.beforeUrl?`<figure><img loading="lazy" src="${x.beforeUrl}"><figcaption>${x.captionBefore||`avant (${x.engineBefore})`}</figcaption></figure>`:''}
+    <figure><img loading="lazy" src="${x.drawioUrl}"><figcaption>${x.captionAfter||(x.beforeUrl?'après — gabarit':'drawio')}</figcaption></figure></div>
     <ul>${x.verdict?`<li><b>Avis de Claude :</b> ${x.verdict}</li>`:''}${x.quality?`<li>Contrôle automatique : ${x.quality.pass?'<span class="ok">OK</span>':'<span class="ko">raté</span> — '+fails(x.quality)}</li>`:''}
     ${m.bends!=null?`<li>${m.bends} coudes`:'<li style="display:none">'} (${m.bendsPerWire} par fil), ${m.crossings??'?'} croisements, ${m.severe} erreur(s) grave(s), ${m.checkErrors??'?'} erreur(s) au total</li>
     ${xs}${x.qualityBefore?`<li>Contrôle automatique avant : ${x.qualityBefore.pass?'<span class="ok">OK</span>':'<span class="ko">raté</span> — '+fails(x.qualityBefore)}</li>`:''}<li>Motifs reconnus : ${(x.motifs||[]).join(', ')||'aucun'}</li></ul></div>`}).join('');
