@@ -41,6 +41,17 @@ copié porte un commentaire de provenance et une ligne dans `THIRD_PARTY.md` (d�
   `kicad-cli sch export netlist` → LVS. Banque : 38 exportés, 36 LVS justes, le reste refusé. Particularité : la broche de
   substrat KiCad est sur la ligne de la source ; un fil d'un autre net qui la traverse est accepté (KiCad ne relie qu'une
   extrémité, vérifié) avec un avertissement ; un fil qui s'y termine ou y fait un coude → refus.
+- **Qucs-S 26** (`lib/export-qucs.js`, `tools/qucs-check.mjs`) : ports lus dans les sources de Qucs-S (positions seules,
+  provenance fichier:ligne dans l'en-tête) ; miroir puis rotations ; fils coupés aux points de connexion ; masse GND, rails
+  et ports par étiquettes de fil ; netlist par `qucs-s -n --ngspice` (conteneur sim-gui + Xvfb, borné dans le temps) → LVS.
+  Banque : 33/40 livrés, 7 refusés (sources non continues — pulse — non traduites, noms de nets internes). L'impression
+  sans écran de Qucs-S sort sans aucun texte (polices) : pas de rendus pour Eric tant que ce n'est pas réglé.
+- **LTspice** (`lib/export-ltspice.js`, `tools/ltspice-check.mjs`) : AVEC de vrais fils (l'ancien `lib/export-asc.js`
+  posait une étiquette par broche — une connexion par nom) ; broches de `data/ltspice-symbols.json` (Weave, MIT),
+  16 unités LTspice = 10 ; masse et rails par drapeaux ; contrôle par `tools/asc2spice.mjs` (lecteur indépendant, règles
+  de LTspice ; LTspice lui-même n'est pas installé). Banque : 33/40 livrés, 7 refusés.
+- Livraison : `deliverXschem` / `deliverKicad` / `deliverQucs` / `deliverLtspice` n'écrivent le fichier final que si la
+  netlist relue par l'outil (ou le lecteur) redonne le deck ; sinon refus, aucun fichier.
 - Géométrie cible partagée : `lib/target-geometry.js` (pochoirs à la géométrie de l'outil pendant le placement, recherche
   de l'orientation qui pose chaque broche).
 - Rendus pour Eric : `/drawio/review?batch=export-xschem`, `batch=export-kicad` (`tools/xschem-renders.mjs --tool`).

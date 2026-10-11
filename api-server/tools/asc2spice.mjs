@@ -84,6 +84,7 @@ export function parseAsc(text) {
     else if (t[0] === 'SYMATTR' && cur) {
       if (t[1] === 'InstName') cur.name = t.slice(2).join(' ');
       if (t[1] === 'Value') cur.value = t.slice(2).join(' ');
+      if (t[1] === 'Value2') cur.value2 = t.slice(2).join(' ');   // (MOS: l=… w=…)
       if (t[1] === 'SpiceModel') cur.spiceModel = t.slice(2).join(' ');
     }
   }
@@ -182,6 +183,7 @@ export function ascToSpice(text, { name = 'ltspice' } = {}) {
     const pins = pinRecs.filter((r) => r.sym === s).sort((a, b) => a.idx - b.idx).map((r) => netOf(r.pt));
     const k = symKey(s.sym).replace(/^.*\\/, '');
     let value = (s.value || '').trim();
+    if (s.value2) value = (value + ' ' + s.value2).trim();   // (Value2: a MOS's l=… w=…)
     let line;
     if (prefix === 'Q') {
       // the symbol decides the polarity; parseSpice/place2 read it from the model name
