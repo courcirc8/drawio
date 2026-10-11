@@ -295,6 +295,25 @@ app.post('/documents/:id/annotations/sim', wrap(async (req, res) => {
   const out = annotateSim(m, sim, { netlist: text, show });
   res.json({ ...out, netlist: text ? 'ok' : 'absente : seuls les noms identiques sont reliés' });
 }));
+// « point d'essai » (Eric 2026-10-11, lib/sim-op.js): the operating point of the
+// document's netlist by ngspice with simple models, shown on the drawing.
+// Body (optional): {netlist, vdd}; ?show=nodes,devices,summary. 422 when ngspice finds none.
+const { operatingPoint } = await import('./lib/sim-op.js');
+app.post('/documents/:id/annotations/op', wrap(async (req, res) => {
+  const entry = documents.getDoc(req.params.id);
+  const m = model.getPage(entry.doc, req.query.page);
+  const b = req.body || {};
+  const text = b.netlist || (entry.importNetlist || {})[req.query.page || ''] || null;
+  if (!text) return res.status(400).json({ error: "pas de netlist : importer d'abord la netlist (netlist/import) ou la passer dans le corps {netlist}" });
+  const parsed = netlist.parseSpice(/\.end\b/i.test(text) ? text : text + '\n.end');
+  let r;
+  try { r = operatingPoint(parsed, { vdd: Number(b.vdd ?? 1.8) }); }
+  catch (e) { return res.status(422).json({ error: e.message, deck: e.deck }); }
+  const show = new Set(String(req.query.show || 'nodes,devices,summary').split(',').map((x) => x.trim()));
+  clearSim(m);
+  const out = annotateSim(m, r.sim, { netlist: text, show });
+  res.json({ ...out, sim: r.sim, deck: r.deck });
+}));
 app.delete('/documents/:id/annotations/sim', wrap(async (req, res) => {
   const entry = documents.getDoc(req.params.id);
   res.json({ removed: clearSim(model.getPage(entry.doc, req.query.page)) });
