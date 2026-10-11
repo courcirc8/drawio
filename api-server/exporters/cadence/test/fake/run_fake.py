@@ -34,8 +34,9 @@ def main():
     from skillinterp import Interp
     it = Interp(functions=dict(fv.FUNCTIONS))
     it.load(file)
-    call = 'cadxExport("work" ?report "%s"%s)' % (opts.get("--report", "cadence-report.txt"),
-                                                ' ?map "%s"' % opts["--map"] if "--map" in opts else "")
+    call = 'cadxExport("work" ?report "%s"%s%s)' % (opts.get("--report", "cadence-report.txt"),
+                                                  ' ?map "%s"' % opts["--map"] if "--map" in opts else "",
+                                                  ' ?writeProfile "%s"' % opts["--write-profile"] if "--write-profile" in opts else "")
     try:
         ok = it.eval_string(call)
     except Exception as x:

@@ -65,6 +65,15 @@ mynmos.param.l = l
 
 Ce fichier reste chez toi. Ni le script ni le rapport ne renvoient ses noms.
 
+## Second passage exact (option)
+
+Le premier passage relie chaque broche à son point prévu par un petit fil (« stub »). Pour supprimer ces stubs :
+
+1. Relance le script en ajoutant `--write-profile profil.json` (SKILL : `?writeProfile "profil.json"`). Le fichier contient les points des terminaux de tes symboles, rangés par rôle (nmos, pmos, res…), sans aucun nom de bibliothèque. **Il reste chez toi.**
+2. Là où drawio est installé : `node api-server/exporters/cadence/cli.mjs deck.sp --profile profil.json --out dossier`. Le moteur place alors directement sur les vraies broches.
+
+Résultat sur le faux Virtuoso : OTA, Miller et comparateur CML passent de 17 à 25 stubs à 0. Pour le LNA et le VCO, drawio garde le premier passage, car leurs gabarits supposent le pochoir d'inductance de draw.io ; la sortie indique alors « not used ».
+
 ## 4. Lire le rapport (`cadence-report.txt`)
 
 ```

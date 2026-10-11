@@ -21,6 +21,8 @@ import { fileURLToPath } from 'node:url';
 import { getPage } from '../../lib/model.js';
 import { autoPlace } from '../../lib/auto.js';
 import { toNeutral, checkNeutral, snapNeutral } from '../../lib/neutral.js';
+import { getShape } from '../../lib/stencils.js';
+import { SPICE_MAP, PIN_ORDER_OVERRIDES } from '../../lib/components.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const RUNTIME_PY = path.join(HERE, 'runtime', 'cadence_runtime.py');
@@ -222,15 +224,82 @@ export function writeSkill(plan, { mapText = fs.readFileSync(DEFAULT_MAP, 'utf8'
   ].join('\n');
 }
 
+// ---------------------------------------------------------------- local profile
+// A profile (`cadence-profile/1`) is written by the runtime at the user's site
+// (--write-profile): the terminal points of each role's symbol, in user units.
+// It never comes back here unless the user chooses so; with it, the engine
+// places in the symbols' REAL geometry and the pins land on the plan (no stub).
+
+const ORIENTS = ['R0', 'R90', 'R180', 'R270', 'MY', 'MYR90', 'MX', 'MXR90'];
+const xf = ([x, y], o) => ({ R0: [x, y], R90: [-y, x], R180: [-x, -y], R270: [y, -x], MY: [-x, y], MX: [x, -y], MYR90: [-y, -x], MXR90: [y, x] })[o];
+const STENCIL = {
+  nmos: SPICE_MAP.M.shape, pmos: SPICE_MAP.M.variants.PMOS, res: SPICE_MAP.R.shape, cap: SPICE_MAP.C.shape,
+  ind: SPICE_MAP.L.shape, vsrc: SPICE_MAP.V.shape, isrc: SPICE_MAP.I.shape,
+};
+const orderOf = (role) => PIN_ORDER_OVERRIDES[STENCIL[role]] || SPICE_MAP[{ nmos: 'M', pmos: 'M', res: 'R', cap: 'C', ind: 'L', vsrc: 'V', isrc: 'I' }[role]].pinOrder;
+
+/** A stencil's geometry {w, h, pins} from a profiled symbol: the orientation of the symbol nearest the stencil's native pins. */
+export function stencilFromProfile(role, sym, native, scale) {
+  const order = orderOf(role);
+  const pts = order.map((_, i) => sym.terms[sym.order[i]]);
+  if (pts.some((p) => !p)) return null;
+  const corners = sym.bbox ? [[sym.bbox[0][0], sym.bbox[0][1]], [sym.bbox[1][0], sym.bbox[1][1]], [sym.bbox[0][0], sym.bbox[1][1]], [sym.bbox[1][0], sym.bbox[0][1]]] : [];
+  let best = null;
+  for (const o of ORIENTS) {
+    const px = (p) => { const q = xf(p, o); return [q[0] / scale, -q[1] / scale]; };   // drawio px, y down
+    const P = pts.map(px), B = corners.map(px);
+    const xs = P.map((p) => p[0]), ys = P.map((p) => p[1]);
+    let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    // a two-pin part has no width across its pins: its body's
+    if (x1 - x0 < 1) { const bx = B.map((p) => p[0]); const t = Math.max(20, Math.max(...bx) - Math.min(...bx)); x0 -= t / 2; x1 += t / 2; }
+    if (y1 - y0 < 1) { const by = B.map((p) => p[1]); const t = Math.max(20, Math.max(...by) - Math.min(...by)); y0 -= t / 2; y1 += t / 2; }
+    const w = x1 - x0, h = y1 - y0;
+    const rel = P.map((p) => ({ x: (p[0] - x0) / w, y: (p[1] - y0) / h }));
+    const cost = order.reduce((acc, name, i) => { const n = native.find((q) => q.name === name); return acc + (n.x - rel[i].x) ** 2 + (n.y - rel[i].y) ** 2; }, 0);
+    if (!best || cost < best.cost - 1e-9) best = { cost, w, h, pins: order.map((name, i) => ({ name, ...rel[i] })) };
+  }
+  return { w: best.w, h: best.h, pins: best.pins };
+}
+
+let lock = Promise.resolve();
+/** Run fn with the stencils of the profiled roles given their Cadence geometry (serialised: the catalog is shared). */
+export function withProfileGeometry(profile, scale, fn) {
+  const run = lock.then(async () => {
+    const saved = [];
+    try {
+      for (const [role, key] of Object.entries(STENCIL)) {
+        const sym = profile?.symbols?.[role], s = getShape(key);
+        if (!sym || !s) continue;
+        const g = stencilFromProfile(role, sym, s.pins, scale);
+        if (!g) continue;
+        saved.push([s, { w: s.w, h: s.h, pins: s.pins }]);
+        Object.assign(s, g);
+      }
+      return await fn();
+    } finally { for (const [s, g] of saved) Object.assign(s, g); }
+  });
+  lock = run.catch(() => {});
+  return run;
+}
+
 /** Netlist → { plan, python, neutral, label }; the neutral LVS must pass first. */
 export async function exportCadence(parsed, opts = {}) {
-  const r = await autoPlace(parsed);
+  // with a local profile, the engine places in the symbols' real geometry;
+  // if that drawing does not pass, the ordinary one (stubs) — reported
+  if (opts.profile) {
+    try { return { ...(await exportOnce(parsed, opts, true)), profileUsed: true }; } catch { /* fall back */ }
+  }
+  return { ...(await exportOnce(parsed, opts, false)), profileUsed: false };
+}
+
+async function exportOnce(parsed, opts, withProfile) {
+  const scale0 = opts.scale ?? 0.00625;
+  const r = withProfile ? await withProfileGeometry(opts.profile, scale0, () => autoPlace(parsed)) : await autoPlace(parsed);
   const N = toNeutral(getPage(r.doc), { target: { tool: 'cadence', unit: 'px', grid: 10 }, source: { engine: r.label } });
   if (!checkNeutral(N, parsed).match) throw new Error('cadence: the neutral schematic does not redraw the deck');
   // on the 10-unit grid = one Virtuoso step; when that merges two wires, the
   // half grid at twice the scale (a larger drawing, still on Virtuoso's grid)
-  const scale = opts.scale ?? 0.00625;
-  for (const [step, sc] of [[10, scale], [5, 2 * scale]]) {
+  for (const [step, sc] of [[10, scale0], [5, 2 * scale0]]) {
     const G = snapNeutral(N, step);
     if (!checkNeutral(G, parsed).match) continue;
     const plan = cadencePlan(G, parsed, { ...opts, scale: sc }), check = checkPlan(plan);

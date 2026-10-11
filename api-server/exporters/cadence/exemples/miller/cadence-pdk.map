@@ -1,0 +1,63 @@
+# Symbol map for the Cadence export (key = value). Defaults: analogLib + basic.
+# Copy this file, change what your kit needs, pass it with --map (Python) or
+# ?map (SKILL). It stays on your machine: the report never contains its names.
+#
+# <role>.lib / .cell / .view (default symbol)
+# <role>.terms   terminal names in SPICE order (MOS: drain gate source bulk)
+# <role>.param.<property> = <source>   source: model, value, dc, or a key of
+#                the deck line (w, l, m, nf...). Absent in the deck = not set.
+# model.<deck model> = <key>   use the entry <key> for that model, e.g.
+#   model.nch = mynmos
+#   mynmos.lib = MYPDK
+#   mynmos.cell = nch
+#   mynmos.terms = D G S B
+#   mynmos.param.w = w
+#   mynmos.param.l = l
+
+nmos.lib = analogLib
+nmos.cell = nmos4
+nmos.terms = D G S B
+nmos.param.model = model
+nmos.param.w = w
+nmos.param.l = l
+nmos.param.m = m
+
+pmos.lib = analogLib
+pmos.cell = pmos4
+pmos.terms = D G S B
+pmos.param.model = model
+pmos.param.w = w
+pmos.param.l = l
+pmos.param.m = m
+
+res.lib = analogLib
+res.cell = res
+res.terms = PLUS MINUS
+res.param.r = value
+
+cap.lib = analogLib
+cap.cell = cap
+cap.terms = PLUS MINUS
+cap.param.c = value
+
+ind.lib = analogLib
+ind.cell = ind
+ind.terms = PLUS MINUS
+ind.param.l = value
+
+vsrc.lib = analogLib
+vsrc.cell = vdc
+vsrc.terms = PLUS MINUS
+vsrc.param.vdc = dc
+
+isrc.lib = analogLib
+isrc.cell = idc
+isrc.terms = PLUS MINUS
+isrc.param.idc = dc
+
+gnd.lib = analogLib
+gnd.cell = gnd
+
+pin.lib = basic
+pin.cell = iopin
+pin.direction = inputOutput

@@ -16,11 +16,15 @@ Code : `api-server/exporters/cadence/`. Doc utilisateur : `docs/cadence.md`.
 - Piège SKILL trouvé : `list(1 -2)` se lit 1 - 2 → négatifs entre parenthèses dans les données, variables dans le runtime.
 - Délégation locale : faux Virtuoso réussi (Ornith, 1 essai) ; interpréteur SKILL raté 2 fois (budget de sortie) → réécrit ici.
 
+- 12.10 : exemples Miller et LNA cascode ; **profil local** (`--write-profile` / `?writeProfile`, `cadence-profile/1`,
+  par rôle, sans nom de bibliothèque) → `cli.mjs --profile` place dans la vraie géométrie : stubs 17/25/25 → 0
+  (OTA, Miller, CML) ; LNA et VCO retombent sur le premier passage (gabarits liés au pochoir d'inductance).
+
 ## Décisions
 - Aucune coordonnée de broche Cadence dans le dépôt (analogLib et PDK propriétaires) : tout est lu à l'exécution.
 - La vérification est faite contre le deck source, pas contre le neutre.
 
 ## À faire
 - Premier rapport réel d'Eric → calibrer l'échelle (`scale`, défaut 0,00625 uu par px).
-- Option : profil local des broches pour un second passage exact.
+- Gabarits LNA / VCO avec un profil (inductance) : à voir avec drawio si utile.
 - Skill « schema-depuis-netlist » + PROMOTION.md (plus tard, via l'orchestrateur).

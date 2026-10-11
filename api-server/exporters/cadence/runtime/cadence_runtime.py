@@ -97,6 +97,7 @@ class Export:
         self.problems = []      # generic messages (no names)
         self.local = []         # detailed messages, printed only with --detail
         self.masters = {}
+        self.profile = {}       # role -> symbol terminals (written only with --write-profile)
         self.insts = {}         # ref -> (inst, {spice index: actual point}, entry)
         self.taken = []         # (a, b, net): segments / points (a == b) already drawn or planned
 
@@ -181,6 +182,9 @@ class Export:
                 self.problems.append("symbol not found for role " + comp["role"])
                 continue
             offs = self.term_offsets(mst)
+            if comp["role"] not in self.profile:
+                self.profile[comp["role"]] = {"order": e["terms"], "bbox": [list(p) for p in mst.b_box],
+                                              "terms": {t: list(offs[t]) for t in e["terms"] if t in offs}}
             need = [p["index"] for p in comp["pins"]] + [h["index"] for h in comp.get("hidden", [])]
             if any(i >= len(e["terms"]) or e["terms"][i] not in offs for i in need):
                 self.problems.append("symbol terminals do not match the map for role " + comp["role"])
@@ -377,6 +381,11 @@ class Export:
         self.symbols()
         return self.check()
 
+    def write_profile(self, path):
+        """The real terminal points of each role's symbol: stays on this machine."""
+        with open(path, "w") as f:
+            json.dump({"format": "cadence-profile/1", "grid": self.g, "symbols": self.profile}, f, indent=1, sort_keys=True)
+
     def report(self):
         r, s = self.result, self.stats
         roles = {}
@@ -413,6 +422,7 @@ def main(argv=None):
     ap.add_argument("--report", default="cadence-report.txt")
     ap.add_argument("--overwrite", action="store_true")
     ap.add_argument("--direct", action="store_true", help="run from the CIW with pyRunScript")
+    ap.add_argument("--write-profile", help="write the symbols' terminal points (LOCAL file, for a second exact pass)")
     ap.add_argument("--detail", action="store_true", help="print instance names of mismatches (LOCAL only)")
     a = ap.parse_args(argv)
     m = parse_map(DEFAULT_MAP)
@@ -423,6 +433,8 @@ def main(argv=None):
     ws = Workspace.open(direct=a.direct) if a.direct else Workspace.open()
     ex = Export(ws, PLAN, m, a.lib, a.cell, a.overwrite)
     ex.run()
+    if a.write_profile:
+        ex.write_profile(a.write_profile)
     text = ex.report()
     with open(a.report, "w") as f:
         f.write(text)
