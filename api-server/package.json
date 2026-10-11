@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js",
-    "bench:templates": "node tools/template-bench.mjs --check"
+    "bench:templates": "node tools/template-bench.mjs --check",
+    "test:cadence": "node --test exporters/cadence/test/*.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
