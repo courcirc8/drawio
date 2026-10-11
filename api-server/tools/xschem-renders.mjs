@@ -4,7 +4,8 @@
  * reference figure, the draw.io drawing and xschem's OWN drawing of the
  * exported .sch (PDF without X, then PNG), each export checked by xschem's
  * netlister + LVS first (a failing one is skipped, never shown).
- * Usage: node tools/xschem-renders.mjs --ids a,b,c [--batch export-xschem]
+ * Usage: node tools/xschem-renders.mjs --ids a,b,c [--batch export-xschem] [--tool xschem|kicad]
+ *        (--tool kicad: KiCad's own drawing, kicad-cli PDF without the drawing sheet, LVS by kicad-cli)
  * REVIEW_ROOT=/tmp/... to look first without touching the review page.
  */
 import fs from 'node:fs';
@@ -20,9 +21,11 @@ import { exportDocument } from '../lib/render.js';
 import { sealedStatus } from '../lib/sealed.js';
 import { exportXschem } from '../lib/export-xschem.js';
 import { xschemNetlist, canonMos } from './xschem-check.mjs';
+import { exportKicad } from '../lib/export-kicad.js';
+import { kicadLvs } from './kicad-check.mjs';
 
 const argv = process.argv.slice(2), arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
-const IDS = (arg('--ids') || '').split(',').filter(Boolean), BATCH = arg('--batch', 'export-xschem');
+const IDS = (arg('--ids') || '').split(',').filter(Boolean), TOOL = arg('--tool', 'xschem'), BATCH = arg('--batch', `export-${TOOL}`);
 const ROOT = process.env.REVIEW_ROOT || '/AI/datasets/judge/review', OUT = `${ROOT}/${BATCH}`;
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(`${OUT}/img`, { recursive: true });
 const B = '/AI/datasets/netlists/bank';
@@ -69,27 +72,40 @@ function xschemPng(sch, png) {
 }
 const man = new Map(fs.readdirSync(B).filter((f) => /^manifest.*\.jsonl$/.test(f)).flatMap((f) => jsonl(`${B}/${f}`)).map((r) => [r.id, r.file]));
 const inv = new Map(jsonl(`${B}/inventory.jsonl`).map((r) => [r.id, r]));
-const index = { batch: BATCH, created: new Date().toISOString(), note: 'export xschem (kit IHP SG13G2) — référence, dessin draw.io, dessin de xschem lui-même (lecture seule)', items: [] };
-const work = fs.mkdtempSync(path.join(os.tmpdir(), 'xsr-'));
+const index = { batch: BATCH, created: new Date().toISOString(), note: TOOL === 'kicad' ? 'export KiCad — référence, dessin draw.io, dessin de KiCad lui-même (lecture seule)' : 'export xschem (kit IHP SG13G2) — référence, dessin draw.io, dessin de xschem lui-même (lecture seule)', items: [] };
+// (KiCad is a Flatpak: its work directory must be under the home, not /tmp)
+const work = fs.mkdtempSync(path.join(TOOL === 'kicad' ? os.homedir() : os.tmpdir(), 'xsr-'));
+const KCLI = process.env.KICAD_CLI || path.join(os.homedir(), 'ClaudeCode/simulation/bin/kicad-cli');
+function kicadPng(sch, png) {
+  const pdf = sch.replace(/\.kicad_sch$/, '.pdf');
+  execFileSync(KCLI, ['sch', 'export', 'pdf', '--exclude-drawing-sheet', '--no-background-color', '--output', path.basename(pdf), path.basename(sch)], { cwd: path.dirname(sch), stdio: 'pipe', timeout: 120000, env: { ...process.env, PWD: path.dirname(sch) } });
+  execFileSync('pdftoppm', ['-png', '-r', '220', '-singlefile', pdf, png.replace(/\.png$/, '')]);
+  // cropped to the drawing (the sheet is A3, the drawing a corner of it)
+  execFileSync('python3', ['-c', 'import sys;from PIL import Image,ImageOps;i=Image.open(sys.argv[1]).convert("RGB");b=ImageOps.invert(i).getbbox();i.crop((max(0,b[0]-30),max(0,b[1]-30),b[2]+30,b[3]+30)).save(sys.argv[1])', png]);
+}
 let k = 0;
 for (const id of IDS) {
   const text = fs.readFileSync(man.get(id), 'utf8');
   if (sealedStatus(text)) { console.error('sealed, refused:', id); continue; }
   const p = parseSpice(/\.end\b/i.test(text) ? text : text + '\n.end');
-  let x; try { x = await exportXschem(p); } catch (e) { console.error(id, 'not exported:', e.message); continue; }
-  const sch = path.join(work, `${id.replace(/[^\w.-]+/g, '_')}.sch`); fs.writeFileSync(sch, x.sch);
-  let lvs = false; try { const n = xschemNetlist(sch); lvs = compare({ components: canonMos(n.parsed, p).components, issues: [] }, canonMos(structuredClone(p))).match; } catch (e) { console.error(id, e.message); }
-  if (!lvs) { console.error(id, 'xschem LVS failed: not shown'); continue; }
+  let x; try { x = TOOL === 'kicad' ? await exportKicad(p) : await exportXschem(p); } catch (e) { console.error(id, 'not exported:', e.message); continue; }
+  const sch = path.join(work, `${id.replace(/[^\w.-]+/g, '_')}.${TOOL === 'kicad' ? 'kicad_sch' : 'sch'}`); fs.writeFileSync(sch, x.sch);
+  let lvs = false;
+  try {
+    if (TOOL === 'kicad') lvs = kicadLvs(sch, p).match;
+    else { const n = xschemNetlist(sch); lvs = compare({ components: canonMos(n.parsed, p).components, issues: [] }, canonMos(structuredClone(p))).match; }
+  } catch (e) { console.error(id, e.message); }
+  if (!lvs) { console.error(id, `${TOOL} LVS failed: not shown`); continue; }
   const d = await autoPlace(p);
   k++;
   const ref = refOf(id); if (ref) writeRef(ref, `${OUT}/img/${k}-ref.png`);
   fs.writeFileSync(`${OUT}/img/${k}-before.png`, (await exportDocument(d.doc, getPage(d.doc), { format: 'png', scale: 1.6 })).buffer);
-  xschemPng(sch, `${OUT}/img/${k}-drawio.png`);
-  fs.copyFileSync(sch, `${OUT}/img/${k}.sch`);
+  if (TOOL === 'kicad') kicadPng(sch, `${OUT}/img/${k}-drawio.png`); else xschemPng(sch, `${OUT}/img/${k}-drawio.png`);
+  fs.copyFileSync(sch, `${OUT}/img/${k}.${TOOL === 'kicad' ? 'kicad_sch' : 'sch'}`);
   const r = inv.get(id) || {};
   index.items.push({ n: k, id, family: r.family || '?', parts: r.parts || p.components.length, refSource: ref ? ref.source : 'pas de figure de référence', ref: ref ? `img/${k}-ref.png` : null,
-    before: `img/${k}-before.png`, drawio: `img/${k}-drawio.png`, engine: `xschem (${x.label})`, engineBefore: d.label,
-    captionBefore: `draw.io (${d.label})`, captionAfter: `xschem — kit IHP SG13G2 (${x.label}, LVS xschem juste)`, metrics: {}, motifs: [], crossX: { pairs: 0, drawn: 0, refused: {} } });
+    before: `img/${k}-before.png`, drawio: `img/${k}-drawio.png`, engine: `${TOOL} (${x.label})`, engineBefore: d.label,
+    captionBefore: `draw.io (${d.label})`, captionAfter: TOOL === 'kicad' ? `KiCad 10 (${x.label}, LVS kicad-cli juste)` : `xschem — kit IHP SG13G2 (${x.label}, LVS xschem juste)`, metrics: {}, motifs: [], crossX: { pairs: 0, drawn: 0, refused: {} } });
   console.log(k, id, d.label, '->', x.label);
 }
 fs.writeFileSync(`${OUT}/index.json`, JSON.stringify(index, null, 1));
