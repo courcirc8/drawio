@@ -24,6 +24,7 @@ import { qualityGate } from '../lib/quality.js';
 import { otaReading, millerReading } from '../lib/place-ota.js';
 import { lnaReading } from '../lib/place-lna.js';
 import { pairReading, vcoReading } from '../lib/place-pair.js';
+import { csReading } from '../lib/place-cs.js';
 import { strongarmReading } from '../lib/place-strongarm.js';
 
 const argv = process.argv.slice(2);
@@ -31,8 +32,8 @@ const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] :
 const NOREF = argv.includes('--allow-noref');
 const IDS = arg('--ids') ? new Set(arg('--ids').split(',')) : null;   // render exactly these (elected or not)   // circuits without a reference figure too (shown as such)
 const ENGINE = arg('--engine', 'ota'), N = Number(arg('--n', 4)), BATCH = arg('--batch', `gabarit-${ENGINE}`);
-const READ = { ota: otaReading, miller: millerReading, lna: lnaReading, pair: pairReading, vco: vcoReading, strongarm: strongarmReading }[ENGINE];
-const ENV = { ota: 'AUTO_OTA', miller: 'AUTO_MILLER', lna: 'AUTO_LNA', pair: 'AUTO_PAIR', vco: 'AUTO_VCO', strongarm: 'AUTO_STRONGARM' }[ENGINE];
+const READ = { ota: otaReading, miller: millerReading, lna: lnaReading, pair: pairReading, vco: vcoReading, strongarm: strongarmReading, cs: csReading }[ENGINE];
+const ENV = { ota: 'AUTO_OTA', miller: 'AUTO_MILLER', lna: 'AUTO_LNA', pair: 'AUTO_PAIR', vco: 'AUTO_VCO', strongarm: 'AUTO_STRONGARM', cs: 'AUTO_CS' }[ENGINE];
 if (!READ) { console.error('unknown template ' + ENGINE); process.exit(1); }
 const ROOT = process.env.REVIEW_ROOT || '/AI/datasets/judge/review', OUT = `${ROOT}/${BATCH}`;
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(`${OUT}/img`, { recursive: true });
@@ -101,6 +102,12 @@ const summary = {
   failsBefore: rows.reduce((n, x) => n + Object.values(x.a.q.checks).filter((c) => !c.ok).length, 0),
   failsAfter: rows.reduce((n, x) => n + Object.values(x.b.q.checks).filter((c) => !c.ok).length, 0),
 };
+// per circuit (no image): engine and failed checks before / after, the template's own trial
+const failedOf = (q) => Object.keys(q.checks).filter((k) => !q.checks[k].ok);
+fs.writeFileSync(`${OUT}/rows.jsonl`, rows.map((x) => JSON.stringify({ id: x.id, family: x.family, parts: x.parts, elected: x.elected,
+  before: { engine: x.a.r.label, pass: x.a.q.pass, failed: failedOf(x.a.q), lvs: x.a.lvs },
+  after: { engine: x.b.r.label, pass: x.b.q.pass, failed: failedOf(x.b.q), lvs: x.b.lvs },
+  trial: x.b.r.trials ? x.b.r.trials[ENGINE] || null : null })).join('\n') + '\n');
 // ---- renders for Eric: clean reference, smallest first, the template elected
 const index = { batch: BATCH, created: new Date().toISOString(), note: `gabarit ${ENGINE} — rendus avant / après pour Eric (lecture seule)`, summary, items: [] };
 let k = 0;

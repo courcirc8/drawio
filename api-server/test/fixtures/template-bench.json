@@ -47,5 +47,12 @@
   "gatePass": 0,
   "fails": 74,
   "lvs": 20
+ },
+ "cs": {
+  "circuits": 136,
+  "chosen": 81,
+  "gatePass": 68,
+  "fails": 81,
+  "lvs": 136
  }
 }

@@ -74,6 +74,26 @@ symbole de masse qu'au net `0` (renommer casserait le LVS, pas d'alias dans lib/
    d'une passe à l'autre ; les deux anciens dessins sont faux au LVS). Rendus /drawio/review?batch=masse-vss (4, vérifiés).
    Pas reconnu : VDPWR comme alimentation. Decks de cellules sky130/sg13g2 : drain/source souvent inversés, dessins médiocres.
 
+**#37 (oui d'Eric 2026-10-11, activé par défaut, `AUTO_CS=0` désactive)** : gabarit **suiveur / source commune**
+(lib/place-cs.js) — étages à un transistor et leurs cascades, une colonne par étage, sortie droite vers la grille suivante,
+réseau de grille à la Razavi, pièces accrochées décalées pour ne pas faire de petit décroché. Banque : 136 lus, choisi 81,
+porte 68 → 68, contrôles 83 → 81, LVS 136/136 ; banc des gabarits sans régression, base figée avec lui.
+Rendus /drawio/review?batch=gabarit-cs.
+
+**Nouvelle règle d'Eric (2026-10-11)** : l'orchestrateur fusionne lui-même un gabarit, sans attendre le oui d'Eric, si « au
+moins aussi bien » tient (porte et contrôles sans recul, LVS intact, banc sans régression) et si les rendus avec référence
+sont propres ; Eric reçoit les rendus après coup. Méthode inchangée : rendus vérifiés, avis honnête, jamais de brouillon.
+Une PR prête passe en ready, avec chiffres et lien des rendus envoyés à l'orchestrateur.
+
+**Pistes notées (2026-10-11)** :
+- La porte qualité ne mesure pas la lisibilité d'un gabarit : une « comparaison équitable » (finir aussi le meilleur dessin
+  générique avant de le comparer) améliorait la porte de tous les gabarits, mais les dessins génériques ainsi choisis
+  étaient nettement moins lisibles sur les rendus avec référence → abandonnée. Arbitrage par les rendus avec référence.
+  Piste : une mesure de lisibilité apprise sur les verdicts d'Eric (eric-paires) pour compléter la porte.
+- Rendu PNG et pinAbs ne s'accordent pas sur une pièce avec miroir + rotation (flipH=1 ; rotation=270 : broche ~10 px
+  plus loin) → décroché sur un fil droit. À corriger à la racine sur une petite PR à part, avec un test des 8 combinaisons
+  miroir × rotation et un banc sans régression (après le gabarit cs).
+
 **Suite** (ordre d'Eric) : StrongARM (60), suiveur / source commune, bandgap,
 miroir cascode (liste et comptes : tools/motif-census.mjs). Puis chantier placement 10-25 composants.
 
