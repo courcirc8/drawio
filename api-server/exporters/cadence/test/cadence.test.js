@@ -155,3 +155,24 @@ test('cadence: the fake Virtuoso and the SKILL interpreter pass their own tests'
   const r = spawnSync('python3', ['-m', 'pytest', '-q', path.join(FAKE, 'tests')], { encoding: 'utf8', cwd: FAKE, env: { ...process.env, PYTHONPATH: FAKE } });
   assert.equal(r.status, 0, r.stdout + r.stderr);
 });
+
+test('cadence: a local profile written at the user\'s site makes a second pass place on the real pins', async () => {
+  const p = deck('miller'), first = await exp('miller');
+  const profiles = {};
+  for (const kind of ['python', 'skill']) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cad-')), prof = path.join(dir, 'p.json');
+    const x = runFake(kind, kind === 'python' ? first.python : first.skill, ['--write-profile', prof]);
+    assert.equal(x.code, 0, x.out);
+    profiles[kind] = JSON.parse(fs.readFileSync(prof, 'utf8'));
+    assert.equal(profiles[kind].format, 'cadence-profile/1');
+    assert.deepEqual(Object.keys(profiles[kind].symbols).sort(), ['cap', 'nmos', 'pmos', 'vsrc']);
+    assert.doesNotMatch(fs.readFileSync(prof, 'utf8'), /analogLib|nmos4/);   // roles only, no library names
+  }
+  assert.deepEqual(profiles.skill, profiles.python);
+  const second = await exportCadence(p, { profile: profiles.python });
+  const stubs = (r) => Number(/stubs (\d+)/.exec(r)[1]);
+  const before = runFake('python', first.python), after = runFake('python', second.python), afterIl = runFake('skill', second.skill);
+  assert.match(after.report, /^result: PASS$/m);
+  assert.match(afterIl.report, /^result: PASS$/m);
+  assert.ok(stubs(after.report) < stubs(before.report) / 2, `${stubs(before.report)} → ${stubs(after.report)} stubs`);
+});
