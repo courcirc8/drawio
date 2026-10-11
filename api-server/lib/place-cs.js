@@ -56,8 +56,19 @@ export function csReading(parsed) {
       if (cur && RAIL.test(cur) && GND.test(cur) === toGnd) return ch.map((c) => c.ref);
     }
     // a current-source transistor: drain on n, source on the rail, gate on a bias net
-    const cs = on(n).find((c) => isAct(c) && !skip.has(c.ref) && !used.has(c.ref) && D(c) === n && RAIL.test(S(c)) && GND.test(S(c)) === toGnd && !RAIL.test(G(c)) && G(c) !== n && G(c) !== input && !/^v?_?in/i.test(String(G(c))));   // (gate on the input: an inverter; on a signal input: a cascode's input device — not loads)
+    const cs = on(n).find((c) => isAct(c) && !skip.has(c.ref) && !used.has(c.ref) && D(c) === n && RAIL.test(S(c)) && GND.test(S(c)) === toGnd && !RAIL.test(G(c)) && G(c) !== n && G(c) !== input && biasGate(c));
     return cs ? [cs.ref] : null;
+  };
+  // a current-source load's gate sits on a BIAS: shared with a diode-connected
+  // device (a mirror), or a port named like a bias, or a port only it touches
+  // that is not a signal input — not an inverter's input, nor a cascode's
+  // input device driven through a resistor (Razavi: Vin — Rs — Q1)
+  const BIASNAME = /^(v_?b|vbias|bias|vref|vcm|vg|ib)/i;   // (not vp / vn: inputs of an amplifier)
+  const biasGate = (c) => {
+    const g = G(c), others = on(g).filter((x) => x !== c);
+    if (others.some((x) => isAct(x) && G(x) === g && D(x) === g)) return true;
+    if (BIASNAME.test(String(g))) return true;
+    return !others.length && !/^v?_?in/i.test(String(g));
   };
   const stages = [];
   for (const t of acts) {
