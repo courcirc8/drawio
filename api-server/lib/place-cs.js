@@ -279,6 +279,32 @@ async function imposeCs(model, parsed, R) {
   dbg('rails');
   const tpl = [...R.used];
   const att = new Set(attachPassives(model, parsed, tpl).attached);
+  // NO AVOIDABLE BEND (Eric): an attached part whose pin lands a few pixels
+  // off the template pin it joins would get a small jog; it is shifted
+  // vertically (towards its rail first) until every such wire either runs
+  // level with the pin or drops by more than half a part (a plain L)
+  {
+    const all = cells().filter((c) => c.kind === 'vertex' && classify(c).role === 'component');
+    const sizes = all.map((c) => Math.max(c.w, c.h)).sort((a, b) => a - b), STEP = (sizes[Math.floor(sizes.length / 2)] || 60) / 2;
+    const tplPins = [];
+    for (const r of tpl) { const pc = comp.get(r), c = find(r); if (!c || !pc) continue; activePins(classify(c)).forEach((q, k) => { const n = pc.nodes[k]; if (n != null && !RAIL.test(n)) tplPins.push({ n, at: pinAbs(c, q) }); }); }
+    for (const r of att) {
+      const pc = comp.get(r); if (!pc || isAct(pc)) continue;
+      const links = pc.nodes.slice(0, 2).map((n, k) => ({ k, t: tplPins.filter((p) => p.n === n) })).filter((l) => l.t.length);
+      if (links.length !== 1) continue;   // (a part across two template nodes: no shift avoided every jog without a wire on a body)
+      // its chain: attached parts joined to it by a net outside the template (R0 — C0 to ground)
+      const tplNets = new Set(tplPins.map((p) => p.n)), chain = [r];
+      for (let i = 0; i < chain.length; i++) for (const n of comp.get(chain[i]).nodes.slice(0, 2)) if (!RAIL.test(n) && !tplNets.has(n)) for (const o of att) if (!chain.includes(o) && comp.get(o) && !isAct(comp.get(o)) && comp.get(o).nodes.slice(0, 2).includes(n)) chain.push(o);
+      const toGnd = chain.some((x) => comp.get(x).nodes.slice(0, 2).some((n) => GND.test(n))), dir = toGnd ? 1 : -1;
+      // (against the NEAREST pin of that node: the one the wire will reach)
+      const near = links.map((l) => { const p = pins(r)[l.k]; return { k: l.k, t: l.t.reduce((a, b) => (Math.hypot(b.at.x - p.x, b.at.y - p.y) < Math.hypot(a.at.x - p.x, a.at.y - p.y) ? b : a)) }; });
+      const bad = (dy) => near.some((l) => { const d = Math.abs(pins(r)[l.k].y + dy - l.t.at.y); return d > 0.5 && d <= STEP + 5; });
+      if (!bad(0)) continue;
+      let best = null;
+      for (let m = 1; m <= 30 && best == null; m++) for (const sgn of [dir, -dir]) if (best == null && !bad(sgn * 10 * m)) best = sgn * 10 * m;
+      if (best != null) for (const x of chain) move(x, 0, best);
+    }
+  }
   // remaining parts together, on the right of the template
   const T = tpl.map(find).filter(Boolean);
   const rest = cells().filter((v) => v.kind === 'vertex' && classify(v).role === 'component' && !R.used.has(String(v.refdes || '')) && !att.has(String(v.refdes || '')));

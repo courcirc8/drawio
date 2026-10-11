@@ -77,6 +77,7 @@ export function avoidableBends(model) {
   const { byId, u, edges } = snapshot(model);
   const STEP = u / 2;
   let wires = 0, bends = 0;
+  const which = [];
   for (const e of edges) {
     // the deliberate X of a cross-coupled pair, a wire a template drew on purpose
     if (e.style.map.get('drawioApiCrossX') === '1' || e.style.map.get('drawioApiTemplate') === '1') continue;
@@ -91,9 +92,9 @@ export function avoidableBends(model) {
     }
     if (k === 0) continue;
     const near = (dx > 0.5 && dx <= STEP) || (dy > 0.5 && dy <= STEP);
-    if (near) { wires++; bends += k; }
+    if (near) { wires++; bends += k; which.push({ id: e.id, source: e.source, target: e.target, from: a, to: b, bends: k }); }
   }
-  return { wires, bends, step: STEP };
+  return { wires, bends, step: STEP, which };
 }
 
 export async function straighten(model, opts = {}) {
