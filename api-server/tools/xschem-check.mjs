@@ -53,18 +53,29 @@ export function canonMos(p, src = p) {
   return p;
 }
 
+/** DELIVERY (no wrong file ever leaves): written to a temporary name, re-read
+ *  by xschem's netlister, renamed to `outFile` only when its LVS matches. */
+export async function deliverXschem(parsed, outFile) {
+  const r = await exportXschem(parsed), tmp = outFile.replace(/\.sch$/, '') + '.tmp-check.sch';
+  fs.writeFileSync(tmp, r.sch);
+  let ok = false, why = null;
+  try { const x = xschemNetlist(tmp); const l = compare({ components: canonMos(x.parsed, parsed).components, issues: [] }, canonMos(structuredClone(parsed))); ok = l.match; why = l; } catch (e) { why = String(e.message || e); }
+  if (!ok) { fs.rmSync(tmp, { force: true }); throw Object.assign(new Error('xschem: the file xschem reads back does not redraw the deck — not delivered'), { lvs: why }); }
+  fs.renameSync(tmp, outFile);
+  return { ...r, file: outFile, lvs: true };
+}
+
 // command line only when run directly (not when imported by tools/xschem-renders.mjs)
 const MAIN = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 const [deck, out] = MAIN ? process.argv.slice(2) : [];
 if (deck && deck !== '--bank') {
   const parsed = parseSpice(fs.readFileSync(deck, 'utf8') + '\n.end');
-  const r = await exportXschem(parsed);
   const file = path.resolve(out || deck.replace(/\.\w+$/, '') + '.sch');
-  fs.writeFileSync(file, r.sch);
-  const x = xschemNetlist(file);
-  const lvs = compare({ components: canonMos(x.parsed, parsed).components, issues: [] }, canonMos(structuredClone(parsed)));
-  console.log(JSON.stringify({ file, engine: r.label, gate: r.gate, lvs: lvs.match, ...(lvs.match ? {} : { detail: lvs }) }, null, 1));
-  process.exit(lvs.match ? 0 : 1);
+  try {
+    const r = await deliverXschem(parsed, file);
+    console.log(JSON.stringify({ file, engine: r.label, gate: r.gate, lvs: true }, null, 1));
+    process.exit(0);
+  } catch (e) { console.log(JSON.stringify({ file: null, refused: e.message, detail: e.lvs }, null, 1)); process.exit(1); }
 }
 
 // --bank N: the first N usable bank circuits made only of R C L V I M (not sealed)
@@ -83,9 +94,9 @@ if (deck === '--bank') {
     if (!p.components.length || !p.components.every((c) => 'RCLVIM'.includes(c.prefix))) continue;
     const row = { id: r.id, parts: r.parts };
     try {
-      const x = await exportXschem(p), file = `${OUT}/${r.id.replace(/[^\w.-]+/g, '_')}.sch`;
-      fs.writeFileSync(file, x.sch); row.file = file; row.engine = x.label; row.gate = x.gate; row.grid = x.neutral.target.grid;
-      const nl = xschemNetlist(file); row.lvs = compare({ components: canonMos(nl.parsed, p).components, issues: [] }, canonMos(structuredClone(p))).match;
+      const file = `${OUT}/${r.id.replace(/[^\w.-]+/g, '_')}.sch`, x = await deliverXschem(p, file);
+      row.file = file; row.engine = x.label; row.gate = x.gate; row.grid = x.neutral.target.grid;
+      row.lvs = true;
     } catch (e) { row.error = String(e.message || e).slice(0, 200); }
     rows.push(row); console.error(JSON.stringify(row));
   }

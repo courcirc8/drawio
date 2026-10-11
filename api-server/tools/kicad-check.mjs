@@ -46,16 +46,30 @@ export function kicadLvs(schFile, deck) {
   return compare({ components: canonMos(k.parsed, deck).components, issues: [] }, canonMos(structuredClone(deck)));
 }
 
+/** DELIVERY (no wrong file ever leaves): the .kicad_sch is written to a
+ *  temporary name, re-read by kicad-cli, and renamed to `outFile` only when
+ *  its LVS matches; otherwise it is deleted and the export throws. */
+export async function deliverKicad(parsed, outFile) {
+  const r = await exportKicad(parsed), tmp = outFile.replace(/\.kicad_sch$/, '') + '.tmp-check.kicad_sch';
+  fs.writeFileSync(tmp, r.sch);
+  let lvs;
+  try { lvs = kicadLvs(tmp, parsed); } catch (e) { lvs = { match: false, error: String(e.message || e) }; }
+  for (const x of [tmp.replace(/\.kicad_sch$/, '.net')]) fs.rmSync(x, { force: true });
+  if (!lvs.match) { fs.rmSync(tmp, { force: true }); throw Object.assign(new Error('kicad: the file KiCad reads back does not redraw the deck — not delivered'), { lvs }); }
+  fs.renameSync(tmp, outFile);
+  return { ...r, file: outFile, lvs: true };
+}
+
 const MAIN = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 const [deck, outArg] = MAIN ? process.argv.slice(2) : [];
 if (deck && deck !== '--bank') {
   const parsed = parseSpice(fs.readFileSync(deck, 'utf8') + '\n.end');
-  const r = await exportKicad(parsed);
   const file = path.resolve(outArg || deck.replace(/\.\w+$/, '') + '.kicad_sch');
-  fs.writeFileSync(file, r.sch);
-  const lvs = kicadLvs(file, parsed);
-  console.log(JSON.stringify({ file, engine: r.label, gate: r.gate, lvs: lvs.match, ...(lvs.match ? {} : { detail: lvs }) }, null, 1));
-  process.exit(lvs.match ? 0 : 1);
+  try {
+    const r = await deliverKicad(parsed, file);
+    console.log(JSON.stringify({ file, engine: r.label, gate: r.gate, warnings: r.warnings, lvs: true }, null, 1));
+    process.exit(0);
+  } catch (e) { console.log(JSON.stringify({ file: null, refused: e.message, detail: e.lvs }, null, 1)); process.exit(1); }
 }
 if (deck === '--bank') {
   const { bankExclusions, sealedStatus } = await import('../lib/sealed.js');
@@ -72,9 +86,9 @@ if (deck === '--bank') {
     if (!p.components.length || !p.components.every((c) => 'RCLVIM'.includes(c.prefix))) continue;
     const row = { id: r.id, parts: r.parts };
     try {
-      const x = await exportKicad(p), file = `${OUT}/${r.id.replace(/[^\w.-]+/g, '_')}.kicad_sch`;
-      fs.writeFileSync(file, x.sch); row.file = file; row.engine = x.label; row.gate = x.gate; row.grid = x.neutral.target.grid; if (x.warnings?.length) row.warnings = x.warnings;
-      row.lvs = kicadLvs(file, p).match;
+      const file = `${OUT}/${r.id.replace(/[^\w.-]+/g, '_')}.kicad_sch`, x = await deliverKicad(p, file);
+      row.file = file; row.engine = x.label; row.gate = x.gate; row.grid = x.neutral.target.grid; if (x.warnings?.length) row.warnings = x.warnings;
+      row.lvs = true;
     } catch (e) { row.error = String(e.message || e).slice(0, 200); }
     rows.push(row); console.error(JSON.stringify(row));
   }
