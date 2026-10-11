@@ -365,7 +365,7 @@ procedure(cadxPt(p) sprintf(nil "[%s, %s]" cadxNum(car(p)) cadxNum(cadr(p))))
 procedure(cadxWriteProfile(S path) let((port roles rs entry first tfirst)
   port = outfile(path)
   unless(port error("profile file not writable"))
-  fprintf(port "{\"format\": \"cadence-profile/1\", \"grid\": %s, \"symbols\": {" cadxNum(S["g"]))
+  fprintf(port "{\"format\": \"cadence-profile/1\", \"warning\": \"%s\", \"grid\": %s, \"symbols\": {" "LOCAL FILE: pin positions of your symbols (foundry kit under NDA). Never send it." cadxNum(S["g"]))
   roles = sort(cadxKeys(S["profile"]) 'alphalessp)
   first = t
   foreach(r roles

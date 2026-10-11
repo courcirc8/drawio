@@ -1,3 +1,4 @@
+**Ne jamais envoyer le fichier profil** (`cadence-profile.json`, option `--write-profile`) : il contient les positions de broches de ton kit.
 **Sécurité** : aucun accès réseau. Écrit seulement la cellule `MALIB/ota5t_drawio/schematic` (refus si elle existe, sauf `--overwrite`) et `cadence-report.txt`. Les symboles et la table sont seulement lus. skillbridge parle à Virtuoso par une socket locale et écrit ses propres journaux `skillbridge_*.log`.
 
 1. Une fois : `pip install --user skillbridge`, puis `skillbridge path` donne le fichier serveur.

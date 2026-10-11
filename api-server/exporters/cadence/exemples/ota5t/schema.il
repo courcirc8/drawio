@@ -89,7 +89,7 @@ procedure(cadxParam(comp source) let((p)
 
 procedure(cadxNew(plan m lib cell overwrite)
   cadxD(list("plan" plan "m" m "lib" lib "cell" cell "overwrite" overwrite "g" plan["grid"]
-             "masters" makeTable("masters" nil) "insts" makeTable("insts" nil) "refs" nil
+             "masters" makeTable("masters" nil) "profile" makeTable("profile" nil) "insts" makeTable("insts" nil) "refs" nil
              "taken" nil "segs" nil "needLabel" nil "problems" nil "local" nil
              "stubs" 0 "stubLength" 0.0 "fallbacks" 0 "bulkLabels" 0 "paramsSet" 0 "paramsSkipped" 0
              "segments" 0 "labels" 0)))
@@ -173,6 +173,7 @@ procedure(cadxPlace(S) let((e mst offs need ok drawn best ts ox oy cost inst v a
       unless(mst cadxProblem(S strcat("symbol not found for role " comp["role"]))))
     when(mst
       offs = cadxOffsets(mst)
+      unless(S["profile"][comp["role"]] S["profile"][comp["role"]] = list(e["terms"] mst->bBox offs))
       need = nil
       foreach(p comp["pins"] need = append1(need p["index"]))
       foreach(h comp["hidden"] need = append1(need h["index"]))
@@ -361,7 +362,31 @@ procedure(cadxReport(S) let((r roles keys txt)
   foreach(p sort(S["problems"] 'alphalessp) txt = strcat(txt "problem: " p "\n"))
   txt))
 
-procedure(cadxExport(lib @key (cell nil) (map nil) (report "cadence-report.txt") (overwrite nil) (detail nil))
+; the real terminal points of each role's symbol (JSON, cadence-profile/1): stays on this machine
+procedure(cadxNum(v) sprintf(nil "%g" float(v)))
+procedure(cadxPt(p) sprintf(nil "[%s, %s]" cadxNum(car(p)) cadxNum(cadr(p))))
+procedure(cadxWriteProfile(S path) let((port roles rs entry first tfirst)
+  port = outfile(path)
+  unless(port error("profile file not writable"))
+  fprintf(port "{\"format\": \"cadence-profile/1\", \"warning\": \"%s\", \"grid\": %s, \"symbols\": {" "LOCAL FILE: pin positions of your symbols (foundry kit under NDA). Never send it." cadxNum(S["g"]))
+  roles = sort(cadxKeys(S["profile"]) 'alphalessp)
+  first = t
+  foreach(r roles
+    entry = S["profile"][r]
+    fprintf(port "%s\n \"%s\": {\"order\": [" if(first then "" else ",") r)
+    tfirst = t
+    foreach(n car(entry) fprintf(port "%s\"%s\"" if(tfirst then "" else ", ") n) tfirst = nil)
+    fprintf(port "], \"bbox\": [%s, %s], \"terms\": {" cadxPt(car(cadr(entry))) cadxPt(cadr(cadr(entry))))
+    tfirst = t
+    foreach(n car(entry) when(caddr(entry)[n]
+      fprintf(port "%s\"%s\": %s" if(tfirst then "" else ", ") n cadxPt(caddr(entry)[n])) tfirst = nil))
+    fprintf(port "}}")
+    first = nil)
+  fprintf(port "}}\n")
+  close(port)
+  t))
+
+procedure(cadxExport(lib @key (cell nil) (map nil) (report "cadence-report.txt") (overwrite nil) (detail nil) (writeProfile nil))
   let((m S ok txt port)
     m = makeTable("map" nil) m["@keys"] = nil
     cadxParseMap(cadxDefaultMap m)
@@ -369,6 +394,7 @@ procedure(cadxExport(lib @key (cell nil) (map nil) (report "cadence-report.txt")
     S = cadxNew(cadxPlan m lib if(cell then cell else cadxPlan["cell"]) overwrite)
     cadxOpen(S) cadxPlace(S) cadxPlanned(S) cadxStubs(S) cadxDraw(S) cadxSymbols(S)
     ok = cadxCheck(S)
+    when(writeProfile cadxWriteProfile(S writeProfile))
     txt = cadxReport(S)
     port = outfile(report)
     when(port fprintf(port "%s" txt) close(port))

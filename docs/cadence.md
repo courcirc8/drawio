@@ -65,14 +65,18 @@ mynmos.param.l = l
 
 Ce fichier reste chez toi. Ni le script ni le rapport ne renvoient ses noms.
 
-## Second passage exact (option)
+## Second passage exact, chez toi (option)
 
-Le premier passage relie chaque broche à son point prévu par un petit fil (« stub »). Pour supprimer ces stubs :
+Au premier passage, chaque broche est reliée à son point prévu par un petit fil (« stub »). Le second passage les supprime en plaçant directement sur les vraies broches. Il se fait **entièrement chez toi** : le fichier profil contient les positions des broches de ton kit (sous NDA) et **ne doit jamais être envoyé**, même sans nom de bibliothèque dedans. Seule exception : un profil fait uniquement avec `analogLib` n'est pas confidentiel, tu peux le partager si tu veux.
 
-1. Relance le script en ajoutant `--write-profile profil.json` (SKILL : `?writeProfile "profil.json"`). Le fichier contient les points des terminaux de tes symboles, rangés par rôle (nmos, pmos, res…), sans aucun nom de bibliothèque. **Il reste chez toi.**
-2. Là où drawio est installé : `node api-server/exporters/cadence/cli.mjs deck.sp --profile profil.json --out dossier`. Le moteur place alors directement sur les vraies broches.
+1. Dans Virtuoso, relance avec `--write-profile cadence-profile.json` (SKILL : `?writeProfile "cadence-profile.json"`).
+2. Sur ta machine, avec le dépôt drawio installé (Node 18 ou plus, `npm ci` une seule fois) :
+   `node api-server/exporters/cadence/cli.mjs deck.sp --target cadence --profile cadence-profile.json --out dossier`
+3. Relance `python3 dossier/schema.py --lib MALIB --overwrite` (ou `load("dossier/schema.il")`).
 
-Résultat sur le faux Virtuoso : OTA, Miller et comparateur CML passent de 17 à 25 stubs à 0. Pour le LNA et le VCO, drawio garde le premier passage, car leurs gabarits supposent le pochoir d'inductance de draw.io ; la sortie indique alors « not used ».
+Le tout fonctionne hors ligne, sans aucun accès réseau (vérifié par traçage des appels système). Avec `AUTO_JUDGE=js`, Node suffit ; sans cette variable, drawio utilise aussi `python3`, bibliothèque standard seulement, ce qui donne en général un meilleur placement. Les fichiers `cadence-profile*.json` sont ignorés par Git.
+
+Résultat sur le faux Virtuoso : OTA, Miller et comparateur CML passent de 17 à 25 stubs à 0. Pour le LNA et le VCO, drawio garde le premier passage, car leurs gabarits supposent le pochoir d'inductance de draw.io ; la sortie l'indique (« not used »).
 
 ## 4. Lire le rapport (`cadence-report.txt`)
 
