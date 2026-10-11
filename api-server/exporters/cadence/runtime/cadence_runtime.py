@@ -384,7 +384,7 @@ class Export:
     def write_profile(self, path):
         """The real terminal points of each role's symbol: stays on this machine."""
         with open(path, "w") as f:
-            json.dump({"format": "cadence-profile/1", "grid": self.g, "symbols": self.profile}, f, indent=1, sort_keys=True)
+            json.dump({"format": "cadence-profile/1", "warning": "LOCAL FILE: pin positions of your symbols (foundry kit under NDA). Never send it.", "grid": self.g, "symbols": self.profile}, f, indent=1, sort_keys=True)
 
     def report(self):
         r, s = self.result, self.stats

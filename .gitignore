@@ -53,3 +53,7 @@ src/main/webapp/WEB-INF/lib/threetenbp-*.jar
 api-server/node_modules/
 __pycache__/
 references/
+
+# Cadence local profiles: foundry pin positions (NDA), never committed
+cadence-profile*.json
+*profil*.json
