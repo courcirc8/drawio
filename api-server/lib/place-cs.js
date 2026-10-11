@@ -56,7 +56,7 @@ export function csReading(parsed) {
       if (cur && RAIL.test(cur) && GND.test(cur) === toGnd) return ch.map((c) => c.ref);
     }
     // a current-source transistor: drain on n, source on the rail, gate on a bias net
-    const cs = on(n).find((c) => isAct(c) && !skip.has(c.ref) && !used.has(c.ref) && D(c) === n && RAIL.test(S(c)) && GND.test(S(c)) === toGnd && !RAIL.test(G(c)) && G(c) !== n && G(c) !== input);   // (gate on the input: an inverter, not a load)
+    const cs = on(n).find((c) => isAct(c) && !skip.has(c.ref) && !used.has(c.ref) && D(c) === n && RAIL.test(S(c)) && GND.test(S(c)) === toGnd && !RAIL.test(G(c)) && G(c) !== n && G(c) !== input && !/^v?_?in/i.test(String(G(c))));   // (gate on the input: an inverter; on a signal input: a cascode's input device — not loads)
     return cs ? [cs.ref] : null;
   };
   const stages = [];
@@ -152,7 +152,7 @@ async function imposeCs(model, parsed, R) {
   // a 2-terminal part upright, pin on `upNet` on top
   const upright = (r, upNet) => {
     const pc = comp.get(r), k = pc.nodes.indexOf(upNet), me = find(r), lying = me.w > me.h;
-    for (const v of lying ? [{ rotation: 90 }, { rotation: 270 }] : [{ rotation: null, flipV: null }, { rotation: 180, flipV: null }]) {
+    for (const v of (lying ? [{ rotation: 90 }, { rotation: 270 }] : [{ rotation: null }, { rotation: 180 }]).map((o) => ({ flipH: null, flipV: null, ...o }))) {   // (no mirror with a rotation: the renderer and pinAbs disagree on flipH + rotation)
       updateCell(model, me.id, { style: v });
       const ps = pins(r); if (k < 0 || ps[k].y <= ps[1 - k].y) break;
     }
@@ -204,6 +204,52 @@ async function imposeCs(model, parsed, R) {
     const nx = R.stages[i + 1];
     if (nx && nx.in === st.out) feeds.push(loadOnOut && lk >= 0 && lk < 3 ? [loadOnOut, lk, nx.dev] : [st.dev, st.kind === 'cs' ? 0 : 2, nx.dev]);
   }
+  // the GATE NETWORK of a stage driven from outside (Razavi: Vin — C_B — X,
+  // R_B from X to V_B): series parts on the gate's line, lying, towards the
+  // input; a part from the gate net to a rail or to a bias port hangs from
+  // that line (ground below, supply / bias above); all left of the gate
+  const lie = (r, leftNet) => {
+    const pc = comp.get(r), k = pc.nodes.indexOf(leftNet), me = find(r), lying = me.w > me.h;
+    for (const v of (lying ? [{ rotation: null, flipH: null }, { rotation: null, flipH: 1 }] : [{ rotation: 90 }, { rotation: 270 }]).map((o) => ({ flipH: null, flipV: null, ...o }))) {   // (a mirror, not 180°: the label stays upright)
+      updateCell(model, me.id, { style: v });
+      const ps = pins(r); if (k < 0 || ps[k].x <= ps[1 - k].x) break;
+    }
+  };
+  const gateNet = new Set(), gateLines = [];   // [net, y, [[ref, pin index]…]] drawn straight afterwards
+  const portNets = new Set(parsed.ports || []);
+  // a rail, or a bias port (a net only this part touches, named like a bias)
+  const isBiasEnd = (n) => RAIL.test(n) || (on2(n).length === 1 && /^(v_?b|vbias|bias|vref|vcm|vg)/i.test(String(n)));
+  function on2(n) { return parsed.components.filter((c) => c.nodes.slice(0, isAct(c) ? 3 : 2).includes(n)); }
+  for (const [i, st] of R.stages.entries()) {
+    if (i > 0 && R.stages[i - 1].out === st.in) continue;
+    const g = pins(st.dev)[1];
+    let n = st.in, x = g.x - 50, y = g.y, hang = 0;
+    const line = [[st.dev, 1]];
+    for (let step = 0; step < 3; step++) {
+      const here = on2(n).filter((c) => !R.used.has(c.ref) && !gateNet.has(c.ref) && !isAct(c) && c.nodes.length >= 2 && ['R', 'C', 'L'].includes(c.prefix));
+      const shunt = here.filter((c) => isBiasEnd(c.nodes.slice(0, 2).find((m) => m !== n)));
+      const series = here.filter((c) => !shunt.includes(c));
+      for (const c of shunt) {
+        const o = c.nodes.slice(0, 2).find((m) => m !== n), down = RAIL.test(o) ? GND.test(o) : true;
+        upright(c.ref, down ? n : o);
+        const k = c.nodes.indexOf(n), ps = pins(c.ref);
+        move(c.ref, (x - 20 - 70 * hang++) - ps[k].x, y - ps[k].y);   // its pin ON the gate line
+        gateNet.add(c.ref); if (n === st.in) line.push([c.ref, k]);
+      }
+      if (series.length !== 1) break;
+      const c = series[0], o = c.nodes.slice(0, 2).find((m) => m !== n);
+      lie(c.ref, o);
+      const k = c.nodes.indexOf(n), ps = pins(c.ref);
+      move(c.ref, (x - 20 - 70 * hang) - ps[k].x, y - ps[k].y);
+      gateNet.add(c.ref); if (n === st.in) line.push([c.ref, k]);
+      x = pins(c.ref)[1 - k].x - 30; hang = 0; n = o;
+    }
+    if (line.length > 2) gateLines.push(line);
+  }
+  for (const r of gateNet) R.used.add(r);
+  const dbg = (t) => { if (process.env.CS_DEBUG) for (const r of [...gateNet]) console.error(t, r, pins(r).map((q) => Math.round(q.x) + ',' + Math.round(q.y)).join(' ')); };
+  dbg('placed');
+  void portNets;
   // supply / ground symbols wired to the template: just over (under) the
   // highest (lowest) pin they feed, not where the annealing left them
   {
@@ -219,6 +265,7 @@ async function imposeCs(model, parsed, R) {
       updateCell(model, v.id, { x: Math.round(at.x - v.w / 2), y: Math.round(up ? at.y - 30 - v.h : at.y + 30) });
     }
   }
+  dbg('rails');
   const tpl = [...R.used];
   const att = new Set(attachPassives(model, parsed, tpl).attached);
   // remaining parts together, on the right of the template
@@ -230,6 +277,7 @@ async function imposeCs(model, parsed, R) {
     const rx0 = Math.min(...rest.map((c) => c.x)), ry0 = Math.min(...rest.map((c) => c.y)), ry1 = Math.max(...rest.map((c) => c.y + c.h));
     for (const c of rest) move(String(c.refdes), (xMax + 120) - rx0, (y0 + y1) / 2 - (ry0 + ry1) / 2);
   }
+  dbg('attached');
   const ids = cells().filter((c) => c.kind === 'edge').map((e) => e.id);
   for (const id of ids) updateCell(model, id, { style: { edgeStyle: 'orthogonalEdgeStyle', drawioApiFixedRoute: null }, points: [] });
   await routePage(model, ids, {});
@@ -256,6 +304,20 @@ async function imposeCs(model, parsed, R) {
     for (const [oid, orel] of rejoin) added.push(addWire(model, { source: oid, target: S0.id, sourcePin: orel, targetPin: sRel, style: wireStyle }));
     const ids = added.map((w) => (typeof w === 'string' ? w : w?.id)).filter(Boolean);
     if (ids.length) await routePage(model, ids, {});
+  }
+  // the gate line: its pins in a row, joined by straight wires (the router
+  // otherwise went round a hanging part's pin lying on the line)
+  for (const line of gateLines) {
+    const pts = line.map(([r, k]) => { const c = find(r); const rel = activePins(classify(c))[k]; return { id: c.id, rel, at: pinAbs(c, rel) }; }).sort((a, b) => a.at.x - b.at.x);
+    const ids = new Set(pts.map((p) => p.id)), cs = cells(), byId = new Map(cs.map((c) => [c.id, c]));
+    const onPin = (e, end, p) => { const id = end === 'exit' ? e.source : e.target; if (id !== p.id) return false; const a = pinAbs(byId.get(id), { x: Number(e.style.map.get(end + 'X') ?? 0.5), y: Number(e.style.map.get(end + 'Y') ?? 0.5) }); return Math.hypot(a.x - p.at.x, a.y - p.at.y) < 2; };
+    // (two parts of the line share no net but the gate's: every wire between them is on it)
+    void onPin;
+    const mine = cs.filter((e) => e.kind === 'edge' && ids.has(e.source) && ids.has(e.target) && e.source !== e.target);
+    if (!mine.length || [...ids].length !== pts.length) continue;
+    for (const e of mine) deleteCell(model, e.id);
+    // (a straight segment: the orthogonal style would leave a hanging part's top pin upwards first)
+    for (let i = 1; i < pts.length; i++) addWire(model, { source: pts[i - 1].id, target: pts[i].id, sourcePin: pts[i - 1].rel, targetPin: pts[i].rel, style: 'edgeStyle=none;rounded=0;html=1;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiTemplate=1;', points: [] });
   }
   await alignPorts(model);
   for (const r of R.used) { const c = find(r); if (c) updateCell(model, c.id, { style: { drawioApiPinned: 1 } }); }

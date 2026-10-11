@@ -74,6 +74,15 @@ symbole de masse qu'au net `0` (renommer casserait le LVS, pas d'alias dans lib/
    d'une passe à l'autre ; les deux anciens dessins sont faux au LVS). Rendus /drawio/review?batch=masse-vss (4, vérifiés).
    Pas reconnu : VDPWR comme alimentation. Decks de cellules sky130/sg13g2 : drain/source souvent inversés, dessins médiocres.
 
+**Pistes notées (2026-10-11)** :
+- La porte qualité ne mesure pas la lisibilité d'un gabarit : une « comparaison équitable » (finir aussi le meilleur dessin
+  générique avant de le comparer) améliorait la porte de tous les gabarits, mais les dessins génériques ainsi choisis
+  étaient nettement moins lisibles sur les rendus avec référence → abandonnée. Arbitrage par les rendus avec référence.
+  Piste : une mesure de lisibilité apprise sur les verdicts d'Eric (eric-paires) pour compléter la porte.
+- Rendu PNG et pinAbs ne s'accordent pas sur une pièce avec miroir + rotation (flipH=1 ; rotation=270 : broche ~10 px
+  plus loin) → décroché sur un fil droit. À corriger à la racine sur une petite PR à part, avec un test des 8 combinaisons
+  miroir × rotation et un banc sans régression (après le gabarit cs).
+
 **Suite** (ordre d'Eric) : StrongARM (60), suiveur / source commune, bandgap,
 miroir cascode (liste et comptes : tools/motif-census.mjs). Puis chantier placement 10-25 composants.
 
