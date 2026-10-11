@@ -31,6 +31,20 @@ Qucs-S (3), LTspice `.asc` / SVG (4), Cadence SKILL (en dernier, non testable sa
 Placeurs génériques (forces, ELK, grille) non repris : les gabarits et règles d'Eric sont meilleurs. Tout extrait
 copié porte un commentaire de provenance et une ligne dans `THIRD_PARTY.md` (dépôt, fichier, commit, licence).
 
+## État (11 oct. 2026)
+
+- **xschem / IHP SG13G2** (`lib/export-xschem.js`, `tools/xschem-check.mjs`, PR #39) : banque, 40 circuits R C L V I MOS →
+  36 exportés, 36/36 LVS justes par le netlister de xschem, refus propres sinon.
+- **KiCad 10** (`lib/export-kicad.js`, `tools/kicad-check.mjs`) : symboles Device R/C/L, Simulation_SPICE VDC/IDC/
+  NMOS_Substrate/PMOS_Substrate, power GND/VDD lus dans les `.kicad_sym` installés (Flatpak) ; 10 unités = 1,27 mm ;
+  fils coupés à chaque point de connexion (KiCad relie les extrémités), jonctions explicites ; netlist par
+  `kicad-cli sch export netlist` → LVS. Banque : 38 exportés, 36 LVS justes, le reste refusé. Particularité : la broche de
+  substrat KiCad est sur la ligne de la source ; un fil d'un autre net qui la traverse est accepté (KiCad ne relie qu'une
+  extrémité, vérifié) avec un avertissement ; un fil qui s'y termine ou y fait un coude → refus.
+- Géométrie cible partagée : `lib/target-geometry.js` (pochoirs à la géométrie de l'outil pendant le placement, recherche
+  de l'orientation qui pose chaque broche).
+- Rendus pour Eric : `/drawio/review?batch=export-xschem`, `batch=export-kicad` (`tools/xschem-renders.mjs --tool`).
+
 ## Étapes
 
 1. Neutre extrait de la page draw.io + LVS sur le neutre (sans changer le placement).

@@ -20,7 +20,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { getShape } from './stencils.js';
+import { stencilFromPins, withStencilGeometry } from './target-geometry.js';
 import { SPICE_MAP } from './components.js';
 import { getPage } from './model.js';
 import { autoPlace } from './auto.js';
@@ -68,35 +68,12 @@ export const PROFILE = {
 function stencilOf(e) {
   const sp = readSymbolPins(e.file);
   const pts = Object.fromEntries(Object.entries(e.pins).map(([d, s]) => [d, xform(sp[s], e.native[0], e.native[1])]));
-  const xs = Object.values(pts).map((p) => p[0]), ys = Object.values(pts).map((p) => p[1]);
-  let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  // a two-pin part has no width across its pins: give it its body's thickness
-  if (x1 - x0 < 1) { x0 -= (e.thick || 20) / 2; x1 += (e.thick || 20) / 2; }
-  if (y1 - y0 < 1) { y0 -= (e.thick || 20) / 2; y1 += (e.thick || 20) / 2; }
-  // room for the text xschem writes beside the symbol (name, w / l / ng / m,
-  // value): the engine then spaces the parts for what xschem really draws
-  const pad = e.pad || [0, 0, 0, 0];   // left, top, right, bottom
-  x0 -= pad[0]; y0 -= pad[1]; x1 += pad[2]; y1 += pad[3];
-  const w = x1 - x0, h = y1 - y0;
-  return { w, h, pins: Object.entries(pts).map(([name, p]) => ({ name, x: (p[0] - x0) / w, y: (p[1] - y0) / h })) };
+  return stencilFromPins(pts, { thick: e.thick || 20, pad: e.pad });
 }
 
-let lock = Promise.resolve();
-/** Run fn with the stencils of the profiled parts given their xschem geometry (serialised: the catalog is shared). */
+/** Run fn with the stencils of the profiled parts given their xschem geometry (lib/target-geometry.js). */
 export function withXschemGeometry(fn) {
-  const run = lock.then(async () => {
-    const saved = [];
-    try {
-      for (const [key, e] of Object.entries(PROFILE)) {
-        const s = getShape(key); if (!s) continue;
-        saved.push([s, { w: s.w, h: s.h, pins: s.pins }]);
-        Object.assign(s, stencilOf(e));
-      }
-      return await fn();
-    } finally { for (const [s, g] of saved) Object.assign(s, g); }
-  });
-  lock = run.catch(() => {});
-  return run;
+  return withStencilGeometry(Object.fromEntries(Object.entries(PROFILE).map(([k, e]) => [k, stencilOf(e)])), fn);
 }
 
 /** The (rot, flip, origin) placing every pin of a symbol on its drawn pin, or null. */
@@ -158,7 +135,7 @@ export function writeSch(N, parsed) {
       // first free stub (no point or wire of another net on it), outward only, several lengths
       let done = false;
       // (a rail bulk: the symbol 30 below / above the stub's end, else right AT its end)
-      for (const drop of (gnd || rail ? [30, 0] : [0])) for (const len of [60, 80, 100, 40, 30, 20]) {
+      for (const drop of (gnd || rail ? [30, 0] : [0])) for (const len of [100, 120, 80, 60, 40, 30, 20]) {   // (long first: the rail symbol past the w / l text xschem writes beside the MOS)
         if (done) break;
         const side = out, end = [b[0] + side * len, b[1]], tip = gnd ? [end[0], end[1] + drop] : rail ? [end[0], end[1] - drop] : end;
         const path = [[b, end], ...(drop && tip !== end ? [[end, tip]] : [])];
