@@ -1,7 +1,49 @@
 # ÉTAT du chantier « qualité de la génération » — fork drawio (api-server)
 
-Mis à jour le 2026-10-10 (section « ÉTAT AU 2026-10-10 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
+Mis à jour le 2026-10-11 (section « ÉTAT AU 2026-10-11 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
 Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
+
+## ÉTAT AU 2026-10-11 (à lire en premier ; reprise par une session « drawio (suite 2) »)
+
+**Fusionné dans dev** : #36 (régression paire, banc des gabarits `tools/template-bench.mjs`, masse vss), #35 StrongARM,
+#37 gabarit suiveur / source commune (`lib/place-cs.js`), #39 skill multi-outils (1) schéma neutre + xschem,
+#42 test miroir × rotation (`PIN_RENDER=1`, 32/32 : pinAbs juste), #43 KiCad + livraison contrôlée.
+**Branche `skill-export-qucs` (95ec927)** : exports Qucs-S et LTspice ; PR à ouvrir dès le banc des gabarits vert
+(l'orchestrateur fusionne).
+
+**Skill multi-outils** (`docs/export-multi-outils.md`, analyse détaillée `references/ANALYSE-EXPORT.md` hors Git) :
+- Schéma neutre `schema-neutre/1` (`lib/neutral.js`) : toNeutral / neutralNetlist (LVS par la seule géométrie) /
+  snapNeutral. Placement fait DANS la géométrie de la cible (`lib/target-geometry.js`), le traducteur ne fait qu'écrire.
+- Cibles et contrôle par l'outil lui-même (banque, 40 circuits R C L V I MOS) :
+  xschem IHP SG13G2 36/40 (`lib/export-xschem.js`, `tools/xschem-check.mjs`) ; KiCad 10 36-38/40 (`lib/export-kicad.js`,
+  `tools/kicad-check.mjs`, kicad-cli Flatpak) ; Qucs-S 33/40 (`lib/export-qucs.js`, `tools/qucs-check.mjs`, conteneur
+  sim-gui + Xvfb) ; LTspice 33/40 avec vrais fils (`lib/export-ltspice.js`, `tools/ltspice-check.mjs`, lecteur
+  `tools/asc2spice.mjs`, LTspice non installé). Le reste est REFUSÉ : `deliver*` n'écrit le fichier que si la netlist
+  relue par l'outil redonne le deck (jamais de fichier faux).
+- Cadence : session dédiée (session_01NRD7QzDGWzRwWtkyns2i91), `exporters/cadence/` (skillbridge + .il), PR #38.
+- Rendus pour Eric : /drawio/review?batch=export-xschem, batch=export-kicad (`tools/xschem-renders.mjs --tool`).
+  Qucs-S imprime sans texte sans écran (polices) → pas de rendu ; LTspice non installé → pas de rendu de l'outil.
+- Pièges : PMOS draw.io source en NE ; xschem nomme net1… et kicad/asc2spice nomment Net-…/n1… (nos noms suffixés) ;
+  accolades à échapper (xschem) ; substrat KiCad sur la ligne de la source ; Qucs Idc écrit port 1 en premier ;
+  Chromium snap ne voit pas /tmp ; KiCad Flatpak : travailler sous le home.
+- Reste : skill « schema-depuis-netlist » + PROMOTION.md ; sources non continues (pulse) pour Qucs-S ; noms de nets
+  internes non portés (LTspice latch) ; placement générique éparpillé sur les gros circuits sans gabarit.
+
+**Gabarits** (actifs, choisis seulement s'ils font au moins aussi bien) : verrou CML, OTA 5T, OTA 2 étages Miller,
+LNA cascode, paire à charges passives, VCO LC à paire croisée, StrongARM, suiveur / source commune (+ cascades).
+**Manquants** (ordre à confirmer par Eric) : compensation indirecte (Ahuja / cascode), OTA folded cascode et
+télescopique, étage de sortie classe AB, bandgap, miroir cascode, oscillateur en anneau. **LDO** : famille « jamais vue »
+réservée à la mesure de généralisation — interdit sans qu'Eric lève la frontière.
+Reconnus sans gabarit : miroirs, cascodes, grille commune, onduleurs, anneau, quad de Gilbert.
+
+**Proposition à Eric (en attente de sa réponse)** : « point d'essai ngspice » — deck avec modèles simples par défaut
+(MOS niveau 1 VTO / KP / LAMBDA, BJT minimal), `.op` par ngspice 47 (`~/ClaudeCode/simulation/opt/ngspice`), annotations
+sur le schéma (nœuds ; ID, VGS, VDS, région par transistor ; alerte hors saturation) via `lib/sim-annotate.js`.
+
+**Règles nouvelles** : l'orchestrateur fusionne lui-même un gabarit si « au moins aussi bien » tient et que les rendus
+avec référence sont propres (Eric voit après coup). La porte qualité ne mesure pas la lisibilité : arbitrer par les
+rendus avec référence (une « comparaison équitable » générique a été essayée puis abandonnée). Mode économe tant que le
+forfait est en avertissement : déléguer à Ornith par lai-delegate (contrat vérifié, `lai-delegate check` avant `run`).
 
 ## ÉTAT AU 2026-10-10 (à lire en premier ; le reste du fichier est l'historique)
 
