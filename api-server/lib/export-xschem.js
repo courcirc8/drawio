@@ -54,14 +54,14 @@ const devs = (s) => path.join(XSCHEM_DEVICES, s), ihp = (s) => path.join(IHP_XSC
 const fmt = (v) => String(v ?? '').trim().replace(/[\\{}]/g, (m) => '\\' + m);
 const mosProps = (c) => { const p = c.params || {}; return `name=${c.ref}\nl=${fmt(p.l || '0.13u')}\nw=${fmt(p.w || '1u')}\nng=1\nm=${fmt(p.m || '1')}\nmodel=${c.pmos ? 'sg13_lv_pmos' : 'sg13_lv_nmos'}\nspiceprefix=X`; };
 export const PROFILE = {
-  [SPICE_MAP.R.shape]: { sym: 'res.sym', file: devs('res.sym'), pins: { in: 'P', out: 'M' }, native: [3, 0], thick: 20, props: (c) => `name=${c.ref}\nvalue=${fmt(c.value) || '1k'}\nm=1` },
-  [SPICE_MAP.C.shape]: { sym: 'capa.sym', file: devs('capa.sym'), pins: { in: 'p', out: 'm' }, native: [3, 0], thick: 40, props: (c) => `name=${c.ref}\nvalue=${fmt(c.value) || '1p'}\nm=1` },
+  [SPICE_MAP.R.shape]: { sym: 'res.sym', file: devs('res.sym'), pins: { in: 'P', out: 'M' }, native: [3, 0], thick: 20, pad: [0, 30, 0, 0], props: (c) => `name=${c.ref}\nvalue=${fmt(c.value) || '1k'}\nm=1` },
+  [SPICE_MAP.C.shape]: { sym: 'capa.sym', file: devs('capa.sym'), pins: { in: 'p', out: 'm' }, native: [3, 0], thick: 40, pad: [0, 30, 0, 0], props: (c) => `name=${c.ref}\nvalue=${fmt(c.value) || '1p'}\nm=1` },
   [SPICE_MAP.L.shape]: { sym: 'ind.sym', file: devs('ind.sym'), pins: { in: 'p', out: 'm' }, native: [3, 0], thick: 20, props: (c) => `name=${c.ref}\nvalue=${fmt(c.value) || '1n'}\nm=1` },
-  [SPICE_MAP.V.shape]: { sym: 'vsource.sym', file: devs('vsource.sym'), pins: { N: 'p', S: 'm' }, native: [0, 0], thick: 40, props: (c) => `name=${c.ref}\nvalue="${fmt(c.value) || '0'}"` },
+  [SPICE_MAP.V.shape]: { sym: 'vsource.sym', file: devs('vsource.sym'), pins: { N: 'p', S: 'm' }, native: [0, 0], thick: 40, pad: [0, 0, 40, 0], props: (c) => `name=${c.ref}\nvalue="${fmt(c.value) || '0'}"` },
   [SPICE_MAP.I.shape]: { sym: 'isource.sym', file: devs('isource.sym'), pins: { N: 'p', S: 'm' }, native: [0, 0], thick: 40, props: (c) => `name=${c.ref}\nvalue="${fmt(c.value) || '0'}"` },
-  [SPICE_MAP.M.shape]: { sym: 'sg13g2_pr/sg13_lv_nmos.sym', file: ihp('sg13_lv_nmos.sym'), pins: { NE: 'D', W: 'G', SE: 'S' }, bulk: 'B', native: [0, 0], props: mosProps },
+  [SPICE_MAP.M.shape]: { sym: 'sg13g2_pr/sg13_lv_nmos.sym', file: ihp('sg13_lv_nmos.sym'), pins: { NE: 'D', W: 'G', SE: 'S' }, bulk: 'B', native: [0, 0], pad: [0, 0, 80, 0], props: mosProps },
   // PMOS: draw.io's pmos stencil has its SOURCE at NE and its drain at SE (pinOrderFor)
-  [SPICE_MAP.M.variants.PMOS]: { sym: 'sg13g2_pr/sg13_lv_pmos.sym', file: ihp('sg13_lv_pmos.sym'), pins: { NE: 'S', W: 'G', SE: 'D' }, bulk: 'B', native: [0, 0], props: (c) => mosProps({ ...c, pmos: true }) },
+  [SPICE_MAP.M.variants.PMOS]: { sym: 'sg13g2_pr/sg13_lv_pmos.sym', file: ihp('sg13_lv_pmos.sym'), pins: { NE: 'S', W: 'G', SE: 'D' }, bulk: 'B', native: [0, 0], pad: [0, 0, 80, 0], props: (c) => mosProps({ ...c, pmos: true }) },
 };
 
 /** Stencil geometry (w, h, relative pins) of a profile entry, in its native orientation. */
@@ -73,6 +73,10 @@ function stencilOf(e) {
   // a two-pin part has no width across its pins: give it its body's thickness
   if (x1 - x0 < 1) { x0 -= (e.thick || 20) / 2; x1 += (e.thick || 20) / 2; }
   if (y1 - y0 < 1) { y0 -= (e.thick || 20) / 2; y1 += (e.thick || 20) / 2; }
+  // room for the text xschem writes beside the symbol (name, w / l / ng / m,
+  // value): the engine then spaces the parts for what xschem really draws
+  const pad = e.pad || [0, 0, 0, 0];   // left, top, right, bottom
+  x0 -= pad[0]; y0 -= pad[1]; x1 += pad[2]; y1 += pad[3];
   const w = x1 - x0, h = y1 - y0;
   return { w, h, pins: Object.entries(pts).map(([name, p]) => ({ name, x: (p[0] - x0) / w, y: (p[1] - y0) / h })) };
 }
@@ -121,7 +125,7 @@ export function writeSch(N, parsed) {
   const segs = N.wires.flatMap((w) => w.points.slice(1).map((b, k) => [w.points[k], b]));
   const awayFlip = (at) => { const s = segs.find(([a, b]) => (a[0] === at[0] && a[1] === at[1]) || (b[0] === at[0] && b[1] === at[1])); if (!s) return 0; const o = s[0][0] === at[0] && s[0][1] === at[1] ? s[1] : s[0]; return o[0] < at[0] ? 1 : 0; };
   const label = (at, net, flip = awayFlip(at)) => C('lab_pin.sym', at, 0, flip, `name=l${++lab} sig_type=std_logic lab=${netName(net)}`);
-  const pinPts = [], bulks = [];
+  const pinPts = [], bulks = [], named = new Set();
   // what is already drawn, by net: a bulk stub must touch none of another net
   const taken = [...N.wires.flatMap((w) => w.points.slice(1).map((q, k) => ({ p: w.points[k], q, net: w.net }))),
     ...N.components.flatMap((c) => Object.values(c.pins).map((x) => ({ p: x.at, q: x.at, net: x.net }))),
@@ -149,10 +153,10 @@ export function writeSch(N, parsed) {
     if (e.bulk) {
       const t = xform(sp[e.bulk], f.rot, f.flip), bnet = c.spice.hidden?.[3] ?? c.pins.SE?.net;
       const b = [f.at[0] + t[0], f.at[1] + t[1]], out = t[0] >= 0 ? 1 : -1;
-      const rail = N.rails.find((r) => r.net === bnet), gnd = bnet === '0' || rail?.kind === 'ground';
+      const rail = N.rails.find((r) => String(r.net).toLowerCase() === String(bnet).toLowerCase()), gnd = bnet === '0' || rail?.kind === 'ground';
       // first free stub (no point or wire of another net on it): outward, then inward, longer
       let done = false;
-      for (const side of [out, -out]) for (const len of [60, 80, 100, 40]) {
+      for (const side of [out, -out]) for (const len of [60, 80, 100, 40, 30, 20]) {
         if (done) break;
         const end = [b[0] + side * len, b[1]], tip = gnd ? [end[0], end[1] + 30] : rail ? [end[0], end[1] - 30] : end;
         const path = [[b, end], ...(tip !== end ? [[end, tip]] : [])];
@@ -163,7 +167,17 @@ export function writeSch(N, parsed) {
         else label(end, bnet, side > 0 ? 1 : 0);
         done = true;
       }
-      if (!done) label(b, bnet, out > 0 ? 1 : 0);   // (no free stub: the label on the bulk pin itself)
+      if (!done) {   // no free stub: the label on the bulk pin itself, unless another net runs through it
+        if (clash(b, b, bnet)) throw new Error(`xschem: no place for the bulk of ${c.ref} (a wire of another net crosses its bulk pin)`);
+        label(b, bnet, out > 0 ? 1 : 0);
+      }
+      // a bulk on a net neither rail nor port joins the DRAWN net by its name:
+      // the same label once on a drawn pin of that net (else xschem names the
+      // drawn net itself and the bulk label makes a second net)
+      if (!gnd && !rail && !N.ports.some((t) => String(t.net).toLowerCase() === String(bnet).toLowerCase()) && !named.has(String(bnet))) {
+        const host = N.components.flatMap((d) => Object.values(d.pins)).find((q) => q.net === bnet);
+        if (host) { named.add(String(bnet)); label(host.at, bnet); }
+      }
     }
   }
   for (const w of [...N.wires, ...bulks]) for (let k = 1; k < w.points.length; k++) {
