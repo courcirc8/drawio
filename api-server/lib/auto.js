@@ -304,9 +304,9 @@ async function autoPlaceOnce(parsed, only = null) {
   // the StrongARM latch comparator (lib/place-strongarm.js): Eric's yes
   // (2026-10-11), same rule (AUTO_STRONGARM=0 disables)
   if (process.env.AUTO_STRONGARM !== '0' && strongarmReading(parsed)) specs.push(['strongarm', null, {}, {}]);
-  // single-transistor stages (common source, follower, their cascade): OFF
-  // until Eric's yes on its renders (AUTO_CS=1 turns it on), same rule
-  if (process.env.AUTO_CS === '1' && csReading(parsed)) specs.push(['cs', null, {}, {}]);
+  // single-transistor stages (common source, follower, their cascade): Eric's
+  // yes (2026-10-11), same rule (AUTO_CS=0 disables)
+  if (process.env.AUTO_CS !== '0' && csReading(parsed)) specs.push(['cs', null, {}, {}]);
   // THREADS (2026-10-08, AUTO_THREADS=0 disables; from AUTO_THREADS_MIN parts,
   // default 30): each candidate in its own worker thread (lib/auto-trial-worker.js);
   // on one thread the budget only ever saw v2 finish on the big converters.
