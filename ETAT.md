@@ -8,8 +8,7 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 **Fusionné dans dev** : #36 (régression paire, banc des gabarits `tools/template-bench.mjs`, masse vss), #35 StrongARM,
 #37 gabarit suiveur / source commune (`lib/place-cs.js`), #39 skill multi-outils (1) schéma neutre + xschem,
 #42 test miroir × rotation (`PIN_RENDER=1`, 32/32 : pinAbs juste), #43 KiCad + livraison contrôlée.
-**Branche `skill-export-qucs` (95ec927)** : exports Qucs-S et LTspice ; PR à ouvrir dès le banc des gabarits vert
-(l'orchestrateur fusionne).
+**#44 fusionnée** : exports Qucs-S et LTspice (vrais fils), livraison contrôlée.
 
 **Skill multi-outils** (`docs/export-multi-outils.md`, analyse détaillée `references/ANALYSE-EXPORT.md` hors Git) :
 - Schéma neutre `schema-neutre/1` (`lib/neutral.js`) : toNeutral / neutralNetlist (LVS par la seule géométrie) /
@@ -44,6 +43,21 @@ sur le schéma (nœuds ; ID, VGS, VDS, région par transistor ; alerte hors satu
 avec référence sont propres (Eric voit après coup). La porte qualité ne mesure pas la lisibilité : arbitrer par les
 rendus avec référence (une « comparaison équitable » générique a été essayée puis abandonnée). Mode économe tant que le
 forfait est en avertissement : déléguer à Ornith par lai-delegate (contrat vérifié, `lai-delegate check` avant `run`).
+
+## POINT D'ESSAI NGSPICE (2026-10-11, branche `point-essai` )
+
+Oui d'Eric « 1 puis 2 » : (1) point d'essai, (2) gabarits manquants. `lib/sim-op.js` rend la netlist dessinée simulable :
+modèles simples (MOS niveau 1 VTO ±0,5 V KP 200/80 µA/V² λ 0,05 ; BJT ; diode), VDD 1,8 V sur une alimentation non
+pilotée, entrées ouvertes à VDD/2, entrées de courant IB/IBIAS/ISS/IREF/ITAIL à 20 µA, valeurs symboliques R 10 kΩ /
+C 1 pF / L 1 nH, `.option rshunt` ; hypothèses listées dans l'encadré. ngspice 47 (`~/ClaudeCode/simulation/opt/ngspice`)
+`op` / `print all` / `show all` → annotations `drawio-sim-annotations/1` (`lib/sim-annotate.js`).
+API `POST /documents/:id/annotations/op` (corps facultatif {netlist, vdd}) ; CLI `tools/op-point.mjs deck.sp out.png` ;
+`test/sim-op.test.js`. OTA 5T : 20 µA recopiés, 9,8 µA par branche, tout en saturation.
+Banque (29 circuits AnalogGenie / AMSNet) : 27 points de fonctionnement. Non résolus : **amsnet/20** (aucune masse ni
+alimentation dans le deck, nets numérotés seulement → rien à polariser) ; **amsnet/386** (ligne M1 mal formée : 5 nœuds
+sans modèle, « 8 » lu comme nom de modèle). Beaucoup de « bloqué » restent légitimes (OTA en boucle ouverte, entrées à
+VDD/2). À affiner : polarisation des entrées (mode commun), signe de Vgs des PMOS (ngspice donne la valeur absolue).
+Ensuite (ordre d'Eric) : gabarits compensation indirecte, folded cascode / télescopique, sortie classe AB, bandgap, anneau.
 
 ## ÉTAT AU 2026-10-10 (à lire en premier ; le reste du fichier est l'historique)
 
