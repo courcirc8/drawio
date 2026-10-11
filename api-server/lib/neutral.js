@@ -111,3 +111,18 @@ export function neutralNetlist(N) {
 export function checkNeutral(N, parsed) {
   return compare(neutralNetlist(N), parsed);
 }
+
+/** The neutral schematic on a grid: every coordinate rounded with ONE rule,
+ *  so a wire stays orthogonal and on its pins (symbol pins sit a whole
+ *  number of grid steps from the symbol's origin). Two wires closer than a
+ *  step may merge: check the result with checkNeutral before using it. */
+export function snapNeutral(N, grid) {
+  const g = (v) => Math.round(v / grid) * grid, P = (p) => [g(p[0]), g(p[1])];
+  const M = structuredClone(N);
+  for (const c of M.components) { c.at = P(c.at); for (const p of Object.values(c.pins)) p.at = P(p.at); }
+  for (const w of M.wires) { w.points = w.points.map(P).filter((p, i, a) => i === 0 || p[0] !== a[i - 1][0] || p[1] !== a[i - 1][1]); }
+  M.wires = M.wires.filter((w) => w.points.length >= 2);
+  for (const x of [...M.junctions, ...M.ports, ...M.rails]) x.at = P(x.at);
+  M.target = { ...M.target, grid, snapped: true };
+  return M;
+}
