@@ -1,3 +1,4 @@
+import re
 """Fake Virtuoso database + SKILL function table (stdlib only)."""
 
 
@@ -10,11 +11,14 @@ class Obj:
     def __getattr__(self, name):
         if name.startswith("_"):
             raise AttributeError(name)
-        camel = _snake_to_camel(name)
-        try:
-            return object.__getattribute__(self, camel)
-        except AttributeError:
-            raise AttributeError(name)
+        # SKILL names (camelCase) and their snake_case forms both resolve
+        for alt in (_snake_to_camel(name), re.sub(r"(?<=[a-z0-9])([A-Z])", lambda m: "_" + m.group(1).lower(), name)):
+            if alt != name:
+                try:
+                    return object.__getattribute__(self, alt)
+                except AttributeError:
+                    pass
+        raise AttributeError(name)
 
 
 class Fig(Obj):

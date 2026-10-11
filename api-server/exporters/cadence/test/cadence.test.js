@@ -40,6 +40,7 @@ test('cadence: net names (ground → gnd!, Virtuoso netN kept apart, unsafe char
 
 test('cadence: SKILL literals', () => {
   assert.equal(toSkill({ a: [1, 2], b: 'x"y', c: [], d: null }), 'cadxD(list("a" list(1.0 2.0) "b" "x\\"y" "c" nil "d" nil))');
+  assert.equal(toSkill([[0, -1.5], [-2, 3]]), 'list(list(0.0 (-1.5)) list((-2.0) 3.0))');
 });
 
 for (const d of DECKS) {
@@ -136,4 +137,21 @@ test('cadence: a symbol whose terminals disagree with the map makes the report F
   const x = runFake('python', r.python, ['--map', map]);
   assert.notEqual(x.code, 0);
   assert.match(x.report, /^result: FAIL$/m);
+});
+
+test('cadence: a wire missing from the plan makes the run FAIL (Python and SKILL): the self-check bites', async () => {
+  const { writePython, writeSkill } = await import('../index.js');
+  const plan = structuredClone((await exp('miller')).plan);
+  plan.wires.splice(plan.wires.findIndex((w) => w.net !== '0'), 1);
+  for (const [kind, text] of [['python', writePython(plan)], ['skill', writeSkill(plan)]]) {
+    const x = runFake(kind, text);
+    assert.notEqual(x.code, 0, kind);
+    assert.match(x.report, /^result: FAIL$/m);
+    assert.match(x.report, /^opens: [1-9]/m);
+  }
+});
+
+test('cadence: the fake Virtuoso and the SKILL interpreter pass their own tests', () => {
+  const r = spawnSync('python3', ['-m', 'pytest', '-q', path.join(FAKE, 'tests')], { encoding: 'utf8', cwd: FAKE, env: { ...process.env, PYTHONPATH: FAKE } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
 });

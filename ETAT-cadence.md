@@ -10,7 +10,11 @@ Code : `api-server/exporters/cadence/`. Doc utilisateur : `docs/cadence.md`.
 - `runtime/cadence_runtime.py` / `.il` : lit les vraies broches des masters, 8 orientations, stubs en L,
   fils, labels, gnd, pins, `schCheck`, comparaison au deck par partition, rapport en comptes seulement.
 - `runtime/cadence-pdk.map` : table analogLib/basic, surchargée par un fichier local (`model.<modèle> = clé`).
-- Tests : `node --test exporters/cadence/test/` (faux Virtuoso + interpréteur SKILL dans `test/fake/`).
+- Tests : `npm run test:cadence` (25 verts) — faux Virtuoso (`test/fake/fakevirtuoso`, faux skillbridge) et
+  interpréteur SKILL (`test/fake/skillinterp.py`) : les 5 circuits PASS en Python ET en SKILL, rapports identiques ;
+  un fil retiré fait FAIL (l'auto-contrôle mord) ; table locale « fonderie » sans fuite de noms dans le rapport.
+- Piège SKILL trouvé : `list(1 -2)` se lit 1 - 2 → négatifs entre parenthèses dans les données, variables dans le runtime.
+- Délégation locale : faux Virtuoso réussi (Ornith, 1 essai) ; interpréteur SKILL raté 2 fois (budget de sortie) → réécrit ici.
 
 ## Décisions
 - Aucune coordonnée de broche Cadence dans le dépôt (analogLib et PDK propriétaires) : tout est lu à l'exécution.

@@ -121,3 +121,10 @@ def test_calls_recorded_and_skillbridge_front():
     with pytest.raises(AttributeError):
         ws.db.no_such_function_xyz
     ws.close()
+
+def test_skill_names_resolve():
+    cv = cv_new()
+    i = fv.dbCreateInst(cv, master("res"), "R1", [0, 0], "R0")
+    assert i.instTerms is i.inst_terms and i.bBox == i.b_box and master("res").terminals[0].pins[0].fig.bBox
+    fv.schCheck(cv)
+    assert i.instTerms[0].net.instTerms

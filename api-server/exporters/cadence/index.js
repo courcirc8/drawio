@@ -200,10 +200,11 @@ export function writePython(plan, { mapText = fs.readFileSync(DEFAULT_MAP, 'utf8
 export function toSkill(v) {
   if (v === null || v === undefined || v === false) return 'nil';
   if (v === true) return 't';
-  if (typeof v === 'number') return Number.isInteger(v) ? String(v) : String(v).replace(/^(-?)\./, '$10.');
+  // a negative number in parentheses: in SKILL `list(1 -2)` reads as 1 - 2
+  if (typeof v === 'number') { const t = Number.isInteger(v) ? String(v) : String(v).replace(/^(-?)\./, '$10.'); return v < 0 ? `(${t})` : t; }
   if (typeof v === 'string') return '"' + v.replace(/[\\"]/g, (m) => '\\' + m).replace(/\n/g, '\\n') + '"';
   // a point: floats (SKILL divides integers as integers)
-  if (Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === 'number')) return `list(${v.map((x) => (Number.isInteger(x) ? x + '.0' : toSkill(x))).join(' ')})`;
+  if (Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === 'number')) return `list(${v.map((x) => (Number.isInteger(x) ? toSkill(x).replace(/(\d+)/, '$1.0') : toSkill(x))).join(' ')})`;
   if (Array.isArray(v)) return v.length ? `list(${v.map(toSkill).join(' ')})` : 'nil';
   return `cadxD(list(${Object.entries(v).map(([k, x]) => `${toSkill(k)} ${toSkill(x)}`).join(' ')}))`;
 }

@@ -14,10 +14,11 @@ cadxVersion = "0.1"
 
 procedure(cadxD(kv) let((tb) tb = makeTable("cadxD" nil) while(kv tb[car(kv)] = cadr(kv) kv = cdr(cdr(kv))) tb))
 
-procedure(cadxXf(p o) let((x y) x = car(p) y = cadr(p)
+; (negatives go through variables: in SKILL `list(x -y)` reads as x - y)
+procedure(cadxXf(p o) let((x y mx my) x = car(p) y = cadr(p) mx = -x my = -y
   cond(
-    (o == "R0" list(x y)) (o == "R90" list(-y x)) (o == "R180" list(-x -y)) (o == "R270" list(y -x))
-    (o == "MY" list(-x y)) (o == "MX" list(x -y)) (o == "MYR90" list(-y -x)) (t list(y x)))))
+    (o == "R0" list(x y)) (o == "R90" list(my x)) (o == "R180" list(mx my)) (o == "R270" list(y mx))
+    (o == "MY" list(mx y)) (o == "MX" list(x my)) (o == "MYR90" list(my mx)) (t list(y x)))))
 
 procedure(cadxSame(a b) abs(car(a) - car(b)) < cadxEps && abs(cadr(a) - cadr(b)) < cadxEps)
 
@@ -32,7 +33,7 @@ procedure(cadxOnSeg(p a b)
 
 ; ---------------------------------------------------------------- the map
 
-procedure(cadxTrim(s) let((w) w = parseString(s " \t\r\n")
+procedure(cadxTrim(s) let((w) w = parseString(s " \t\n")
   if(w then let((r) r = car(w) foreach(x cdr(w) r = strcat(r " " x)) r) else "")))
 
 procedure(cadxMapLine(m raw) let((line i k)
@@ -128,6 +129,8 @@ procedure(cadxFree(S path net) let((ok prev)
     prev = b)
   ok))
 
+procedure(cadxOpposite(d) let((a b) a = -car(d) b = -cadr(d) list(a b)))
+
 procedure(cadxStubOut(S inst at net text) let((bb c dx dy d1 d2 dirs done end segs g)
   g = S["g"]
   bb = dbTransformBBox(inst->master->bBox inst->transform)
@@ -135,7 +138,7 @@ procedure(cadxStubOut(S inst at net text) let((bb c dx dy d1 d2 dirs done end se
   dx = car(at) - car(c) dy = cadr(at) - cadr(c)
   d1 = list(if(dx >= 0 then 1 else -1) 0) d2 = list(0 if(dy >= 0 then 1 else -1))
   dirs = if(abs(dx) >= abs(dy) then list(d1 d2) else list(d2 d1))
-  dirs = append(dirs list(list(-car(car(dirs)) -cadr(car(dirs))) list(-car(cadr(dirs)) -cadr(cadr(dirs)))))
+  dirs = append(dirs list(cadxOpposite(car(dirs)) cadxOpposite(cadr(dirs))))
   foreach(d dirs foreach(n list(2 3 4 6)
     unless(done
       end = list(cadxSnap(car(at) + car(d) * n * g g) cadxSnap(cadr(at) + cadr(d) * n * g g))

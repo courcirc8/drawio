@@ -38,6 +38,9 @@ def main():
                                                 ' ?map "%s"' % opts["--map"] if "--map" in opts else "")
     try:
         ok = it.eval_string(call)
+    except Exception as x:
+        print("SKILL stack:", " > ".join(getattr(x, "skill_stack", [])), file=sys.stderr)
+        raise
     finally:
         sys.stdout.write("".join(it.output))
     return 0 if ok else 1
