@@ -61,5 +61,12 @@
   "gatePass": 2,
   "fails": 3,
   "lvs": 3
+ },
+ "cascode": {
+  "circuits": 60,
+  "chosen": 24,
+  "gatePass": 18,
+  "fails": 106,
+  "lvs": 60
  }
 }
