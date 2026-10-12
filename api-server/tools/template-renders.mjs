@@ -28,6 +28,7 @@ import { csReading } from '../lib/place-cs.js';
 import { indirectReading } from '../lib/place-indirect.js';
 import { cascodeReading } from '../lib/place-cascode.js';
 import { classabReading } from '../lib/place-classab.js';
+import { bandgapReading } from '../lib/place-bandgap.js';
 import { strongarmReading } from '../lib/place-strongarm.js';
 
 const argv = process.argv.slice(2);
@@ -35,8 +36,8 @@ const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] :
 const NOREF = argv.includes('--allow-noref');
 const IDS = arg('--ids') ? new Set(arg('--ids').split(',')) : null;   // render exactly these (elected or not)   // circuits without a reference figure too (shown as such)
 const ENGINE = arg('--engine', 'ota'), N = Number(arg('--n', 4)), BATCH = arg('--batch', `gabarit-${ENGINE}`);
-const READ = { ota: otaReading, miller: millerReading, lna: lnaReading, pair: pairReading, vco: vcoReading, strongarm: strongarmReading, cs: csReading, indirect: indirectReading, cascode: cascodeReading, classab: classabReading }[ENGINE];
-const ENV = { ota: 'AUTO_OTA', miller: 'AUTO_MILLER', lna: 'AUTO_LNA', pair: 'AUTO_PAIR', vco: 'AUTO_VCO', strongarm: 'AUTO_STRONGARM', cs: 'AUTO_CS', indirect: 'AUTO_INDIRECT', cascode: 'AUTO_CASCODE', classab: 'AUTO_CLASSAB' }[ENGINE];
+const READ = { ota: otaReading, miller: millerReading, lna: lnaReading, pair: pairReading, vco: vcoReading, strongarm: strongarmReading, cs: csReading, indirect: indirectReading, cascode: cascodeReading, classab: classabReading, bandgap: bandgapReading }[ENGINE];
+const ENV = { ota: 'AUTO_OTA', miller: 'AUTO_MILLER', lna: 'AUTO_LNA', pair: 'AUTO_PAIR', vco: 'AUTO_VCO', strongarm: 'AUTO_STRONGARM', cs: 'AUTO_CS', indirect: 'AUTO_INDIRECT', cascode: 'AUTO_CASCODE', classab: 'AUTO_CLASSAB', bandgap: 'AUTO_BANDGAP' }[ENGINE];
 if (!READ) { console.error('unknown template ' + ENGINE); process.exit(1); }
 const ROOT = process.env.REVIEW_ROOT || '/AI/datasets/judge/review', OUT = `${ROOT}/${BATCH}`;
 fs.rmSync(OUT, { recursive: true, force: true }); fs.mkdirSync(`${OUT}/img`, { recursive: true });
