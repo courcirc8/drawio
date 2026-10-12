@@ -8,9 +8,9 @@
  },
  "ota": {
   "circuits": 119,
-  "chosen": 47,
-  "gatePass": 21,
-  "fails": 225,
+  "chosen": 46,
+  "gatePass": 22,
+  "fails": 224,
   "lvs": 119
  },
  "miller": {
@@ -54,5 +54,12 @@
   "gatePass": 68,
   "fails": 81,
   "lvs": 136
+ },
+ "indirect": {
+  "circuits": 3,
+  "chosen": 2,
+  "gatePass": 2,
+  "fails": 3,
+  "lvs": 3
  }
 }
