@@ -16,7 +16,7 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
    OTA… — peut s'appliquer à un mélangeur ; le mesurer, ne pas le régler dessus.)
 3. Point d'essai ngspice : fusionné (#45).
 
-## GABARIT BANDGAP (2026-10-12, branche `gabarit-bandgap`, 4e lot ; PR en brouillon, rendus À RELIRE)
+## GABARIT BANDGAP (2026-10-12, branche `gabarit-bandgap`, 4e lot ; PR #50)
 
 `lib/place-bandgap.js`, moteur `bandgap`, actif par défaut sous la même règle (`AUTO_BANDGAP=0` désactive). Lecture :
 au moins deux COLONNES, chacune un bipolaire en diode (PNP de substrat, NPN base-collecteur) ou une diode en bas, une
@@ -29,8 +29,9 @@ de Banba à droite de leur nœud. L'ampli (s'il est en transistors) reste au pla
 Correctif commun : `moveWires` (cascode, classe AB, indirect, bandgap) jetait un fil entre deux broches d'une même pièce
 (grille d'un transistor en diode vers son drain) → LVS faux sur 859 ; corrigé, banc identique.
 Banque ≤ 25 : 9 lus ; choisi 3, porte 0 → 2, contrôles 18 → 14, LVS 9/9 ; banc sans régression, base figée.
-Tests `test/bandgap.test.js` (328/0 en tout). Rendus /drawio/review?batch=gabarit-bandgap (3) : relecture visuelle et
-avis à écrire avant de passer la PR en ready (mode Ornith du 12.10 : forfait épuisé jusqu'au 13.10 02:00 JST).
+Tests `test/bandgap.test.js` (328/0 en tout). Rendus /drawio/review?batch=gabarit-bandgap (2, relus, avis) : 380 nettement mieux, 374 équivalent ; 947 écarté
+(choisi par auto, bonne structure, mais moins lisible que sa référence : lignes de grille et liaisons emmêlées au
+milieu — piste : 3 colonnes et plus).
 
 ## GABARIT ÉTAGE DE SORTIE CLASSE AB (2026-10-12, branche `gabarit-classab`, 3e lot de la liste d'Eric)
 
