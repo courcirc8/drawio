@@ -1,6 +1,6 @@
 # ÉTAT du chantier « qualité de la génération » — fork drawio (api-server)
 
-Mis à jour le 2026-10-12 (gabarit compensation indirecte ; section « ÉTAT AU 2026-10-11 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
+Mis à jour le 2026-10-12 (gabarits compensation indirecte et folded / télescopique ; section « ÉTAT AU 2026-10-11 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
 Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 
 ## DÉCISIONS D'ERIC DU 2026-10-12 (à lire en premier ; prochaine session : « drawio (suite 2) »)
@@ -15,6 +15,30 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
    un gabarit sur ces familles ; elles servent seulement à mesurer la généralisation. (Un gabarit déjà actif — paire,
    OTA… — peut s'appliquer à un mélangeur ; le mesurer, ne pas le régler dessus.)
 3. Point d'essai ngspice : fusionné (#45).
+
+## GABARIT FOLDED CASCODE / TÉLESCOPIQUE (2026-10-12, branche `gabarit-cascode`, 2e lot de la liste d'Eric)
+
+`lib/place-cascode.js`, moteur `cascode`, actif par défaut sous la même règle (`AUTO_CASCODE=0` désactive ; rang entre
+indirect et Miller). Lecture (`cascodeReading`) : paire différentielle, puis de chaque drain une chaîne drain-source
+jusqu'aux rails = deux COLONNES de même longueur et mêmes polarités par rangée, avec au moins un cascode ;
+télescopique (la paire au bout des colonnes) ou replié (nœud de repli : source/puits vers un rail + cascode vers
+l'autre). La colonne A porte la diode du miroir. Queue MOS / I / R + diode + référence comme l'OTA ; étages
+latéraux (source commune sur un nœud de colonne, sa charge) hors des colonnes, grille à la hauteur du nœud
+(télescopique ; côté B seulement en replié, la paire étant à gauche).
+Dessin : une rangée par composant, grilles des colonnes face à face, UNE ligne de grille par rangée (règle d'Eric du
+12.10 : jamais d'étiquettes VB dupliquées ; Razavi fait passer la ligne à travers le transistor de gauche = fil sur un
+corps chez nous), port de polarisation unique sur une tige ; liaison diode du nœud de colonne vers le milieu de sa
+ligne ; paire repliée à gauche des colonnes, ses drains rabattus sur les nœuds de repli (la ligne vers la colonne B
+croise la colonne A, comme le manuel) ; retour d'unité (grille de la paire sur un nœud de colonne) tracé le long du
+nœud, 14 px à côté du nœud de l'autre colonne ; charges des deux étages latéraux sur une même polarisation : une ligne.
+Banque ≤ 25 : 60 circuits lus (39 télescopiques, 21 repliés). Familles vues (46) : choisi 21, porte 3 → 17,
+contrôles 98 → 67, LVS 46/46, AUCUN moins bien. Jamais vues (14 : sampler-sc 10, data-converter 4 ; mesurées, pas
+réglées) : choisi 3, porte 0 → 1, contrôles 37 → 39 — analoggenie/758 et 759 (sampler-sc) reculent à la porte : le
+gabarit y est élu par la règle « pas d'erreur grave d'abord » (les dessins génériques d'avant en avaient).
+Non choisi (erreurs graves) : CMFB résistive (182, 295), seconds étages autres (304, 309, 350), gros opamps 16-23.
+Banc des gabarits : aucune régression, base figée avec lui. Tests `test/cascode.test.js`.
+Rendus /drawio/review?batch=gabarit-cascode (7, avec référence, avis) ; 309 et 295 écartés (mieux qu'avant mais
+moins lisibles que leur référence).
 
 ## GABARIT COMPENSATION INDIRECTE (2026-10-12, branche `gabarit-indirect`, 1er lot de la liste d'Eric)
 
@@ -203,6 +227,9 @@ miroir cascode (liste et comptes : tools/motif-census.mjs). Puis chantier placem
   note humaine médiane ≥ 4, aucune ≤ 2.
 - **Familles jamais vues** (mesure de généralisation, ne JAMAIS régler dessus) : `mixer`, `sampler-sc`, `data-converter`
   (2026-10-12 : Eric a levé l'exclusion de `regulator` pour le gabarit LDO ; `mixer` la remplace).
+- **Polarisation partagée (Eric, 2026-10-12, réponse « a »)** : les grilles qui partagent une polarisation (cascodes,
+  charges, sources) sont reliées par UN fil, jamais par des étiquettes dupliquées (« VBB » deux fois) ; le port de la
+  polarisation, s'il existe, est unique, sur une tige au milieu de la ligne. Vaut pour tous les gabarits.
 - **Juge Ornith (lisibilité par paires) : en observation seulement**, ne sert pas à choisir ; ne pas optimiser pour lui.
 - Entraînement : schémas **DVD seulement** (`figures.origine IN ('dvd-2001','dvd-2008')`), usage privé ; **Xplore exclu**.
   Corpus IEEE : rien dans Git, rien hors d'ai-station.
