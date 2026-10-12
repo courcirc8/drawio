@@ -3,6 +3,19 @@
 Mis à jour le 2026-10-11 (section « ÉTAT AU 2026-10-11 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
 Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 
+## DÉCISIONS D'ERIC DU 2026-10-12 (à lire en premier ; prochaine session : « drawio (suite 2) »)
+
+1. **Gabarits, dans cet ordre, une PR par lot** (tests et banc des gabarits `tools/template-bench.mjs --check` verts ;
+   l'orchestrateur fusionne au fil de l'eau ; même règle « au moins aussi bien » et rendus avec référence vérifiés) :
+   compensation indirecte (Ahuja / par le cascode) → OTA folded cascode / télescopique → étage de sortie classe AB →
+   bandgap → oscillateur en anneau → **LDO** (ajouté en dernier).
+2. **Frontière « jamais vu » révisée** : Eric lève l'exclusion du LDO (`regulator` n'est plus une famille de
+   généralisation). Familles jamais vues désormais : **`mixer`** (94 circuits utilisables de 3-25 composants, choix de
+   la session drawio du 2026-10-12 : aucun gabarit prévu ne la vise), `sampler-sc`, `data-converter`. Ne JAMAIS régler
+   un gabarit sur ces familles ; elles servent seulement à mesurer la généralisation. (Un gabarit déjà actif — paire,
+   OTA… — peut s'appliquer à un mélangeur ; le mesurer, ne pas le régler dessus.)
+3. Point d'essai ngspice : fusionné (#45).
+
 ## ÉTAT AU 2026-10-11 (à lire en premier ; reprise par une session « drawio (suite 2) »)
 
 **Fusionné dans dev** : #36 (régression paire, banc des gabarits `tools/template-bench.mjs`, masse vss), #35 StrongARM,
@@ -163,8 +176,8 @@ miroir cascode (liste et comptes : tools/motif-census.mjs). Puis chantier placem
 - Notation d'Eric : **une seule fois**, 50 images, page mobile (une image, note 1-5, suivante), seulement quand **toutes**
   les familles passent les seuils automatiques. Cible : ≥ 80 % de circuits sans erreur, ≤ 10 % de feuilles > 3:1,
   note humaine médiane ≥ 4, aucune ≤ 2.
-- **Familles jamais vues** (mesure de généralisation, ne JAMAIS régler dessus) : `regulator` (LDO), `sampler-sc`,
-  `data-converter`. Un gabarit LDO réglé sur `regulator` est interdit sans qu'Eric change cette frontière.
+- **Familles jamais vues** (mesure de généralisation, ne JAMAIS régler dessus) : `mixer`, `sampler-sc`, `data-converter`
+  (2026-10-12 : Eric a levé l'exclusion de `regulator` pour le gabarit LDO ; `mixer` la remplace).
 - **Juge Ornith (lisibilité par paires) : en observation seulement**, ne sert pas à choisir ; ne pas optimiser pour lui.
 - Entraînement : schémas **DVD seulement** (`figures.origine IN ('dvd-2001','dvd-2008')`), usage privé ; **Xplore exclu**.
   Corpus IEEE : rien dans Git, rien hors d'ai-station.
