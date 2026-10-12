@@ -50,3 +50,24 @@ for (const flipH of [0, 1]) for (const flipV of [0, 1]) for (const rotation of [
     });
   }
 }
+
+// draw.io's own wire ends, MEASURED once by local_AI (2026-10-12, headless
+// draw.io, ~/pin-runs @5fb4096, test/helpers/pin-rendu.js there): 32 symmetric
+// and 32 ASYMMETRIC pins ((0.25, 0) and (0, 0.2)) x flipH x flipV x 4 rotations.
+// Always on (no render): pinAbs must land within 1 px of each measured end.
+import fs from 'node:fs';
+for (const name of ['pin-orientation-drawio.json', 'pin-orientation-drawio-asymetrique.json']) {
+  const fx = JSON.parse(fs.readFileSync(new URL('./fixtures/' + name, import.meta.url), 'utf8'));
+  test(`pinAbs agrees with draw.io's measured wire ends (${name}, ${fx.cas.length} cases)`, () => {
+    const off = [];
+    for (const c of fx.cas) {
+      const g = c.geometrie, doc = newDocument(), page = getPage(doc);
+      addVertex(page, { id: 'R1', shape: 'mxgraph.electrical.resistors.resistor_2', x: g.x, y: g.y, w: g.w, h: g.h });
+      updateCell(page, 'R1', { style: { flipH: c.flipH ? 1 : null, flipV: c.flipV ? 1 : null, rotation: c.rotation || null } });
+      const at = pinAbs(allCells(page).map(cellInfo).find((x) => x.id === 'R1'), c.pin);
+      const d = Math.hypot(at.x - c.rendu.x, at.y - c.rendu.y);
+      if (d > 1) off.push(`flipH=${c.flipH} flipV=${c.flipV} rot=${c.rotation} pin=(${c.pin.x},${c.pin.y}): ${d.toFixed(1)} px`);
+    }
+    assert.deepEqual(off, []);
+  });
+}
