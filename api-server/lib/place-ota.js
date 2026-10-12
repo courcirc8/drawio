@@ -261,9 +261,9 @@ async function imposeOta(model, O, parsed) {
 
 /** A pair's source net (two sources + the tail's drain) as ONE line beside
  *  the pair, the tail's wire teeing into it (s: +1 line below, -1 above). */
-function teeNet(model, A, B, F, s = 1) {
+export function teeNet(model, A, B, F, s = 1, kF = 0) {   // kF: the tail's pin on the sources' net
   const rel = (c, k) => activePins(classify(c))[k];
-  const sA = rel(A, 2), sB = rel(B, 2), dF = rel(F, 0);
+  const sA = rel(A, 2), sB = rel(B, 2), dF = rel(F, kF);
   const at = (e, end, c, r) => (end === 'exit' ? e.source : e.target) === c.id && Math.abs(Number(e.style.map.get(end + 'X') ?? -1) - r.x) < 0.02 && Math.abs(Number(e.style.map.get(end + 'Y') ?? -1) - r.y) < 0.02;
   const onNet = (e, end) => at(e, end, A, sA) || at(e, end, B, sB) || at(e, end, F, dF);
   const old = allCells(model).map(cellInfo).filter((e) => e.kind === 'edge' && onNet(e, 'exit') && onNet(e, 'entry'));
@@ -279,11 +279,11 @@ function teeNet(model, A, B, F, s = 1) {
 }
 
 // drawioApiTemplate: a wire drawn on purpose by a template (not an avoidable bend)
-const STF = 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiTemplate=1;';
-const relPin = (c, k) => activePins(classify(c))[k];
-const atPin = (e, end, c, r) => (end === 'exit' ? e.source : e.target) === c.id && Math.abs(Number(e.style.map.get(end + 'X') ?? -1) - r.x) < 0.02 && Math.abs(Number(e.style.map.get(end + 'Y') ?? -1) - r.y) < 0.02;
+export const STF = 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiTemplate=1;';
+export const relPin = (c, k) => activePins(classify(c))[k];
+export const atPin = (e, end, c, r) => (end === 'exit' ? e.source : e.target) === c.id && Math.abs(Number(e.style.map.get(end + 'X') ?? -1) - r.x) < 0.02 && Math.abs(Number(e.style.map.get(end + 'Y') ?? -1) - r.y) < 0.02;
 /** Delete every wire joining two of these pins ([cell, rel] pairs). */
-function dropAmong(model, pins) {
+export function dropAmong(model, pins) {
   const on = (e, end) => pins.some(([c, r]) => atPin(e, end, c, r));
   for (const e of allCells(model).map(cellInfo).filter((e) => e.kind === 'edge' && on(e, 'exit') && on(e, 'entry'))) deleteCell(model, e.id);
 }
@@ -293,7 +293,7 @@ const wired = (model, c, r) => allCells(model).map(cellInfo).some((e) => e.kind 
 /** The mirror's node as textbooks draw it: input drain straight up to the
  *  diode's drain, the gate bus straight between the two gates, the diode link
  *  dropping from the middle of the bus to the diode's drain node. */
-function mirrorNet(model, IA, MA, MB, s) {
+export function mirrorNet(model, IA, MA, MB, s) {
   const dI = relPin(IA, 0), dA = relPin(MA, 0), gA = relPin(MA, 1), gB = relPin(MB, 1);
   const pdI = pinAbs(IA, dI), pdA = pinAbs(MA, dA), pgA = pinAbs(MA, gA), pgB = pinAbs(MB, gB);
   if (Math.abs(pdI.x - pdA.x) > 0.5 || Math.abs(pgA.y - pgB.y) > 0.5) return;
@@ -352,7 +352,7 @@ function outputNet(model, IB, MB, s, yPort, netName) {
 /** The bias: the tail's gate line straight to the bias diode's gate, the
  *  diode link dropping from that line to the bias drain node, the reference
  *  straight onto the bias drain, a port on the node tied in from the left. */
-function biasNet(model, BI, T, REF, s) {
+export function biasNet(model, BI, T, REF, s) {
   const dB = relPin(BI, 0), gB = relPin(BI, 1), gT = relPin(T, 1);
   const pdB = pinAbs(BI, dB), pgB = pinAbs(BI, gB), pgT = pinAbs(T, gT);
   if (Math.abs(pgB.y - pgT.y) > 0.5) return;
@@ -385,7 +385,7 @@ function biasNet(model, BI, T, REF, s) {
 
 /** Each supply / ground symbol wired to ONE top / bottom pin straight over /
  *  under it (place-sa left them a jog away, on its shared rail line). */
-function alignRails(model) {
+export function alignRails(model) {
   const cs = allCells(model).map(cellInfo), byId = new Map(cs.map((c) => [c.id, c])), edges = cs.filter((c) => c.kind === 'edge');
   for (const v of cs.filter((c) => c.kind === 'vertex' && ['power', 'ground'].includes(classify(c).role))) {
     const es = edges.filter((e) => e.source === v.id || e.target === v.id);

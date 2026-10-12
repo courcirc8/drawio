@@ -1,6 +1,6 @@
 # ÉTAT du chantier « qualité de la génération » — fork drawio (api-server)
 
-Mis à jour le 2026-10-11 (section « ÉTAT AU 2026-10-11 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
+Mis à jour le 2026-10-12 (gabarit compensation indirecte ; section « ÉTAT AU 2026-10-11 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
 Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 
 ## DÉCISIONS D'ERIC DU 2026-10-12 (à lire en premier ; prochaine session : « drawio (suite 2) »)
@@ -15,6 +15,31 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
    un gabarit sur ces familles ; elles servent seulement à mesurer la généralisation. (Un gabarit déjà actif — paire,
    OTA… — peut s'appliquer à un mélangeur ; le mesurer, ne pas le régler dessus.)
 3. Point d'essai ngspice : fusionné (#45).
+
+## GABARIT COMPENSATION INDIRECTE (2026-10-12, branche `gabarit-indirect`, 1er lot de la liste d'Eric)
+
+`lib/place-indirect.js`, moteur `indirect`, actif par défaut, choisi seulement s'il fait au moins aussi bien
+(`AUTO_INDIRECT=0` désactive ; rang entre Miller et LNA). Deux formes lues (`indirectReading`) :
+- **tampon** (Ahuja, Johns & Martin) : transistor grille commune, drain sur la 1re sortie, Cc de sa source à la sortie ;
+  dessiné à droite de la paire sur sa rangée, Cc sur une ligne à la hauteur de sa source, son drain tombe sur la ligne
+  de la 1re sortie qui file vers la grille du 2e étage ; sa source de polarisation dans son axe.
+- **cascode** : charge cascodée (miroir cascode basse tension ou classique), Cc de la sortie vers la source du cascode
+  côté sortie ; colonnes paire / cascode / miroir, Cc horizontal à la hauteur du nœud X (croise une fois la ligne de
+  grille du 2e étage, comme le manuel), grilles des cascodes reliées par une ligne, port de polarisation sur une tige.
+Communs : queue (MOS, I ou R) + diode de polarisation + référence comme l'OTA ; charge du 2e étage R / I / transistor
+au-dessus (en dessous) du drain ; capacités de charge debout sur la ligne de sortie, port au-delà ; Rz en série.
+Charge transistor polarisée par la grille de la queue : sans diode, la queue regarde la charge (une ligne droite) ;
+avec diode, la charge est décalée pour que sa grille passe au-dessus de la queue en un seul L (une ligne droite à la
+hauteur des grilles traversait la queue ; `check.py` règle 26 « miroir pas sur une rangée », non grave, accepté).
+`place-ota.js` exporte ses aides (teeNet prend la broche de la queue en paramètre : queue en source de courant).
+Banque ≤ 25 : TRÈS PEU de compensation indirecte — 3 circuits lus : analoggenie/907 (tampon) et 908 (cascode), choisis,
+porte 0 → 2 ; un ampli open PDK de famille `dac` (data-converter, JAMAIS VUE : mesuré, pas réglé) n'élit pas le gabarit.
+analoggenie/350 (télescopique entièrement différentiel à deux sorties) relève du lot suivant (télescopique).
+Tests `test/indirect.test.js` (3 variantes écrites pour le test : entrée NMOS, charge transistor, Rz, queue polarisée, CL).
+Rendus /drawio/review?batch=gabarit-indirect (2, avec référence, avis sous chaque rendu).
+Banc des gabarits (`tools/template-bench.mjs --check`) : aucune régression ; OTA porte 21 → 22, contrôles 225 → 224
+(907 passe de `ota` à `indirect`), autres gabarits identiques ; indirect 3 lus, choisi 2, porte 2, contrôles 3, LVS 3/3 ;
+base figée avec lui. Tests 307/0. Suite (ordre d'Eric) : OTA folded cascode / télescopique (avec analoggenie/350).
 
 ## ÉTAT AU 2026-10-11 (à lire en premier ; reprise par une session « drawio (suite 2) »)
 
