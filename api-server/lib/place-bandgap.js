@@ -85,6 +85,12 @@ export function bandgapReading(parsed) {
   // ΔVbe: a resistor in series in one column (or a side resistor)
   const res = (c) => c.chain.some((r) => r.startsWith('R') || comps.find((x) => x.ref === r)?.prefix === 'R');
   if (!cols.some(res)) return null;
+  // a self-biased reference (several diode-connected devices stacked in the
+  // columns, no amplifier: analoggenie/859) is not a bandgap core — its links
+  // crowded the middle and the generic drawing was cleaner (orchestrator
+  // 2026-10-13)
+  const diodes = cols.flatMap((c) => [c.feed, ...c.chain]).map((r) => comps.find((x) => x.ref === r)).filter((x) => x.prefix === 'M' && D(x) === G(x));
+  if (diodes.length > 2) return null;
   // the plain diode first, then by resistors
   cols.sort((a, b) => a.chain.length - b.chain.length);
   return { cols, side, mirror: devs.length ? G(devs[0]) : null, used };

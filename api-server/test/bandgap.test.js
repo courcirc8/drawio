@@ -70,3 +70,8 @@ test('bandgap: AUTO_BANDGAP=0 disables the template', async () => {
     assert.notEqual(r.label, 'bandgap');
   } finally { delete process.env.AUTO_BANDGAP; }
 });
+
+test('bandgap: a self-biased reference (several diode-connected devices in the columns) is not read', () => {
+  const net = 'M0 b b vdd vdd pmos\nM1 c b vdd vdd pmos\nM9 d d b vdd pmos\nM8 e d c vdd pmos\nM4 x x d 0 nmos\nM6 d x y 0 nmos\nM5 z z e 0 nmos\nM3 e z w 0 nmos\nQ0 0 0 x pnp\nR0 y q 1k\nQ1 0 0 q pnp\n.end';
+  assert.equal(bandgapReading(parseSpice(net)), null);
+});

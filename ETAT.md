@@ -32,9 +32,12 @@ Banque ≤ 25 : 8 lus, choisi 3 (deux anneaux simples, l'anneau à courant limit
 retour en U échoue toujours `uWires`), contrôles 21 → 20, LVS 8/8. Non choisis : anneaux entourés d'autres blocs
 (registres, tampons). Limite : un anneau simple AVEC capacité de charge perd encore contre le générique (étiquette,
 coudes) — l'ancien moteur reste choisi.
-Banc : aucune régression sauf bandgap 14 → 15 contrôles (choisi 3 → 4) : analoggenie/859, où le moteur générique v2
-donne aujourd'hui 3 contrôles (1 au moment où la base a été figée) ; `dev` seul donne le même résultat (vérifié dans un
-worktree) : base mise à jour. Tests 336/0. Rendu : /drawio/review?batch=gabarit-ring (1, sans figure de référence).
+Banc : bandgap 14 → 15 sur analoggenie/859 = RÉGRESSION de #50 (pas de v2) : v2 vaut 3 contrôles à l'essai (avant
+comme après #50), 1 après le polissage final ; le gabarit (2 à l'essai, sans erreur grave depuis la base tournée des
+diodes, ajoutée après la mesure qui a figé la base) gagnait, avec un dessin plus brouillon. Corrigé (branche
+`bandgap-autopol`) : plus de 2 transistors en diode dans les colonnes = référence auto-polarisée, pas un cœur de
+bandgap → non lu ; bandgap 8 lus, choisi 3, contrôles 13. Piste transversale : un gabarit est jugé APRÈS polissage, un
+moteur générique AVANT (la comparaison avantage le gabarit). Tests 336/0. Rendu : /drawio/review?batch=gabarit-ring (1, sans figure de référence).
 
 ## GABARIT BANDGAP (2026-10-12, branche `gabarit-bandgap`, 4e lot ; PR #50)
 
