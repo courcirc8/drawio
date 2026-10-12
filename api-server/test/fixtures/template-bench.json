@@ -78,9 +78,16 @@
  },
  "bandgap": {
   "circuits": 9,
-  "chosen": 3,
+  "chosen": 4,
   "gatePass": 2,
-  "fails": 14,
+  "fails": 15,
   "lvs": 9
+ },
+ "ring": {
+  "circuits": 8,
+  "chosen": 3,
+  "gatePass": 0,
+  "fails": 20,
+  "lvs": 8
  }
 }
