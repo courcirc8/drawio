@@ -1,12 +1,12 @@
 ---
 name: drawio-api
+version: 1.1.0
 description: >
-  Piloter drawio par API REST (port 8770) pour créer/éditer des schémas
-  électroniques : charger un .drawio, ajouter/déplacer/tourner composants et
-  fils, autorouter (libavoid), importer une netlist SPICE (placement + câblage
-  automatiques), extraire la netlist, LVS, ERC, BOM, exporter PNG/SVG/PDF.
-  Utiliser dès que l'utilisateur parle de schéma électronique, drawio,
-  netlist, SPICE, LVS ou demande de dessiner/vérifier un circuit.
+  ÉDITER un schéma électronique existant par l'API REST drawio (port 8770) : charger un .drawio, ajouter / déplacer /
+  tourner composants et fils, autorouter (libavoid), ERC, BOM, extraire la netlist d'un dessin, exporter PNG/SVG/PDF.
+  Utiliser pour modifier, retoucher, router ou contrôler (ERC, nomenclature) un schéma drawio déjà là. Pour DESSINER
+  un schéma à partir d'une netlist SPICE ou VÉRIFIER qu'un schéma correspond à une netlist (LVS), utiliser plutôt le
+  skill schema-depuis-netlist.
 ---
 
 # drawio-api — pilotage de drawio pour schémas électroniques
