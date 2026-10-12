@@ -16,6 +16,28 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
    OTA… — peut s'appliquer à un mélangeur ; le mesurer, ne pas le régler dessus.)
 3. Point d'essai ngspice : fusionné (#45).
 
+## MESURE DES FAMILLES JAMAIS VUES (2026-10-13, demande d'Eric (b) : mesure seule, AUCUN réglage)
+
+Code : `dev` + LDO (#54). Circuits ≤ 25 composants, netlists exactes (DVD natif exclu), 168 mesurés sur 173 (5 refusés :
+scellés / illisibles), aucun plantage, LVS 168/168 ; lignes : /tmp/claude-1000/ic/holdout-rows.jsonl (hors Git).
+| famille | n | porte | contrôles/c | gabarits choisis | moteurs génériques les plus choisis |
+| mélangeur | 31 | 8 | 1,65 | pair 8 | v4:split 10, v4:absorb+split 6, sa 4 |
+| sampler-sc | 36 | 4 | 2,25 | cascode 3, ota 1 | v4:absorb+split 13, sa 8, v4:split 7 |
+| data-converter | 101 | 14 | 2,28 | strongarm 1 | v4:split 44, v2 19, sa 18 |
+Contrôles les plus échoués : coudes évitables (126), détours en U (107), symétrie des paires (56), netlist en groupes
+séparés (23, data-converter : blocs logiques). Médiane 3,1 s par circuit. Les gabarits ne s'appliquent presque pas à ces
+familles (13 fois sur 168) : la généralisation repose sur les moteurs génériques. Rendus NON montrés à Eric (accord de
+l'orchestrateur requis).
+
+## REPRISE (pour la session suivante, contexte de la session drawio du 12-13.10 proche de sa limite)
+
+PR ouvertes à suivre : #53 (ETAT garde-fou rejeté), #54 (LDO), #55 (test des broches), skills-micro #2
+(schema-depuis-netlist 1.0.1, en revue Intégrateur), branche `skill-drawio-api-perimetre` (drawio-api 1.1.0,
+PROMOTION.md, l'Intégrateur ouvre la PR). Page de bilan pour Eric : /drawio/review?batch=bilan-12-10 (fusion dev → main
+décidée par Eric). Branche `auto-garde-polissage` : expérience rejetée, ne pas fusionner. Pistes : bandgap à 3 colonnes
+(947), anneau avec capacité de charge, `misalignedPorts` / `alignPorts` sur la boîte non tournée, ports de sortie absents
+à l'import (nœud à plusieurs connexions).
+
 ## GABARIT LDO (2026-10-13, branche `gabarit-ldo`, DERNIER lot de la liste d'Eric)
 
 `lib/place-ldo.js` (moteur `ldo`, actif par défaut sous la même règle, `AUTO_LDO=0` désactive). Lecture : OTA 5T
