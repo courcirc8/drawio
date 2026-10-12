@@ -75,5 +75,12 @@
   "gatePass": 1,
   "fails": 7,
   "lvs": 4
+ },
+ "bandgap": {
+  "circuits": 9,
+  "chosen": 3,
+  "gatePass": 2,
+  "fails": 14,
+  "lvs": 9
  }
 }

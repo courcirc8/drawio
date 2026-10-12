@@ -16,6 +16,23 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
    OTA… — peut s'appliquer à un mélangeur ; le mesurer, ne pas le régler dessus.)
 3. Point d'essai ngspice : fusionné (#45).
 
+## GABARIT BANDGAP (2026-10-12, branche `gabarit-bandgap`, 4e lot ; PR #50)
+
+`lib/place-bandgap.js`, moteur `bandgap`, actif par défaut sous la même règle (`AUTO_BANDGAP=0` désactive). Lecture :
+au moins deux COLONNES, chacune un bipolaire en diode (PNP de substrat, NPN base-collecteur) ou une diode en bas, une
+chaîne remontant par résistances et drain-source jusqu'à l'alimentation (résistances vers la masse = résistances de
+Banba, mises de côté), au moins une résistance en série ; alimentations par dispositifs : un seul miroir.
+Dessin : rangées depuis le haut (alimentations alignées), diodes alignées en bas (base à gauche), lignes de grille entre
+les deux premières colonnes (port de polarisation unique sur tige ; une 3e colonne rejoint la ligne par-dessus sa
+rangée), liaison diode du miroir depuis son nœud de colonne, boucle grille-drain des transistors en diode, résistances
+de Banba à droite de leur nœud. L'ampli (s'il est en transistors) reste au placeur générique, poussé à gauche.
+Correctif commun : `moveWires` (cascode, classe AB, indirect, bandgap) jetait un fil entre deux broches d'une même pièce
+(grille d'un transistor en diode vers son drain) → LVS faux sur 859 ; corrigé, banc identique.
+Banque ≤ 25 : 9 lus ; choisi 3, porte 0 → 2, contrôles 18 → 14, LVS 9/9 ; banc sans régression, base figée.
+Tests `test/bandgap.test.js` (328/0 en tout). Rendus /drawio/review?batch=gabarit-bandgap (2, relus, avis) : 380 nettement mieux, 374 équivalent ; 947 écarté
+(choisi par auto, bonne structure, mais moins lisible que sa référence : lignes de grille et liaisons emmêlées au
+milieu — piste : 3 colonnes et plus).
+
 ## GABARIT ÉTAGE DE SORTIE CLASSE AB (2026-10-12, branche `gabarit-classab`, 3e lot de la liste d'Eric)
 
 `lib/place-classab.js`, moteur `classab`, actif par défaut sous la même règle (`AUTO_CLASSAB=0` désactive ; rang le
