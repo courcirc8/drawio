@@ -16,6 +16,17 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
    OTA… — peut s'appliquer à un mélangeur ; le mesurer, ne pas le régler dessus.)
 3. Point d'essai ngspice : fusionné (#45).
 
+## GARDE-FOU « COMPARAISON APRÈS POLISSAGE » : MESURÉ, REJETÉ (2026-10-13, option (a) de l'orchestrateur)
+
+Idée : quand un gabarit gagne, polir aussi le meilleur candidat générique (et une copie du gabarit) et garder le
+générique s'il échoue à moins de contrôles de la porte (`AUTO_FAIRGUARD=1`, code sur la branche `auto-garde-polissage`,
+NON fusionné). Banc des gabarits (430 circuits) : 34 choix changent (cs 17, ota 9, pair 3, cascode 2, miller, lna, vco
+1 chacun), porte meilleure partout par construction, temps +17 % (1 802 → 2 106 s). RENDUS (8 AnalogGenie à figure,
+référence | gabarit | générique gardé) : gabarit nettement plus lisible 6 fois (48, 155, 280, 321 en colonnes comme la
+référence ; 221, 556), égal 2 fois (474 LNA, 537 VCO), générique meilleur 0. Même constat que le 11.10 : moins de
+contrôles échoués ≠ plus lisible. Décision (orchestrateur : « recul de lisibilité → on garde (b) ») : pas d'activation ;
+on garde les garde-fous par gabarit (ex. bandgap auto-polarisé, #52).
+
 ## GABARIT OSCILLATEUR EN ANNEAU (2026-10-12/13, branche `gabarit-anneau`, 5e lot)
 
 `lib/place-ring.js` (moteur `ring`, actif par défaut sous la même règle, `AUTO_RING=0` désactive) ; lecture
