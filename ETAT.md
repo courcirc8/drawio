@@ -1,6 +1,6 @@
 # ÉTAT du chantier « qualité de la génération » — fork drawio (api-server)
 
-Mis à jour le 2026-10-12 (gabarits compensation indirecte et folded / télescopique ; section « ÉTAT AU 2026-10-11 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
+Mis à jour le 2026-10-12 (gabarits compensation indirecte, folded / télescopique et sortie classe AB ; section « ÉTAT AU 2026-10-11 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
 Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 
 ## DÉCISIONS D'ERIC DU 2026-10-12 (à lire en premier ; prochaine session : « drawio (suite 2) »)
@@ -15,6 +15,31 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
    un gabarit sur ces familles ; elles servent seulement à mesurer la généralisation. (Un gabarit déjà actif — paire,
    OTA… — peut s'appliquer à un mélangeur ; le mesurer, ne pas le régler dessus.)
 3. Point d'essai ngspice : fusionné (#45).
+
+## GABARIT ÉTAGE DE SORTIE CLASSE AB (2026-10-12, branche `gabarit-classab`, 3e lot de la liste d'Eric)
+
+`lib/place-classab.js`, moteur `classab`, actif par défaut sous la même règle (`AUTO_CLASSAB=0` désactive ; rang le
+plus bas des gabarits). Lecture : paire complémentaire sur la sortie — sources communes (drains sur la sortie) ou
+suiveurs (sources sur la sortie) — dont les grilles A (haut) et B (bas) sont reliées par une CHAÎNE en série (diodes,
+transistors en diode, résistances, source flottante : deux transistors en parallèle à grilles de polarisation), sans
+rail ni sortie dedans ; en source commune, A, B et la chaîne ne passent par aucune entrée (`v?in…`) et un transistor
+flottant a sa grille sur une polarisation (faux positifs écartés : LNA, logique d'horloge, miroirs). Alimentations : de
+A vers l'alimentation, de B vers la masse (attaque en source commune ou en suiveur). Multiplicateur de Vbe : diode et
+résistance du transistor de la chaîne (A → base → B). Charges de la sortie (R, C, vers un rail ou un port seul).
+Dessin : sorties en colonne à droite, chaîne en colonne à gauche, lignes de grille sur les nœuds, multiplicateur dans
+une colonne à gauche (base du transistor au niveau du bas de la diode), charges debout sur la ligne de sortie (valeur
+à droite), port de sortie au-delà, ports de A / B à gauche sur leur ligne. Une source de courant MOS du type du
+transistor de sortie est mise SUR SA RANGÉE (check.py règle 14 les lit comme une paire : erreur grave sinon).
+Fils de gabarit droits (`edgeStyle=none`) quand tous leurs segments sont horizontaux / verticaux : un fil orthogonal sans
+point qui part d'une broche du bas descend d'abord (décroché de 10-25 px au rendu, invisible au contrôle).
+Banque ≤ 25 : 4 lus seulement (870, 873, 879 étages de sortie ; 1093 mélangeur, JAMAIS VU : mesuré, pas choisi) ;
+choisi 2 (870, 873), porte 1 → 1, contrôles 7 → 7, LVS 4/4 — gain visuel (rendus). Aucune sortie classe AB à sources
+communes (Monticelli) dans la banque : forme vérifiée sur une variante écrite pour les tests. 879 (24 composants, ampli
+complet) : le gabarit n'y fait pas mieux, l'ancien moteur reste choisi.
+Banc des gabarits sans régression, base figée avec lui. Tests `test/classab.test.js` (322/0 en tout).
+Rendus /drawio/review?batch=gabarit-classab (2, avec référence, avis).
+À noter : `misalignedPorts` / `alignPorts` jugent une broche « latérale » sur la boîte NON tournée de la pièce (une
+diode tournée) ; sans effet ici, à corriger à part avec un banc.
 
 ## GABARIT FOLDED CASCODE / TÉLESCOPIQUE (2026-10-12, branche `gabarit-cascode`, 2e lot de la liste d'Eric)
 

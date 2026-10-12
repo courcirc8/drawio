@@ -68,5 +68,12 @@
   "gatePass": 18,
   "fails": 106,
   "lvs": 60
+ },
+ "classab": {
+  "circuits": 4,
+  "chosen": 2,
+  "gatePass": 1,
+  "fails": 7,
+  "lvs": 4
  }
 }
