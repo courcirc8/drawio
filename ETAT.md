@@ -16,6 +16,26 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
    OTA… — peut s'appliquer à un mélangeur ; le mesurer, ne pas le régler dessus.)
 3. Point d'essai ngspice : fusionné (#45).
 
+## GABARIT OSCILLATEUR EN ANNEAU (2026-10-12/13, branche `gabarit-anneau`, 5e lot)
+
+`lib/place-ring.js` (moteur `ring`, actif par défaut sous la même règle, `AUTO_RING=0` désactive) ; lecture
+`lib/ring-reading.js` ÉCRITE PAR ORNITH (lai-delegate, tâche ring-reading : contrat et tests par la session drawio,
+réussie en 138 s du premier coup, relue, `test/ring.test.js`). Lecture : étages = PMOS + NMOS de même grille et même
+drain ; anneau = cycle impair ≥ 3 (le plus long) ; l'étage qui sort sur `out` est le dernier ; limitation de courant
+(sp / sn sur les sources), polarisations biasP / biasN, générateur de polarisation, capacités de charge.
+Dessin : étages de gauche à droite (PMOS sur NMOS, grilles liées par un petit bus), chaque sortie droite vers l'entrée
+suivante, retour sous la rangée ; port de sortie sur le coin du retour (un port sur la ligne était traversé) ;
+limitation au-dessus / en dessous, un bus par polarisation (tiges), générateur à gauche. Câblage par NET (`rewire` :
+tous les fils des broches du gabarit retirés, les autres pièces rebranchées) : déplacer les fils un par un les
+dédoublait.
+Banque ≤ 25 : 8 lus, choisi 3 (deux anneaux simples, l'anneau à courant limité de la PLL Seredyn), porte 0 → 0 (le
+retour en U échoue toujours `uWires`), contrôles 21 → 20, LVS 8/8. Non choisis : anneaux entourés d'autres blocs
+(registres, tampons). Limite : un anneau simple AVEC capacité de charge perd encore contre le générique (étiquette,
+coudes) — l'ancien moteur reste choisi.
+Banc : aucune régression sauf bandgap 14 → 15 contrôles (choisi 3 → 4) : analoggenie/859, où le moteur générique v2
+donne aujourd'hui 3 contrôles (1 au moment où la base a été figée) ; `dev` seul donne le même résultat (vérifié dans un
+worktree) : base mise à jour. Tests 336/0. Rendu : /drawio/review?batch=gabarit-ring (1, sans figure de référence).
+
 ## GABARIT BANDGAP (2026-10-12, branche `gabarit-bandgap`, 4e lot ; PR #50)
 
 `lib/place-bandgap.js`, moteur `bandgap`, actif par défaut sous la même règle (`AUTO_BANDGAP=0` désactive). Lecture :

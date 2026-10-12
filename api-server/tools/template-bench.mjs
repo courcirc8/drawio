@@ -42,13 +42,14 @@ import { indirectReading } from '../lib/place-indirect.js';
 import { cascodeReading } from '../lib/place-cascode.js';
 import { classabReading } from '../lib/place-classab.js';
 import { bandgapReading } from '../lib/place-bandgap.js';
+import { ringReading } from '../lib/ring-reading.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BASE = path.join(HERE, '..', 'test', 'fixtures', 'template-bench.json');
 const B = '/AI/datasets/netlists/bank', ROWS = process.env.BENCH_ROWS || '/AI/datasets/judge/template-bench';
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 // the active templates and their readers (a template is listed once Eric approved it)
-const READERS = { latch: latchReading, ota: otaReading, miller: millerReading, lna: lnaReading, pair: pairReading, vco: vcoReading, strongarm: strongarmReading, cs: csReading, indirect: indirectReading, cascode: cascodeReading, classab: classabReading, bandgap: bandgapReading };
+const READERS = { latch: latchReading, ota: otaReading, miller: millerReading, lna: lnaReading, pair: pairReading, vco: vcoReading, strongarm: strongarmReading, cs: csReading, indirect: indirectReading, cascode: cascodeReading, classab: classabReading, bandgap: bandgapReading, ring: ringReading };
 const only = arg('--only') ? new Set(arg('--only').split(',')) : null;
 const engines = Object.keys(READERS).filter((e) => !only || only.has(e));
 
