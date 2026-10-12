@@ -384,11 +384,42 @@ async function autoPlaceOnce(parsed, only = null) {
     if (!any) { const e = new Error('auto: every engine failed: ' + trials.map((t) => t.error).join(' | ')); e.status = 422; throw e; }
     return { doc: any.doc, placed: any.placed, label: candidateLabel(any), timedOut, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed }])) };
   }
+  // FAIR GUARD (orchestrator 2026-10-13, AUTO_FAIRGUARD=1 enables; measured
+  // before any activation): a template is judged AFTER its polish, a generic
+  // candidate before — on analoggenie/859 a template (2 checks) beat v2 (3),
+  // which its final polish brings to 1, with a messier drawing. When a template
+  // wins (the latch keeps its validated priority), the best generic candidate
+  // gets the same finishing; if it then fails fewer quality-gate checks, it is
+  // kept instead. Narrow on purpose: a generic drawing never displaces a
+  // template that does at least as well (the broad "fair comparison" of
+  // 2026-10-11 chose less readable drawings).
+  const guard = {};
+  const isTpl = (t) => ['ota', 'miller', 'lna', 'pair', 'vco', 'strongarm', 'cs', 'indirect', 'cascode', 'classab', 'bandgap', 'ring'].includes(t.eng);
+  if (process.env.AUTO_FAIRGUARD === '1' && isTpl(win) && process.env.AUTO_JUDGE !== 'js') {
+    const gens = trials.filter((t) => !isTpl(t) && t.eng !== 'latch' && t.doc && t.errs !== Infinity && !t.lvsFailed);
+    if (gens.length) {
+      const g = gens.reduce((a, b) => (better(b, a) ? b : a));
+      // both finished the same way (the template's copy is kept if it stays)
+      const finish = async (doc) => {
+        const d2 = parseXml(serialize(doc)), page = getPage(d2);
+        await crossCoupledX(page, parsed, { errorCount: checkerErrors, fixDots });
+        await straighten(page);
+        await alignPorts(page, { errorCount: checkerErrors });
+        await drawRails(page, { errorCount: checkerErrors, fixDots });
+        return { doc: d2, fails: Object.values(qualityGate(page, parsed).checks).filter((c) => !c.ok).length };
+      };
+      try {
+        const [fg, ft] = await Promise.all([finish(g.doc), finish(win.doc)]);
+        Object.assign(guard, { generic: candidateLabel(g), genericAfter: fg.fails, template: candidateLabel(win), templateAfter: ft.fails });
+        win = fg.fails < ft.fails ? ((guard.kept = guard.generic), { ...g, doc: fg.doc, polished: true }) : { ...win, doc: ft.doc, polished: true };
+      } catch (e) { guard.error = String(e.message || e); }
+    }
+  }
   // FINISHING of the chosen drawing (Eric 2026-10-09, default; AUTO_POLISH=0
   // disables): the symmetric X of cross-coupled pairs, then the straightening
   // pass (avoidable bends, labels glued) — each step guarded by tools/check.py
   const polish = {};
-  if (process.env.AUTO_POLISH !== '0' && process.env.AUTO_JUDGE !== 'js') {
+  if (process.env.AUTO_POLISH !== '0' && process.env.AUTO_JUDGE !== 'js' && !win.polished) {   // (a generic kept by the guard is finished already)
     try {
       const page = getPage(win.doc);
       polish.crossX = await crossCoupledX(page, parsed, { errorCount: checkerErrors, fixDots });   // {drawn, why}
@@ -400,5 +431,5 @@ async function autoPlaceOnce(parsed, only = null) {
       polish.rails = await drawRails(page, { errorCount: checkerErrors, fixDots });
     } catch (e) { polish.error = String(e.message || e); /* the unfinished drawing stays as chosen */ }
   }
-  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, polish, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire, gateFails: t.gateFails }])) };
+  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, polish, guard, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire, gateFails: t.gateFails }])) };
 }
