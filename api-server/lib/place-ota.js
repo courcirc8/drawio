@@ -133,7 +133,7 @@ export async function importNetlistOta(model, parsed, opts = {}) {
   return placed;
 }
 
-async function imposeOta(model, O, parsed) {
+export async function imposeOta(model, O, parsed) {
   const cells = () => allCells(model).map(cellInfo);
   const find = (ref) => cells().find((c) => c.kind === 'vertex' && String(c.refdes || '') === ref);
   const pinsOf = (c) => activePins(classify(c)).map((p) => pinAbs(c, p));
@@ -408,7 +408,7 @@ export function alignRails(model) {
 /** The second stage's gate: left along the gate's height, down (up) onto the
  *  first output's line just right of the input/load column, teeing into it
  *  (the router took a loop under the compensation chain). */
-function millerGate(model, M6, IB, MB, yLine) {
+export function millerGate(model, M6, IB, MB, yLine) {
   const reroute = [];
   const g = relPin(M6, 1), dI = relPin(IB, 0), dB = relPin(MB, 0);
   const pg = pinAbs(M6, g), pdI = pinAbs(IB, dI), pdB = pinAbs(MB, dB);

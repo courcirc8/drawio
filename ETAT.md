@@ -1,6 +1,6 @@
 # ÉTAT du chantier « qualité de la génération » — fork drawio (api-server)
 
-Mis à jour le 2026-10-12 (gabarits compensation indirecte, folded / télescopique et sortie classe AB ; section « ÉTAT AU 2026-10-11 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
+Mis à jour le 2026-10-12 (gabarits de la liste d'Eric, du compensation indirecte au LDO ; section « ÉTAT AU 2026-10-11 » ci-dessous ; le reste date du 2026-10-08). Un nouveau contexte doit pouvoir reprendre en lisant ce fichier.
 Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
 
 ## DÉCISIONS D'ERIC DU 2026-10-12 (à lire en premier ; prochaine session : « drawio (suite 2) »)
@@ -15,6 +15,22 @@ Rien du corpus IEEE ici : chiffres, chemins et identifiants de code seulement.
    un gabarit sur ces familles ; elles servent seulement à mesurer la généralisation. (Un gabarit déjà actif — paire,
    OTA… — peut s'appliquer à un mélangeur ; le mesurer, ne pas le régler dessus.)
 3. Point d'essai ngspice : fusionné (#45).
+
+## GABARIT LDO (2026-10-13, branche `gabarit-ldo`, DERNIER lot de la liste d'Eric)
+
+`lib/place-ldo.js` (moteur `ldo`, actif par défaut sous la même règle, `AUTO_LDO=0` désactive). Lecture : OTA 5T
+(`otaReading`), ballast dont la grille est la sortie de l'OTA (source sur l'alimentation, drain = sortie), pont diviseur
+en série de la sortie à la masse (résistances, sources 0 V = ampèremètres) dont le point milieu est une entrée de la
+paire, charges R / C / I de la sortie à la masse. Dessin : OTA par son gabarit (`imposeOta`, exporté), ballast à droite
+sur la rangée du miroir (grille par `millerGate`, exporté), pont debout en colonne sous la sortie, charges à côté ; le
+retour du point milieu vers l'entrée par le routeur. Banque ≤ 25 : 3 lus (MacAnalog ldo_004/007/008), choisi 1
+(ldo_004 : porte 0 → 1), contrôles 8 → 6, LVS 3/3 ; 007 / 008 (compensation, pièces en plus) restent au générique.
+Banc sans régression (ota choisi 46 → 45 : ldo_004 passe au LDO), base figée. Tests `test/ldo.test.js` (341/0).
+Rendu /drawio/review?batch=gabarit-ldo (1, sans figure de référence).
+FIN DE LA LISTE D'ERIC DU 12.10 (indirect #47, cascode #48, classe AB #49, bandgap #50 + #52, anneau #51, LDO).
+Skill `schema-depuis-netlist` (skills-micro #2, 1.0.1, en revue de l'Intégrateur) ; `drawio-api` 1.1.0 resserré sur
+l'édition (branche `skill-drawio-api-perimetre`, PROMOTION.md). Reste en priorité basse : fixture de broches
+asymétriques (local_AI, ~/ClaudeCode/pin-runs/base @5fb4096) dans le test PIN_RENDER, petite PR.
 
 ## GARDE-FOU « COMPARAISON APRÈS POLISSAGE » : MESURÉ, REJETÉ (2026-10-13, option (a) de l'orchestrateur)
 
