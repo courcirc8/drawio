@@ -175,18 +175,22 @@ const wide = (t) => process.env.AUTO_ASPECT === '1' && t.aspect != null && t.asp
 // a wire through a part, two nets on one line, a double line) go last, then
 // drawings joining an internal net by name (port labels) instead of a wire; the
 // checker's error count only breaks remaining ties (a guard, not a goal).
-// CROSSINGS (drawio-placement benchmark, 2026-10-20; AUTO_CROSS=off (default)|safe|first|mid|last):
+// CROSSINGS (drawio-placement benchmark, 2026-10-20; AUTO_CROSS=polish (default)|off|safe|first|mid|last):
 // fewer wire crossings between candidates, placed before the bends rule (first),
 // between bends and wire length (mid) or after wire length (last). Measured on 300
 // circuits vs the old order: first = median 6 -> 4 crossings, 84 better / 7 worse;
 // safe = 6 -> 5, 65 / 6; wire length, pairs, rails unchanged; mid and last gain
-// much less. OFF BY DEFAULT: first and safe still cost a few quality-gate passes in
-// `npm run bench:templates` (ota 23->22, vco 7->6, cs 68->67), which is a hard gate. Layered graph
+// much less. first and safe, applied BEFORE finishing, cost a few quality-gate passes in
+// `npm run bench:templates` (ota 23->22, vco 7->6, cs 68->67), a hard gate: see 'polish' below. Layered graph
 // drawing minimises crossings first; criterion D (Eric) never looked at them.
 // 'safe' = 'first' but the candidate with fewer crossings must not fail more quality-gate checks
 // (plain 'first' made bench:templates regress: latch/ota/miller/vco/strongarm/cs lost gate checks)
+// 'polish' (default): the old criterion picks the winner; the 'safe' winner is a CHALLENGER; both are
+// finished (polish) and the challenger wins only if, once finished, it has fewer crossings and fails no
+// more quality-gate checks (the checks bench:templates counts are those of the finished drawing).
+let crossOverride = null;
 const crossBefore = (where, b, a) => {
-  const mode = process.env.AUTO_CROSS || 'off';
+  const mode = crossOverride || process.env.AUTO_CROSS || 'polish';
   if (b.cross == null || a.cross == null || b.cross === a.cross) return false;
   if (mode === 'safe' && where === 'first') { const lo = b.cross < a.cross ? b : a, hi = lo === b ? a : b; return (lo.gateFails ?? 99) <= (hi.gateFails ?? 99); }
   return mode === where;
@@ -412,18 +416,41 @@ async function autoPlaceOnce(parsed, only = null) {
   // FINISHING of the chosen drawing (Eric 2026-10-09, default; AUTO_POLISH=0
   // disables): the symmetric X of cross-coupled pairs, then the straightening
   // pass (avoidable bends, labels glued) — each step guarded by tools/check.py
-  const polish = {};
-  if (process.env.AUTO_POLISH !== '0' && process.env.AUTO_JUDGE !== 'js') {
+  const finish = async (doc) => {
+    const polish = {};
+    if (process.env.AUTO_POLISH !== '0' && process.env.AUTO_JUDGE !== 'js') {
+      try {
+        const page = getPage(doc);
+        polish.crossX = await crossCoupledX(page, parsed, { errorCount: checkerErrors, fixDots });   // {drawn, why}
+        polish.straighten = await straighten(page);
+        // ports at the height of the pin they drive, straight wire (Eric)
+        polish.ports = await alignPorts(page, { errorCount: checkerErrors });
+        // supply and ground: one rail line with one label (Eric's default) or a
+        // symbol per branch (AUTO_RAILS=branch)
+        polish.rails = await drawRails(page, { errorCount: checkerErrors, fixDots });
+      } catch (e) { polish.error = String(e.message || e); /* the unfinished drawing stays as chosen */ }
+    }
+    return polish;
+  };
+  const measure = (doc) => {
     try {
-      const page = getPage(win.doc);
-      polish.crossX = await crossCoupledX(page, parsed, { errorCount: checkerErrors, fixDots });   // {drawn, why}
-      polish.straighten = await straighten(page);
-      // ports at the height of the pin they drive, straight wire (Eric)
-      polish.ports = await alignPorts(page, { errorCount: checkerErrors });
-      // supply and ground: one rail line with one label (Eric's default) or a
-      // symbol per branch (AUTO_RAILS=branch)
-      polish.rails = await drawRails(page, { errorCount: checkerErrors, fixDots });
-    } catch (e) { polish.error = String(e.message || e); /* the unfinished drawing stays as chosen */ }
+      const m = getPage(doc), q = qualityGate(m, parsed);
+      return { gate: Object.values(q.checks).filter((c) => !c.ok).length, cross: crossingCount(m) };
+    } catch { return null; }
+  };
+  let polish = null;
+  if ((process.env.AUTO_CROSS || 'polish') === 'polish' && process.env.AUTO_POLISH !== '0' && process.env.AUTO_JUDGE !== 'js' && !only) {
+    crossOverride = 'safe';
+    const alt = trials.reduce((a, b) => (better(b, a) ? b : a));
+    crossOverride = null;
+    if (alt !== win && alt.doc && alt.errs !== Infinity && alt.cross != null && win.cross != null && alt.cross < win.cross) {
+      const altDoc = parseXml(serialize(alt.doc));
+      const [pw, pa] = [await finish(win.doc), await finish(altDoc)];
+      const [mw, ma] = [measure(win.doc), measure(altDoc)];
+      if (mw && ma && ma.gate <= mw.gate && ma.cross < mw.cross) { win = { ...alt, doc: altDoc }; polish = { ...pa, crossChallenger: 'taken', cross: [mw.cross, ma.cross] }; }
+      else polish = { ...pw, crossChallenger: 'kept', cross: mw && ma ? [mw.cross, ma.cross] : null };
+    }
   }
+  if (polish == null) polish = await finish(win.doc);
   return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, polish, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire, cross: t.cross, gateFails: t.gateFails }])) };
 }
