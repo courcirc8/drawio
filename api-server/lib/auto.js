@@ -175,13 +175,22 @@ const wide = (t) => process.env.AUTO_ASPECT === '1' && t.aspect != null && t.asp
 // a wire through a part, two nets on one line, a double line) go last, then
 // drawings joining an internal net by name (port labels) instead of a wire; the
 // checker's error count only breaks remaining ties (a guard, not a goal).
-// CROSSINGS (drawio-placement benchmark, 2026-10-20; AUTO_CROSS=first (default)|mid|last|off):
+// CROSSINGS (drawio-placement benchmark, 2026-10-20; AUTO_CROSS=off (default)|safe|first|mid|last):
 // fewer wire crossings between candidates, placed before the bends rule (first),
 // between bends and wire length (mid) or after wire length (last). Measured on 300
-// circuits vs the old order: first = median 6 -> 4 crossings, 84 better / 7 worse,
-// wire length, pairs, rails unchanged; mid and last gain much less. Layered graph
+// circuits vs the old order: first = median 6 -> 4 crossings, 84 better / 7 worse;
+// safe = 6 -> 5, 65 / 6; wire length, pairs, rails unchanged; mid and last gain
+// much less. OFF BY DEFAULT: first and safe still cost a few quality-gate passes in
+// `npm run bench:templates` (ota 23->22, vco 7->6, cs 68->67), which is a hard gate. Layered graph
 // drawing minimises crossings first; criterion D (Eric) never looked at them.
-const crossBefore = (where, b, a) => (process.env.AUTO_CROSS || 'first') === where && b.cross != null && a.cross != null && b.cross !== a.cross;
+// 'safe' = 'first' but the candidate with fewer crossings must not fail more quality-gate checks
+// (plain 'first' made bench:templates regress: latch/ota/miller/vco/strongarm/cs lost gate checks)
+const crossBefore = (where, b, a) => {
+  const mode = process.env.AUTO_CROSS || 'off';
+  if (b.cross == null || a.cross == null || b.cross === a.cross) return false;
+  if (mode === 'safe' && where === 'first') { const lo = b.cross < a.cross ? b : a, hi = lo === b ? a : b; return (lo.gateFails ?? 99) <= (hi.gateFails ?? 99); }
+  return mode === where;
+};
 const betterEric = (b, a) => {
   const sb = (b.severe ?? 0) > 0, sa = (a.severe ?? 0) > 0;
   if (sb !== sa) return !sb;
