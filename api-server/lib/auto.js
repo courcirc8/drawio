@@ -52,6 +52,7 @@ import { straighten, checkerErrors, fixDots } from './straighten.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 import { withGroundAlias } from './ground-alias.js';
+import { crossingCount } from './crossings.js';
 
 export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' || t.eng === 'latch' || t.eng === 'ota' || t.eng === 'miller' || t.eng === 'lna' || t.eng === 'pair' || t.eng === 'vco' || t.eng === 'strongarm' || t.eng === 'cs' || t.eng === 'indirect' || t.eng === 'cascode' || t.eng === 'classab' || t.eng === 'bandgap' || t.eng === 'ring' || t.eng === 'ldo' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
 
@@ -98,7 +99,7 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   // quality gate: number of checks failed (lib/quality.js), every candidate
   let gateFails = null;
   try { const q = qualityGate(m, parsed); gateFails = Object.values(q.checks).filter((c) => !c.ok).length; } catch { gateFails = 99; }
-  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, gateFails, aspect: sheetAspect(m), wire: wirePerPart(m, parsed), bends: bendsPerWire(m), byName: namedLinks(m) };
+  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, gateFails, aspect: sheetAspect(m), wire: wirePerPart(m, parsed), bends: bendsPerWire(m), cross: crossingCount(m), byName: namedLinks(m) };
 }
 
 /** Total wire length per part, as the bench measures it (Manhattan length of
@@ -174,6 +175,13 @@ const wide = (t) => process.env.AUTO_ASPECT === '1' && t.aspect != null && t.asp
 // a wire through a part, two nets on one line, a double line) go last, then
 // drawings joining an internal net by name (port labels) instead of a wire; the
 // checker's error count only breaks remaining ties (a guard, not a goal).
+// CROSSINGS (drawio-placement benchmark, 2026-10-20; AUTO_CROSS=first (default)|mid|last|off):
+// fewer wire crossings between candidates, placed before the bends rule (first),
+// between bends and wire length (mid) or after wire length (last). Measured on 300
+// circuits vs the old order: first = median 6 -> 4 crossings, 84 better / 7 worse,
+// wire length, pairs, rails unchanged; mid and last gain much less. Layered graph
+// drawing minimises crossings first; criterion D (Eric) never looked at them.
+const crossBefore = (where, b, a) => (process.env.AUTO_CROSS || 'first') === where && b.cross != null && a.cross != null && b.cross !== a.cross;
 const betterEric = (b, a) => {
   const sb = (b.severe ?? 0) > 0, sa = (a.severe ?? 0) > 0;
   if (sb !== sa) return !sb;
@@ -198,8 +206,11 @@ const betterEric = (b, a) => {
   }
   const wb = b.aspect > 3, wa = a.aspect > 3;
   if (wb !== wa) return !wb;
+  if (crossBefore('first', b, a)) return b.cross < a.cross;
   if (b.bends != null && a.bends != null && Math.abs(b.bends - a.bends) > 0.05) return b.bends < a.bends;
+  if (crossBefore('mid', b, a)) return b.cross < a.cross;
   if (b.wire != null && a.wire != null && Math.abs(b.wire - a.wire) > 0.02 * Math.max(a.wire, b.wire)) return b.wire < a.wire;
+  if (crossBefore('last', b, a)) return b.cross < a.cross;
   return b.errs < a.errs;
 };
 const better = (b, a) => {
@@ -405,5 +416,5 @@ async function autoPlaceOnce(parsed, only = null) {
       polish.rails = await drawRails(page, { errorCount: checkerErrors, fixDots });
     } catch (e) { polish.error = String(e.message || e); /* the unfinished drawing stays as chosen */ }
   }
-  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, polish, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire, gateFails: t.gateFails }])) };
+  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, polish, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire, cross: t.cross, gateFails: t.gateFails }])) };
 }
