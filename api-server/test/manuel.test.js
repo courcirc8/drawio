@@ -70,3 +70,11 @@ test('geometric LVS: a junction moved off its wires is caught', () => {
   const rules = new Set(geoLvs(m).errors.map((x) => x.rule));
   assert.ok(rules.has('oblique') || rules.has('tee-no-dot') || rules.has('overlap'), [...rules].join(','));
 });
+
+test('bandgap core (beta multiplier): gate partners on one row, joined by a bar', () => {
+  const { m } = draw(fx('bandgap'));
+  const at = (id) => allCells(m).map(cellInfo).find((c) => c.id === id);
+  assert.equal(at('M1').y, at('M2').y);
+  assert.equal(at('M3').y, at('M4').y);
+  assert.ok(Math.abs(at('M1').x - at('M2').x) < 600, 'adjacent columns');
+});

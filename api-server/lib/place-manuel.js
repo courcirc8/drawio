@@ -318,6 +318,31 @@ function layoutFrame(F, R, ctx) {
     lv[i] = { s, rows };
     col.parts.forEach((p, k) => { if (k < s && k === s - 1 && s < col.parts.length) return; if (k < s) nodeRegion.set(p.down, { kind: 'top', t: rows[k].r }); });
   }
+  // UNPAIRED GATE PARTNERS (a beta multiplier, a bandgap core): two transistors of
+  // adjacent columns sharing a gate net face each other across one bar; the
+  // first device of a stack is moved to its partner's row when that is free
+  const ubar = new Map();          // ref -> partner ref
+  if (!paired) {
+    const pos = new Map(order.rest.map((i, k) => [i, k]));
+    const firstOfStack = (i, k) => { const r = lv[i].rows[k]; return r.top ? k === lv[i].s - 1 : k === lv[i].s; };
+    for (const i of cols.keys()) for (const j of cols.keys()) {
+      if (pos.get(j) !== pos.get(i) + 1) continue;
+      cols[i].parts.forEach((p, k) => {
+        if (!isTr(p.c) || ubar.has(p.c.ref)) return;
+        const g = gateOf(p.c); if (!g || g === R.top || g === R.bot) return;
+        const l = cols[j].parts.findIndex((q) => isTr(q.c) && !ubar.has(q.c.ref) && gateOf(q.c) === g && lv[j].rows[cols[j].parts.indexOf(q)].top === lv[i].rows[k].top);
+        if (l < 0) return;
+        const a = lv[i].rows[k], b = lv[j].rows[l];
+        if (a.r !== b.r) {
+          // move the one nearer its rail to the other's row (bottom stacks count upward, top stacks downward)
+          const [lo, hi, li] = a.r < b.r ? [a, b, [i, k]] : [b, a, [j, l]];
+          if (!firstOfStack(li[0], li[1])) return;
+          lo.r = hi.r;
+        }
+        ubar.set(p.c.ref, cols[j].parts[l].c.ref); ubar.set(cols[j].parts[l].c.ref, p.c.ref);
+      });
+    }
+  }
   // a gate network that climbs (two chains or more not ending on ground) needs a taller middle band
   let midH = MID;
   for (const ch of F.chains) void ch;
@@ -354,7 +379,8 @@ function layoutFrame(F, R, ctx) {
       let dir;
       const partner = col.pair != null ? cols[col.pair].parts[k]?.c : null;
       const adjacentPair = col.pair != null && rank[i] === 0 && Math.abs(posIdx.get(i)) === 1 && !order.axis.some((a) => lv[a].rows.some((r) => r.top === lv[i].rows[k].top && r.r === lv[i].rows[k].r));
-      if (g === R.top || g === R.bot) dir = outward(i);
+      if (ubar.has(c.ref)) { dir = Math.sign(posIdx.get(colOfRef.get(ubar.get(c.ref))) - posIdx.get(i)); sharedBar.set(c.ref, ubar.get(c.ref)); }
+      else if (g === R.top || g === R.bot) dir = outward(i);
       else if (ctx.ports.has(g) && !ctx.labelNets.has(g) && !nodeCols.has(g)) dir = outward(i);
       else if (partner && gateOf(partner) === g && adjacentPair && (ctx.labelNets.has(g) || !nodeCols.has(g) || nodeCols.get(g).has(i) || nodeCols.get(g).has(col.pair))) { dir = -sg; sharedBar.set(c.ref, partner.ref); }
       else if (satelliteNets.has(g)) dir = outward(i);
@@ -487,12 +513,12 @@ function layoutFrame(F, R, ctx) {
       if (sharedBar.has(c.ref)) {
         const o = sharedBar.get(c.ref); done.add(o);
         const op = term(g, o, 'gate');
-        const mid = { x: 0, y: gp.y };
+        const mid = { x: paired ? 0 : (gp.x + op.x) / 2, y: gp.y };
         S.path(g, gp, mid, op);
         if (nodeCols.has(g) && !ctx.labelNets.has(g)) {
           // the diode / driving node: a drop from the bar to its spine, beside the driving column
           const j = [...nodeCols.get(g)][0];
-          const xr = xs[j] + (xs[j] <= 0 ? 90 : -90);
+          const xr = paired ? xs[j] + (xs[j] <= 0 ? 90 : -90) : mid.x + Math.sign(xs[j] - mid.x) * 15;
           S.path(g, { x: xr, y: gp.y }, { x: xr, y: yNode.get(g) }); addSpine(g, xr);
         } else if (satelliteNets.has(g)) satAt.set(g, { x: 0, y: gp.y - 0, dir: 0, bar: true });
         else labelAt.push({ net: g, p: { x: 0, y: gp.y - 24 }, side: 1, from: mid });
