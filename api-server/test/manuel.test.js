@@ -93,3 +93,9 @@ test('switch bank: read as a ladder between two buses, drawn with LVS and geomet
   // not a ladder: an OTA has no two buses joined by parallel series slices
   assert.equal(ladderReading(fx('miller')), null);
 });
+
+test('unpaired gate bar only on a private gate net: a shared bias label stays a label (no oblique wire)', () => {
+  const p = fx('lna_cg_vb'), { m, r } = draw(p);           // VB1 drives two cascode gates in adjacent columns
+  assert.equal(compare(extractNetlist(m), p).match, true);
+  assert.equal(r.geo.ok, true, JSON.stringify(r.geo.errors.slice(0, 3)));
+});
