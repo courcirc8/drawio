@@ -330,6 +330,8 @@ function layoutFrame(F, R, ctx) {
       cols[i].parts.forEach((p, k) => {
         if (!isTr(p.c) || ubar.has(p.c.ref)) return;
         const g = gateOf(p.c); if (!g || g === R.top || g === R.bot) return;
+        // only a private gate net (two gates, no label, no port): other taps would land on the bar
+        if (ctx.labelNets.has(g) || ctx.ports.has(g) || F.parts.filter((c) => gateOf(c) === g).length !== 2) return;
         const l = cols[j].parts.findIndex((q) => isTr(q.c) && !ubar.has(q.c.ref) && gateOf(q.c) === g && lv[j].rows[cols[j].parts.indexOf(q)].top === lv[i].rows[k].top);
         if (l < 0) return;
         const a = lv[i].rows[k], b = lv[j].rows[l];
