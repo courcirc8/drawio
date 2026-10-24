@@ -25,6 +25,11 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
 - Un rail et un symbole par cadre ; points de jonction seulement aux T.
 - Polarisation et CMFB : cadres « Polarisation » / « CMFB » sous le cœur. Les nets de **polarisation**
   (`vb*`, `vbias*`, `vc[mnp]*`, `vref*`, `vg*`) sont reliés par **étiquettes** ; les nets de **signal** restent des fils.
+- **Échelle entre deux bus** (banque de capacités / résistances commutées) : quand la lecture en colonnes échoue,
+  `ladderReading` cherche deux bus A et B reliés par des tranches en série (une capacité, un interrupteur…) ; les
+  autres composants sont des éperons d'un nœud de tranche vers un net commun (étiquette, ex. `vg`) ou un port ; les
+  grilles d'interrupteurs sont des ports de commande. Dessin : bus A en haut, bus B en bas, une tranche par colonne,
+  la tranche directe en premier, éperons horizontaux à droite.
 - Valeurs en notation ingénieur (`100 kΩ`, `497 fF`), W/L en µm, modèle pour les bipolaires.
 
 ## Critère « sûr »
@@ -33,10 +38,14 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
 
 - moins de 3 ou plus de 40 composants, ou un préfixe autre que M, Q, R, C, L, I, V (sous-circuits `X`, sources
   commandées…) ;
-- pas de net `0` (ou alias vss/gnd), ou plus d'une alimentation ;
+- pas de net `0` (ou alias vss/gnd), ou plus d'une alimentation — sauf lecture en échelle (ci-dessous) ;
 - un transistor hors de toute colonne ; un groupe passif impossible à rattacher ;
 - une grille de signal sans règle de fil ; un réseau de grille de plus de 3 chaînes (ou plus d'une sous une barre) ;
 - le dessin échoue au LVS topologique ou au LVS géométrique.
+
+Échelle (repli de la lecture en colonnes) : seulement M, R, C, L ; 6 à 60 composants ; au moins 3 tranches ; les
+tranches ne partagent aucun nœud interne ; un transistor de tranche est entré par sa borne haute et sa grille est
+une commande (net propre ou net de polarisation) ; un seul éperon par nœud.
 
 ## Priorité dans `engine=auto`
 
@@ -57,6 +66,5 @@ dessinés exprès et exemptés du contrôle des coudes évitables.
 
 ## Limites connues
 
-- Banque de résistances commutées (bus d'interrupteurs) : lecture `null`, repli.
-- Bandgap auto-polarisé : juste, mais les retours de grille se croisent encore.
+- Banque commutée : le bulk des interrupteurs n'est pas dessiné (comme ailleurs).
 - Grandes bandes vides verticales dans certaines colonnes de sortie.

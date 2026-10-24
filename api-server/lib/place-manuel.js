@@ -28,7 +28,7 @@
 import { addVertex, addWire } from './model.js';
 import { SPICE_MAP, PIN_ORDER_OVERRIDES } from './components.js';
 import { getShape } from './stencils.js';
-import { manuelReading, chan, gateOf, isP } from './manuel-reading.js';
+import { manuelReading, chan, gateOf, isP, BIASNAME } from './manuel-reading.js';
 import { preserveElectricalData } from './electrical-data.js';
 import { geoLvs } from './geo-lvs.js';
 
@@ -841,11 +841,146 @@ function anchorOf(v, pin) {
   return { x: rel.x, y: rel.y, name: pin };
 }
 
+/* ------------------------------------------------------------ ladders */
+/** LADDER BETWEEN TWO BUSES (a switched capacitor / resistor bank): every part
+ *  lies on one SLICE, a series path from bus A to bus B, or on a SPUR from a
+ *  slice node to a net shared by the spurs (a bias net, drawn as a label) or a
+ *  one-terminal net; transistor gates are one-terminal nets (control ports).
+ *  Returns {A, B, slices: [{parts, nets}], spurs: Map(net -> parts)} or null. */
+export function ladderReading(parsed) {
+  const comps = parsed.components;
+  if (comps.length < 6 || comps.length > 60) return null;
+  if (comps.some((c) => !(c.prefix === 'M' || c.prefix === 'R' || c.prefix === 'C' || c.prefix === 'L'))) return null;
+  if (comps.some((c) => c.prefix === 'M' && c.nodes.length < 3)) return null;
+  const links = (c) => chan(c);
+  const use = new Map();
+  for (const c of comps) for (const n of links(c)) { if (!use.has(n)) use.set(n, []); use.get(n).push(c); }
+  const gates = new Map();
+  for (const c of comps) { const g = gateOf(c); if (g) gates.set(g, (gates.get(g) || 0) + 1); }
+  const big = [...use.keys()].filter((n) => use.get(n).length >= 3).sort((a, b) => use.get(b).length - use.get(a).length);
+  for (let i = 0; i < big.length; i++) for (let j = i + 1; j < big.length; j++) {
+    const r = tryBuses(big[i], big[j]) || tryBuses(big[j], big[i]);
+    if (r) return r;
+  }
+  return null;
+  function tryBuses(A, B) {
+    const used = new Set(), slices = [];
+    // shortest series path from A to B through each part on A (BFS on nets)
+    for (const p of use.get(A)) {
+      if (used.has(p.ref)) continue;
+      const start = links(p).find((n) => n !== A);
+      if (start == null) continue;
+      if (start === B) { slices.push({ parts: [p], nets: [A, B] }); used.add(p.ref); continue; }
+      const prev = new Map([[start, null]]), q = [start];
+      while (q.length && !prev.has(B)) {
+        const n = q.shift();
+        for (const c of use.get(n) || []) {
+          if (c === p || used.has(c.ref)) continue;
+          const o = links(c).find((m) => m !== n);
+          if (o == null || o === A || prev.has(o)) continue;
+          prev.set(o, { n, c }); q.push(o);
+        }
+      }
+      if (!prev.has(B)) return null;
+      const parts = [], nets = [B];
+      for (let n = B; prev.get(n); n = prev.get(n).n) { parts.unshift(prev.get(n).c); nets.unshift(prev.get(n).n); }
+      parts.unshift(p); nets.unshift(A);
+      for (const c of parts) used.add(c.ref);
+      slices.push({ parts, nets });
+    }
+    if (slices.length < 3) return null;
+    const inner = new Set(slices.flatMap((s) => s.nets.slice(1, -1)));
+    if (inner.size !== slices.reduce((k, s) => k + s.nets.length - 2, 0)) return null;     // slices share a node
+    // spurs: the rest, each from an inner node to a net outside every slice
+    const spurs = new Map();
+    for (const c of comps) {
+      if (used.has(c.ref)) continue;
+      if (c.prefix === 'M') return null;
+      const [a, b] = links(c), from = inner.has(a) ? a : inner.has(b) ? b : null, far = from === a ? b : a;
+      if (from == null || inner.has(far) || far === A || far === B) return null;
+      if (!spurs.has(from)) spurs.set(from, []);
+      spurs.get(from).push({ c, far });
+    }
+    // a transistor on a slice: entered by its top terminal, gate on a control net
+    for (const s of slices) s.parts.forEach((c, k) => {
+      if (c.prefix !== 'M') return;
+      if (chan(c)[0] !== s.nets[k]) s.bad = true;
+      const g = gateOf(c);
+      if (inner.has(g) || g === A || g === B || (gates.get(g) || 0) > 1 && !BIASNAME.test(g)) s.bad = true;
+    });
+    if (slices.some((s) => s.bad)) return null;
+    return { A, B, slices, spurs };
+  }
+}
+
+function importLadder(model, parsed, L) {
+  const S = new Sheet();
+  const PITCH = 320, yA = 60, GAP = 50;
+  const count = new Map();
+  for (const c of parsed.components) for (const n of c.nodes) count.set(n, (count.get(n) || 0) + 1);
+  // the direct slice (a part straight from A to B) first, then the slices as read
+  const slices = [...L.slices].sort((a, b) => a.parts.length - b.parts.length);
+  const ends = [];
+  slices.forEach((sl, k) => {
+    const x = 160 + k * PITCH;
+    let prev = { x, y: yA };
+    sl.parts.forEach((c, i) => {
+      const nin = sl.nets[i], nout = sl.nets[i + 1];
+      const spurs = L.spurs.get(nin) || [];
+      const y0 = prev.y + GAP + (spurs.length ? GAP : 0);
+      let v;
+      if (c.prefix === 'M') {
+        v = placeTr(S, c, x, y0, -1);
+        const gp = S.term(gateOf(c), v, v.pinOf.gate), e = { x: gp.x - 30, y: gp.y };
+        S.path(gateOf(c), gp, e);
+        const pv = portVert(S, gateOf(c), e, -1, (count.get(gateOf(c)) || 0) <= 1);
+        S.term(gateOf(c), pv, pv.portPin);
+      } else {
+        v = placeTwo(S, c, x, y0, nin, true, 1);
+        v.pinOf = { top: v.first, bot: v.other };
+      }
+      const top = S.term(nin, v, v.pinOf.top);
+      S.path(nin, prev, top);
+      // spurs from the node between the previous part and this one, to the right
+      spurs.forEach((sp, j) => {
+        const yn = (prev.y + top.y) / 2 + j * 0;           // one spur per node in practice
+        const h = placeTwo(S, sp.c, x + 30, yn, nin, false);
+        S.path(nin, { x, y: yn }, S.term(nin, h, h.first));
+        const far = S.term(sp.far, h, h.other), q = { x: far.x + 16, y: yn };
+        S.path(sp.far, far, q);
+        const pv = portVert(S, sp.far, q, 1, (count.get(sp.far) || 0) <= 1);
+        S.term(sp.far, pv, pv.portPin);
+      });
+      if (spurs.length > 1) throw new Error('manuel: two spurs on one ladder node');
+      prev = S.term(nout, v, v.pinOf.bot);
+    });
+    ends.push(prev);
+  });
+  const yB = Math.max(...ends.map((p) => p.y)) + 40;
+  for (const p of ends) S.path(L.B, p, { x: p.x, y: yB });
+  // the buses: one line each, an I/O arrow at the left end
+  const x0 = 160 - 90, x1 = 160 + (slices.length - 1) * PITCH;
+  for (const [n, y] of [[L.A, yA], [L.B, yB]]) {
+    S.path(n, { x: x0, y }, { x: x1, y });
+    const pv = portVert(S, n, { x: x0, y }, -1, true, 'inout');
+    S.term(n, pv, pv.portPin);
+  }
+  const wires = emit(model, [S], parsed);
+  const geo = geoLvs(model);
+  return { geo, wires };
+}
+
 /* ------------------------------------------------------------ entry point */
 const TITLES = { bias: 'Polarisation', cmfb: 'CMFB' };
 export function importNetlistManuel(model, parsed, opts = {}) {
   const r = opts.reading || manuelReading(parsed);
-  if (!r) { const e = new Error('manuel: reading not sure'); e.status = 422; throw e; }
+  if (!r) {
+    const L = ladderReading(parsed);
+    if (!L) { const e = new Error('manuel: reading not sure'); e.status = 422; throw e; }
+    const { geo, wires } = importLadder(model, parsed, L);
+    if (!geo.ok && !opts.noGeo) { const e = new Error('manuel: geometric LVS failed: ' + geo.errors.slice(0, 3).map((x) => x.msg).join('; ')); e.geo = geo; throw e; }
+    return { geo, engine: 'manuel', components: parsed.components.map((c) => c.ref), wires, frames: ['ladder'] };
+  }
   // the home frame of each port net: where it has channel terminals
   const home = new Map();
   for (const f of r.frames) for (const c of f.parts) for (const n of chan(c)) if (!home.has(n)) home.set(n, f.kind);
