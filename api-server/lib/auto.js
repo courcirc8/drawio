@@ -53,6 +53,8 @@ import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 import { withGroundAlias } from './ground-alias.js';
 import { crossingCount } from './crossings.js';
+import { importNetlistManuel } from './place-manuel.js';
+import { manuelReading } from './manuel-reading.js';
 
 export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' || t.eng === 'latch' || t.eng === 'ota' || t.eng === 'miller' || t.eng === 'lna' || t.eng === 'pair' || t.eng === 'vco' || t.eng === 'strongarm' || t.eng === 'cs' || t.eng === 'indirect' || t.eng === 'cascode' || t.eng === 'classab' || t.eng === 'bandgap' || t.eng === 'ring' || t.eng === 'ldo' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
 
@@ -264,10 +266,46 @@ function checkPyErrors(doc) {
 
 /** Returns {doc, placed, label, trials:{label:{errors, conventions}}} or throws
  *  when every candidate failed. */
+/** engine manuel, or null when its reading is not sure or a check fails */
+export function tryManuel(parsed) {
+  if (!manuelReading(parsed)) return null;
+  try {
+    const doc = newDocument(), m = getPage(doc);
+    const placed = importNetlistManuel(m, parsed);      // throws on a geometric LVS failure
+    if (!compare(extractNetlist(m), parsed).match) return null;
+    return { doc, placed, label: 'manuel', trials: { manuel: { lvs: true, geo: placed.geo.ok, frames: placed.frames } } };
+  } catch { return null; }
+}
+
 export async function autoPlace(parsed) {
   // a ground spelled vss / gnd (alone, no `0`) drawn as ground: one GND rail
   // (lib/ground-alias.js); AUTO_GND=0 draws it as written (before / after renders)
   const aliased = process.env.AUTO_GND !== '0' ? withGroundAlias(parsed) : parsed;
+  // ENGINE MANUEL FIRST (orchestrator GO 2026-10-24): when its reading is sure
+  // (lib/manuel-reading.js) and its drawing passes both the topological and
+  // the geometric LVS, the textbook drawing is returned when no template reads
+  // the circuit; else the candidates below, unchanged. AUTO_MANUEL=0 disables.
+  const man = process.env.AUTO_MANUEL !== '0' ? tryManuel(aliased) : null;
+  if (man && !templateReads(parsed)) return man;
+  if (man) {
+    // a template (approved by Eric) reads this circuit too: manuel only when it
+    // fails FEWER quality-gate checks than the drawing auto elects (tie: auto)
+    const won = await autoPlaceMain(parsed, aliased);
+    const f = (r) => { try { return Object.values(qualityGate(getPage(r.doc), parsed).checks).filter((c) => !c.ok).length; } catch { return 99; } };
+    const [fm, fw] = [f(man), f(won)];
+    const trials = { ...(won.trials || {}), manuel: { ...man.trials.manuel, gateFails: fm } };
+    return fm < fw ? { ...man, trials, manuelVs: { manuel: fm, [won.label]: fw } } : { ...won, trials, manuelVs: { manuel: fm, [won.label]: fw } };
+  }
+  return autoPlaceMain(parsed, aliased);
+}
+
+/** a template reader recognises the circuit (the bench of lib/template-bench) */
+function templateReads(p) {
+  const readers = [latchReading, otaReading, millerReading, lnaReading, pairReading, vcoReading, strongarmReading, csReading, indirectReading, cascodeReading, classabReading, bandgapReading, ringReading, ldoReading];
+  return readers.some((r) => { try { return !!r(p); } catch { return false; } });
+}
+
+async function autoPlaceMain(parsed, aliased) {
   if (aliased === parsed) return autoPlaceOnce(parsed);
   // SAME RULE AS THE TEMPLATES (orchestrator 2026-10-10): the alias changes the
   // candidates' drawings, so auto may elect another engine and draw worse. The

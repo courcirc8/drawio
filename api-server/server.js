@@ -460,6 +460,12 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     const decision = lvs.gate(report, { force });
     if (!decision.ok) return res.status(decision.status).json({ error: decision.error, report });
     return res.status(decision.status).json({ ...placed, routed: placed.wires.length, lvs: report });
+  } else if (engine === 'manuel') {
+    // lib/place-manuel.js: textbook drawing by rules (columns, mirror pairs,
+    // bias/CMFB frames, label nets), only when its reading is sure; wires are
+    // drawn by the engine (no router) and checked by the geometric LVS
+    const { importNetlistManuel } = await import('./lib/place-manuel.js');
+    try { placed = importNetlistManuel(m, parsed); } catch (e) { throw model.httpError(422, e.message); }
   } else if (engine === 'v4') {
     // macro-blocks + hierarchical routing (lib/place4.js): blocks placed and
     // routed by place2 in isolation, composed by signal flow, inter-block
@@ -470,7 +476,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   } else {
     placed = engine === 'v2' ? place2.importNetlist2(m, parsed) : place.importNetlist(m, parsed);
   }
-  const routed = engine === 'v4' ? { ids: placed.wires } : await route.routePage(m, placed.wires, {});
+  const routed = engine === 'v4' || engine === 'manuel' ? { ids: placed.wires } : await route.routePage(m, placed.wires, {});
   // After routing, not before: edge waypoints are absolute too (see
   // model.normalizeOrigin -- negative coordinates were being clipped off the
   // exported PNG without any error).
@@ -565,6 +571,14 @@ app.post('/documents/:id/lvs', wrap((req, res) => {
   const extracted = netlist.extractNetlist(m);
   const report = lvs.compare(extracted, golden);
   res.json({ ...report, extraction_issues: extracted.issues });
+}));
+
+// geometric LVS (lib/geo-lvs.js): wires that end in the void, T joins without
+// a dot, wires over foreign pins or through bodies, overlapping wires
+app.get('/documents/:id/geo-lvs', wrap(async (req, res) => {
+  const { model: m } = pageOf(req);
+  const { geoLvs } = await import('./lib/geo-lvs.js');
+  res.json(geoLvs(m));
 }));
 
 app.get('/documents/:id/erc', wrap((req, res) => {
