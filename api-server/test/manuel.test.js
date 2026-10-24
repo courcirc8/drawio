@@ -9,7 +9,7 @@ import { newDocument, getPage, allCells, cellInfo, deleteCell, updateCell } from
 import { compare } from '../lib/lvs.js';
 import { withGroundAlias } from '../lib/ground-alias.js';
 import { manuelReading } from '../lib/manuel-reading.js';
-import { importNetlistManuel, eng } from '../lib/place-manuel.js';
+import { importNetlistManuel, eng, ladderReading } from '../lib/place-manuel.js';
 import { geoLvs } from '../lib/geo-lvs.js';
 import { tryManuel } from '../lib/auto.js';
 
@@ -34,7 +34,6 @@ test('bias nets are labels, signal nets stay wires', () => {
 
 test('"sure" criterion: no reading -> no manuel drawing (fallback)', () => {
   assert.equal(manuelReading(fx('g_bank')), null);                        // a bus ladder of switches
-  assert.equal(tryManuel(fx('g_bank')), null);
   const few = parseSpice('R1 a 0 1k\nR2 a b 1k\n.end');                    // fewer than 3 parts
   assert.equal(manuelReading(few), null);
   const sub = parseSpice('X1 a b 0 cell\nM1 a b 0 0 nmos W=1u L=1u\nR1 vdd a 1k\nV1 vdd 0 1.2\n.end');   // a subcircuit call
@@ -69,4 +68,28 @@ test('geometric LVS: a junction moved off its wires is caught', () => {
   updateCell(m, j.id, { x: j.x + 37, y: j.y + 23 });
   const rules = new Set(geoLvs(m).errors.map((x) => x.rule));
   assert.ok(rules.has('oblique') || rules.has('tee-no-dot') || rules.has('overlap'), [...rules].join(','));
+});
+
+test('bandgap core (beta multiplier): gate partners on one row, joined by a bar', () => {
+  const { m } = draw(fx('bandgap'));
+  const at = (id) => allCells(m).map(cellInfo).find((c) => c.id === id);
+  assert.equal(at('M1').y, at('M2').y);
+  assert.equal(at('M3').y, at('M4').y);
+  assert.ok(Math.abs(at('M1').x - at('M2').x) < 600, 'adjacent columns');
+});
+
+test('switch bank: read as a ladder between two buses, drawn with LVS and geometric LVS green', () => {
+  const p = fx('g_bank'), L = ladderReading(p);
+  assert.ok(L);
+  assert.deepEqual([L.A, L.B].sort(), ['ina', 'inb']);
+  assert.equal(L.slices.length, 8);                                        // CA0 + 7 switched slices
+  assert.equal([...L.spurs.values()].flat().every((s) => s.far === 'vg'), true);
+  const { m, r } = draw(p);
+  assert.deepEqual(r.frames, ['ladder']);
+  assert.equal(compare(extractNetlist(m), p).match, true);
+  assert.equal(r.geo.ok, true, JSON.stringify(r.geo.errors.slice(0, 3)));
+  const man = tryManuel(p);
+  assert.equal(man?.label, 'manuel');
+  // not a ladder: an OTA has no two buses joined by parallel series slices
+  assert.equal(ladderReading(fx('miller')), null);
 });
