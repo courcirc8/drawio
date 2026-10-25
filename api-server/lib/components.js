@@ -172,6 +172,7 @@ export function classify(cellInfo) {
   // for free because every cell it inspects is classified through this same
   // function.
   if (cellInfo.style.map.has('apiAnnotation')) return { role: 'other' };
+  if (cellInfo.style.map.get('apiBlock') === '1') return blockClass(cellInfo);
   const key = shapeKeyOf(cellInfo);
   if (isJunctionCell(cellInfo)) return { role: 'junction' };
   if (key == null) return { role: 'other' };
@@ -202,6 +203,28 @@ export function classify(cellInfo) {
   }
   const mapping = prefix != null ? SPICE_MAP[prefix] : null;
   return { role: 'component', prefix, mapping, shape };
+}
+
+/**
+ * A SUBCIRCUIT BLOCK (lib/hier.js, 2026-10-25): an X instance drawn as a box
+ * whose pins are the .subckt pins, in their SPICE order. The pins live on the
+ * cell (style `apiBlockPins=name@x,y|…`, names URI-encoded, x/y relative to
+ * the box), so one classification serves every subcircuit.
+ */
+export const BLOCK_PINS_KEY = 'apiBlockPins';
+export function blockPinsStyle(pins) {
+  return pins.map((p) => `${encodeURIComponent(p.name)}@${p.x},${p.y}`).join('|');
+}
+function blockClass(cellInfo) {
+  const raw = cellInfo.style.map.get(BLOCK_PINS_KEY) || '';
+  const pins = raw.split('|').filter(Boolean).map((t) => {
+    const [n, xy] = t.split('@');
+    const [x, y] = (xy || '').split(',').map(Number);
+    return { name: decodeURIComponent(n), x, y };
+  });
+  return { role: 'component', prefix: 'X', block: true,
+    mapping: { pinOrder: pins.map((p) => p.name), label: 'subcircuit block', block: true },
+    shape: { key: 'apiBlock', name: 'subcircuit block', pins } };
 }
 
 function inferPrefix(id) {
@@ -304,6 +327,7 @@ export function activePins(cls) {
     const all = cls.shape != null ? cls.shape.pins : [];
     return [declared, ...all.filter((p) => p !== declared)].filter(Boolean);
   }
+  if (cls.block) return cls.shape.pins;
   if (cls.mapping != null) {
     return pinOrderFor(cls).map((n) => getPin(cls.shape.key, n)).filter(Boolean);
   }

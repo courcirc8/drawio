@@ -65,6 +65,13 @@ export function annotation(c) {
     const um = (x) => +(x / 1e-6).toPrecision(4);
     return `${um(w)}/${um(l)}` + (nf > 1 ? ` ng=${nf}` : '') + (mm > 1 ? ` ×${mm}` : '');
   }
+  if (c.pdk && c.params && (c.prefix === 'R' || c.prefix === 'C')) {
+    // an IHP primitive (lib/pdk-ihp.js): model and W/L (or W×L) in µm
+    const um = (k) => { const x = num(c.params[k] || ''); return x == null ? null : +(x / 1e-6).toPrecision(4); };
+    const w = um('w'), l = um('l'), mm = num(c.params.m || '1');
+    if (w == null || l == null) return c.pdk.slice(0, 14);
+    return `${c.pdk} ${w}${c.prefix === 'C' ? '×' : '/'}${l}` + (mm > 1 ? ` ×${mm}` : '');
+  }
   const unit = { R: 'Ω', C: 'F', L: 'H', I: 'A', V: 'V' }[c.prefix];
   if (!unit) return v.slice(0, 14);
   const dc = /\bdc\s+([^\s]+)/i.exec(v);
@@ -858,8 +865,19 @@ function anchorOf(v, pin) {
 export function ladderReading(parsed) {
   const comps = parsed.components;
   if (comps.length < 6 || comps.length > 60) return null;
-  if (comps.some((c) => !(c.prefix === 'M' || c.prefix === 'R' || c.prefix === 'C' || c.prefix === 'L'))) return null;
+  if (comps.some((c) => !(c.prefix === 'M' || c.prefix === 'R' || c.prefix === 'C' || c.prefix === 'L' || c.prefix === 'V' || c.prefix === 'I'))) return null;
   if (comps.some((c) => c.prefix === 'M' && c.nodes.length < 3)) return null;
+  // GATE SOURCES (hierarchical banks, 2026-10-25): a V/I source from the gate
+  // of ONE switch to a rail or a common net, drawn hanging from that gate
+  const gateUse = new Map();
+  for (const c of comps) if (c.prefix === 'M') gateUse.set(gateOf(c), (gateUse.get(gateOf(c)) || 0) + 1);
+  const gsrc = new Map();
+  for (const c of comps.filter((c) => c.prefix === 'V' || c.prefix === 'I')) {
+    const [a, b] = c.nodes, g = gateUse.get(a) === 1 ? a : gateUse.get(b) === 1 ? b : null;
+    if (g == null || gsrc.has(g) || c.nodes.length !== 2 || a === b) return null;
+    gsrc.set(g, { c, far: g === a ? b : a });
+  }
+  const srcRefs = new Set([...gsrc.values()].map((s) => s.c.ref));
   const links = (c) => chan(c);
   const use = new Map();
   for (const c of comps) for (const n of links(c)) { if (!use.has(n)) use.set(n, []); use.get(n).push(c); }
@@ -902,7 +920,7 @@ export function ladderReading(parsed) {
     // spurs: the rest, each from an inner node to a net outside every slice
     const spurs = new Map();
     for (const c of comps) {
-      if (used.has(c.ref)) continue;
+      if (used.has(c.ref) || srcRefs.has(c.ref)) continue;
       if (c.prefix === 'M') return null;
       const [a, b] = links(c), from = inner.has(a) ? a : inner.has(b) ? b : null, far = from === a ? b : a;
       if (from == null || inner.has(far) || far === A || far === B) return null;
@@ -917,18 +935,23 @@ export function ladderReading(parsed) {
       if (inner.has(g) || g === A || g === B || (gates.get(g) || 0) > 1 && !BIASNAME.test(g)) s.bad = true;
     });
     if (slices.some((s) => s.bad)) return null;
-    return { A, B, slices, spurs };
+    // every gate source hangs from a slice switch (not from a bus or a slice node)
+    const sliceGates = new Set(slices.flatMap((s) => s.parts.filter((c) => c.prefix === 'M').map(gateOf)));
+    for (const [g, s] of gsrc) if (!sliceGates.has(g) || inner.has(s.far) || s.far === A || s.far === B) return null;
+    return { A, B, slices, spurs, gsrc };
   }
 }
 
+const RAIL0 = /^(0|gnd|vss)$/i;
 function importLadder(model, parsed, L) {
   const S = new Sheet();
-  const PITCH = 320, yA = 60, GAP = 50;
+  const PITCH = L.gsrc && L.gsrc.size ? 400 : 320, yA = 60, GAP = 50;
   const count = new Map();
   for (const c of parsed.components) for (const n of c.nodes) count.set(n, (count.get(n) || 0) + 1);
   // the direct slice (a part straight from A to B) first, then the slices as read
   const slices = [...L.slices].sort((a, b) => a.parts.length - b.parts.length);
   const ends = [];
+  let low = -Infinity;            // the lowest gate-source glyph: bus B stays below it
   slices.forEach((sl, k) => {
     const x = 160 + k * PITCH;
     let prev = { x, y: yA };
@@ -940,9 +963,23 @@ function importLadder(model, parsed, L) {
       if (c.prefix === 'M') {
         v = placeTr(S, c, x, y0, -1);
         const gp = S.term(gateOf(c), v, v.pinOf.gate), e = { x: gp.x - 30, y: gp.y };
-        S.path(gateOf(c), gp, e);
-        const pv = portVert(S, gateOf(c), e, -1, (count.get(gateOf(c)) || 0) <= 1);
-        S.term(gateOf(c), pv, pv.portPin);
+        const gs = L.gsrc && L.gsrc.get(gateOf(c));
+        if (gs) {
+          // the gate source hangs from the gate, its far end on ground or a label
+          const g = gateOf(c), q = { x: gp.x - 50, y: gp.y };
+          S.path(g, gp, q);
+          const sv = placeTwo(S, gs.c, q.x, q.y + 20, g, true, -1);
+          S.path(g, q, S.term(g, sv, sv.first));
+          const f = S.term(gs.far, sv, sv.other), r = { x: f.x, y: f.y + 16 };
+          low = Math.max(low, r.y + 20);
+          S.path(gs.far, f, r);
+          if (RAIL0.test(gs.far)) S.term(gs.far, tapGnd(S, r), 'N');
+          else { const pv = portVert(S, gs.far, { x: r.x, y: r.y }, -1, false); S.term(gs.far, pv, pv.portPin); }
+        } else {
+          S.path(gateOf(c), gp, e);
+          const pv = portVert(S, gateOf(c), e, -1, (count.get(gateOf(c)) || 0) <= 1);
+          S.term(gateOf(c), pv, pv.portPin);
+        }
       } else {
         v = placeTwo(S, c, x, y0, nin, true, 1);
         v.pinOf = { top: v.first, bot: v.other };
@@ -964,7 +1001,7 @@ function importLadder(model, parsed, L) {
     });
     ends.push(prev);
   });
-  const yB = Math.max(...ends.map((p) => p.y)) + 40;
+  const yB = Math.max(...ends.map((p) => p.y) , low) + 40;
   for (const p of ends) S.path(L.B, p, { x: p.x, y: yB });
   // the buses: one line each, an I/O arrow at the left end
   const x0 = 160 - 90, x1 = 160 + (slices.length - 1) * PITCH;
@@ -1015,3 +1052,6 @@ export function importNetlistManuel(model, parsed, opts = {}) {
   if (!geo.ok && !opts.noGeo) { const e = new Error('manuel: geometric LVS failed: ' + geo.errors.slice(0, 3).map((x) => x.msg).join('; ')); e.geo = geo; throw e; }
   return { geo, engine: 'manuel', components: parsed.components.map((c) => c.ref), wires, frames: r.frames.map((f) => f.kind) };
 }
+
+// drawing kit shared with lib/hier.js (top page of a hierarchical netlist)
+export { Sheet, emit, placeTwo, placeTr, portVert, tapGnd, tapVdd };

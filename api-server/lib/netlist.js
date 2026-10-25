@@ -4,6 +4,7 @@
 import { allCells, cellInfo, httpError } from './model.js';
 import { classify, activePins, pinOrderFor, identityOf, SPICE_MAP } from './components.js';
 import { pinAbs } from './route.js';
+import { ihpPrimitive, ihpParams } from './pdk-ihp.js';
 
 // ---------------------------------------------------------------- SPICE parse
 
@@ -45,6 +46,7 @@ export function parseSpice(text, opts = {}) {
   const directives = [];
   const couplings = [];
   const subckts = {};
+  const instances = [];   // every expanded (or kept) X of a defined .subckt: {path, def, parent, nets}
   let title = null;
   let first = true;
   // ---- pass 1: lift .subckt blocks out of the main body
@@ -102,15 +104,36 @@ export function parseSpice(text, opts = {}) {
       if (def) {
         if (ctx.depth >= 8) { warnings.push('subckt nesting too deep, instance skipped: ' + line); return; }
         if (def.pins.length !== nodes0.length) { warnings.push(`X ${ref}: ${nodes0.length} nodes for .subckt ${def.name} with ${def.pins.length} pins, instance skipped`); return; }
+        instances.push({ path: ref, def: def.name, parent: ctx.path || null, nets: nodes0.map(mapNet) });
+        // hierarchical reading (lib/hier.js): the instance stays ONE block, pins = the .subckt pins
+        if (opts.blocks) {
+          const n = nodes0.map(mapNet);
+          components.push({ ref, prefix: 'X', block: def.name, pins: [...def.pins], nodes: n, fullNodes: [...n], value: def.name, model: def.name });
+          return;
+        }
         const nets = new Map();
         for (let i = 0; i < def.pins.length; i++) nets.set(def.pins[i], mapNet(nodes0[i]));
-        const sub = { prefix: ref + '.', nets, depth: ctx.depth + 1 };
+        const sub = { prefix: ref + '.', nets, depth: ctx.depth + 1, path: ref };
         for (const l of def.lines) {
           const t = l.trim();
           if (t === '' || t.startsWith('*')) continue;
           if (t.startsWith('.')) { if (!SIM_DIRECTIVES.test(t.toLowerCase())) warnings.push('directive ignored in .subckt ' + def.name + ': ' + t); continue; }
           emit(t, sub);
         }
+        return;
+      }
+      // an IHP SG13G2 primitive (lib/pdk-ihp.js): the device it is, ref kept as written
+      const prim = ihpPrimitive(name);
+      const nn = prim ? Math.min(nodes0.length, prim.n) : 0;
+      if (prim && nn >= (prim.min || prim.n)) {
+        const all = nodes0.slice(0, nn).map(mapNet);
+        const params = ihpParams(tokens.slice(1));
+        // the body of a resistor / RF capacitor (not drawn) and any extra node
+        const extra = [...(prim.keep ? all.filter((_, i) => !prim.keep.includes(i)) : []), ...nodes0.slice(nn).map(mapNet)];
+        const full = prim.keep ? prim.keep.map((i) => all[i]) : all;
+        const nodes = prim.prefix === 'M' || prim.prefix === 'Q' ? full.slice(0, 3) : full;
+        const shown = Object.entries(params).filter(([k]) => k !== 'b').map(([k, v]) => `${k}=${v}`);
+        components.push({ ref, prefix: prim.prefix, nodes, fullNodes: prim.prefix === 'Q' ? full.slice(0, 4) : full, value: [name, ...shown].join(' '), model: name, pdk: name, params, ...(extra.length ? { body: extra } : {}) });
         return;
       }
       // undefined subckt: op-amp heuristic, else unsupported
@@ -166,7 +189,7 @@ export function parseSpice(text, opts = {}) {
   }
   const dup = components.map((c) => c.ref).filter((r, i, a) => a.findIndex(x => x.toUpperCase() === r.toUpperCase()) !== i);
   if (dup.length) throw httpError(400, 'duplicate refs in netlist: ' + [...new Set(dup)].join(', '));
-  return { title, components, warnings, subckts, couplings, directives };
+  return { title, components, warnings, subckts, couplings, directives, instances };
 }
 
 function normNode(n) {
