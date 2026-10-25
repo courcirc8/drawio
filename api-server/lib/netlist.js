@@ -87,7 +87,8 @@ export function parseSpice(text, opts = {}) {
       if (!caseOf.has(key)) caseOf.set(key, n0);
       const nn = caseOf.get(key);
       if (nn === '0') return '0';
-      if (ctx.nets.has(nn)) return ctx.nets.get(nn);
+      // .subckt pins are keyed in lower case: "VDD" in the .subckt line is the "vdd" of the instance
+      if (ctx.nets.has(key)) return ctx.nets.get(key);
       return ctx.prefix ? ctx.prefix + nn : nn;
     };
     if (prefix === 'K') {
@@ -112,7 +113,7 @@ export function parseSpice(text, opts = {}) {
           return;
         }
         const nets = new Map();
-        for (let i = 0; i < def.pins.length; i++) nets.set(def.pins[i], mapNet(nodes0[i]));
+        for (let i = 0; i < def.pins.length; i++) nets.set(normNode(def.pins[i]).toLowerCase(), mapNet(nodes0[i]));
         const sub = { prefix: ref + '.', nets, depth: ctx.depth + 1, path: ref };
         for (const l of def.lines) {
           const t = l.trim();
