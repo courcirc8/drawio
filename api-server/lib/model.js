@@ -87,6 +87,17 @@ export function listPages(doc) {
   }));
 }
 
+/** Append a page named `name` to `doc`: a copy of the mxGraphModel `from`
+ *  (a page of another document) or an empty one. Returns its mxGraphModel. */
+export function addPage(doc, name, from = null) {
+  const dia = doc.createElement('diagram');
+  dia.setAttribute('id', 'page-' + (doc.getElementsByTagName('diagram').length + 1));
+  dia.setAttribute('name', name);
+  dia.appendChild(from ? doc.importNode(from, true) : doc.importNode(parseXml(EMPTY_MODEL).documentElement, true));
+  doc.documentElement.appendChild(dia);
+  return childElement(dia, 'mxGraphModel');
+}
+
 /** Resolve a page by index, id or name (default: first page) -> mxGraphModel element. */
 export function getPage(doc, page) {
   const diagrams = Array.from(doc.getElementsByTagName('diagram'));

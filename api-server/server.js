@@ -386,6 +386,21 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   const m = model.getPage(entry.doc, req.query.page);
   const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
   if (spice == null || spice === '') throw model.httpError(400, 'SPICE netlist required (text body or {"spice": …})');
+  // ?hier=1 — HIERARCHICAL drawing (lib/hier.js): one page per .subckt
+  // definition (?per=instance: per instance path), banks of switched parts
+  // grouped into bank_* pages, a top page of blocks; LVS per page and of the
+  // whole drawing flattened back; `map` = flattened ref -> {page, cell}
+  if (req.query.hier === '1' || req.query.hier === 'true') {
+    const { importHier } = await import('./lib/hier.js');
+    let r;
+    try { r = await importHier(spice, { per: req.query.per }); } catch (e) { throw model.httpError(e.status || 422, e.message); }
+    entry.doc = r.doc;
+    entry.importNetlist = { '': spice };
+    const ok = r.lvs.global && Object.values(r.lvs.pages).every(Boolean);
+    const force = req.query.force === '1' || req.query.force === 'true';
+    return res.status(ok || force ? 201 : 422).json({ engine: 'hier', per: req.query.per === 'instance' ? 'instance' : 'definition',
+      ...(ok ? {} : { error: 'hierarchical LVS failed' }), pages: r.pages, map: r.map, lvs: r.lvs, banks: r.banks });
+  }
   // a ground spelled vss / gnd (alone) is drawn as ground: one GND rail (lib/ground-alias.js)
   const parsed = withGroundAlias(netlist.parseSpice(spice));
   // kept with the document: the simulation annotations (lib/sim-annotate.js)
@@ -666,7 +681,8 @@ app.get('/documents/:id/export', wrap(async (req, res) => {
     scale: req.query.scale != null ? parseFloat(req.query.scale) : 2,
     border: req.query.border != null ? parseInt(req.query.border, 10) : 10,
     bg: req.query.bg || '#ffffff',
-    pageId: req.query.pageId,
+    // ?page=<name|index> renders that page (a hierarchical document has several)
+    pageId: req.query.pageId ?? (req.query.page != null && m.parentNode ? m.parentNode.getAttribute('id') : undefined),
     region,
   });
   res.type(out.contentType).send(out.buffer);

@@ -34,7 +34,8 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
 - **Échelle entre deux bus** (banque de capacités / résistances commutées) : quand la lecture en colonnes échoue,
   `ladderReading` cherche deux bus A et B reliés par des tranches en série (une capacité, un interrupteur…) ; les
   autres composants sont des éperons d'un nœud de tranche vers un net commun (étiquette, ex. `vg`) ou un port ; les
-  grilles d'interrupteurs sont des ports de commande. Dessin : bus A en haut, bus B en bas, une tranche par colonne,
+  grilles d'interrupteurs sont des ports de commande, ou portent une **source de grille** (V/I d'une seule grille vers
+  la masse ou un net commun, banques du TIA hiérarchique) dessinée pendue à la grille, bus B en dessous. Dessin : bus A en haut, bus B en bas, une tranche par colonne,
   la tranche directe en premier, éperons horizontaux à droite.
 - Valeurs en notation ingénieur (`100 kΩ`, `497 fF`), W/L en µm, modèle pour les bipolaires.
 
@@ -49,7 +50,7 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
 - une grille de signal sans règle de fil ; un réseau de grille de plus de 3 chaînes (ou plus d'une sous une barre) ;
 - le dessin échoue au LVS topologique ou au LVS géométrique.
 
-Échelle (repli de la lecture en colonnes) : seulement M, R, C, L ; 6 à 60 composants ; au moins 3 tranches ; les
+Échelle (repli de la lecture en colonnes) : seulement M, R, C, L (et V, I comme sources de grille) ; 6 à 60 composants ; au moins 3 tranches ; les
 tranches ne partagent aucun nœud interne ; un transistor de tranche est entré par sa borne haute et sa grille est
 une commande (net propre ou net de polarisation) ; un seul éperon par nœud.
 
@@ -69,6 +70,10 @@ dessinés exprès et exemptés du contrôle des coudes évitables.
 `GET /documents/:id/geo-lvs` → `{ ok, judged, errors, warnings }`. Seuls les fils à tracé fixe (`edgeStyle=none` ou
 `drawioApiFixedRoute=1`) sont jugés. Erreurs : `dangling` (fil sans extrémité, jonction à moins de 2 fils),
 `tee-no-dot`, `over-pin`, `through-body`, `overlap`, `oblique`. Avertissement : `dot-2` (point visible sur 2 fils).
+
+## Netlists hiérarchiques
+
+Voir `docs/hierarchie.md` (`?hier=1`).
 
 ## Limites connues
 

@@ -1,0 +1,282 @@
+* TIA Butterworth 3, full chain (analog-design session, IHP SG13G2 open PDK), copied from tia-butterworth3/sim/op.cir 2026-10-25 for drawio hier tests
+* chaine TIA-Butterworth3, code 0 (20 MHz)
+.lib cornerMOSlv.lib mos_tt
+.lib cornerRES.lib res_typ
+.lib cornerCAP.lib cap_typ
+.temp 27
+VDD vdd 0 1.2
+VOCM vcmref 0 0.6
+* OTA FD entree NMOS LV, CMFB
+.subckt ota1 inp inn outp outn vdd vcmref
+IB vdd vbn dc 0.0001
+XM0 vbn vbn 0 0 sg13_lv_nmos w=20u l=0.5u ng=4 m=1
+XM5 tail vbn 0 0 sg13_lv_nmos w=200u l=0.5u ng=40 m=10
+XM1 o1a inp tail 0 sg13_lv_nmos w=200u l=0.13u ng=40 m=20
+XM2 o1b inn tail 0 sg13_lv_nmos w=200u l=0.13u ng=40 m=20
+XM3 o1a vcmfb vdd vdd sg13_lv_pmos w=166.7u l=0.5u ng=34 m=3
+XM4 o1b vcmfb vdd vdd sg13_lv_pmos w=166.7u l=0.5u ng=34 m=3
+XM6A outp o1a vdd vdd sg13_lv_pmos w=200u l=0.13u ng=40 m=3
+XM6B outn o1b vdd vdd sg13_lv_pmos w=200u l=0.13u ng=40 m=3
+XM7A outp vbn 0 0 sg13_lv_nmos w=200u l=0.5u ng=40 m=2
+XM7B outn vbn 0 0 sg13_lv_nmos w=200u l=0.5u ng=40 m=2
+XCCA o1a za cap_cmim w=18.2u l=18.2u
+XRZA za outp 0 rppd w=0.5u l=0.96u b=0 m=1
+XCCB o1b zb cap_cmim w=18.2u l=18.2u
+XRZB zb outn 0 rppd w=0.5u l=0.96u b=0 m=1
+RCMA outp vcms 200000.0
+RCMB outn vcms 200000.0
+XM10 tcm vbn 0 0 sg13_lv_nmos w=100u l=0.5u ng=20 m=1
+XM8 vcmfb vcms tcm 0 sg13_lv_nmos w=100u l=0.5u ng=20 m=1
+XM9 dcm vcmref tcm 0 sg13_lv_nmos w=100u l=0.5u ng=20 m=1
+XM11 vcmfb vcmfb vdd vdd sg13_lv_pmos w=25u l=0.5u ng=5 m=1
+XM12 dcm dcm vdd vdd sg13_lv_pmos w=25u l=0.5u ng=5 m=1
+.ends ota1
+* OTA FD entree NMOS LV, CMFB
+.subckt ota2 inp inn outp outn vdd vcmref
+IB vdd vbn dc 0.0001
+XM0 vbn vbn 0 0 sg13_lv_nmos w=20u l=0.5u ng=4 m=1
+XM5 tail vbn 0 0 sg13_lv_nmos w=150u l=0.5u ng=30 m=2
+XM1 o1a inp tail 0 sg13_lv_nmos w=150u l=0.13u ng=30 m=2
+XM2 o1b inn tail 0 sg13_lv_nmos w=150u l=0.13u ng=30 m=2
+XM3 o1a vcmfb vdd vdd sg13_lv_pmos w=60u l=0.5u ng=12 m=1
+XM4 o1b vcmfb vdd vdd sg13_lv_pmos w=60u l=0.5u ng=12 m=1
+XM6A outp o1a vdd vdd sg13_lv_pmos w=125u l=0.13u ng=25 m=2
+XM6B outn o1b vdd vdd sg13_lv_pmos w=125u l=0.13u ng=25 m=2
+XM7A outp vbn 0 0 sg13_lv_nmos w=150u l=0.5u ng=30 m=2
+XM7B outn vbn 0 0 sg13_lv_nmos w=150u l=0.5u ng=30 m=2
+XCCA o1a za cap_cmim w=18.2u l=18.2u
+XRZA za outp 0 rppd w=0.5u l=0.96u b=0 m=1
+XCCB o1b zb cap_cmim w=18.2u l=18.2u
+XRZB zb outn 0 rppd w=0.5u l=0.96u b=0 m=1
+RCMA outp vcms 200000.0
+RCMB outn vcms 200000.0
+XM10 tcm vbn 0 0 sg13_lv_nmos w=15u l=0.5u ng=3 m=1
+XM8 vcmfb vcms tcm 0 sg13_lv_nmos w=15u l=0.5u ng=3 m=1
+XM9 dcm vcmref tcm 0 sg13_lv_nmos w=15u l=0.5u ng=3 m=1
+XM11 vcmfb vcmfb vdd vdd sg13_lv_pmos w=3u l=0.5u ng=1 m=1
+XM12 dcm dcm vdd vdd sg13_lv_pmos w=3u l=0.5u ng=1 m=1
+.ends ota2
+* OTA FD entree NMOS LV, CMFB
+.subckt ota3 inp inn outp outn vdd vcmref
+IB vdd vbn dc 0.0001
+XM0 vbn vbn 0 0 sg13_lv_nmos w=20u l=0.5u ng=4 m=1
+XM5 tail vbn 0 0 sg13_lv_nmos w=150u l=0.5u ng=30 m=2
+XM1 o1a inp tail 0 sg13_lv_nmos w=150u l=0.13u ng=30 m=2
+XM2 o1b inn tail 0 sg13_lv_nmos w=150u l=0.13u ng=30 m=2
+XM3 o1a vcmfb vdd vdd sg13_lv_pmos w=60u l=0.5u ng=12 m=1
+XM4 o1b vcmfb vdd vdd sg13_lv_pmos w=60u l=0.5u ng=12 m=1
+XM6A outp o1a vdd vdd sg13_lv_pmos w=125u l=0.13u ng=25 m=2
+XM6B outn o1b vdd vdd sg13_lv_pmos w=125u l=0.13u ng=25 m=2
+XM7A outp vbn 0 0 sg13_lv_nmos w=150u l=0.5u ng=30 m=2
+XM7B outn vbn 0 0 sg13_lv_nmos w=150u l=0.5u ng=30 m=2
+XCCA o1a za cap_cmim w=18.2u l=18.2u
+XRZA za outp 0 rppd w=0.5u l=0.96u b=0 m=1
+XCCB o1b zb cap_cmim w=18.2u l=18.2u
+XRZB zb outn 0 rppd w=0.5u l=0.96u b=0 m=1
+RCMA outp vcms 200000.0
+RCMB outn vcms 200000.0
+XM10 tcm vbn 0 0 sg13_lv_nmos w=15u l=0.5u ng=3 m=1
+XM8 vcmfb vcms tcm 0 sg13_lv_nmos w=15u l=0.5u ng=3 m=1
+XM9 dcm vcmref tcm 0 sg13_lv_nmos w=15u l=0.5u ng=3 m=1
+XM11 vcmfb vcmfb vdd vdd sg13_lv_pmos w=3u l=0.5u ng=1 m=1
+XM12 dcm dcm vdd vdd sg13_lv_pmos w=3u l=0.5u ng=1 m=1
+.ends ota3
+IIN inn inp DC 0
+RS inp inn 600.0 noisy=0
+CPS1 inp 0 3e-13
+CPS2 inn 0 3e-13
+XA1 inp inn o1p o1n vdd vcmref ota1
+XRF1 o1n inp 0 rppd w=0.5u l=19.19u b=0 m=1
+XRF2 o1p inn 0 rppd w=0.5u l=19.19u b=0 m=1
+XF10 o1n inp cap_cmim w=22.98u l=22.98u
+XF1c1 o1n F1s1 cap_cmim w=14.32u l=14.32u
+XSWF11 inp gF11 F1s1 0 sg13_lv_nmos w=2u l=0.13u ng=1 m=1
+VGF11 gF11 0 0
+RKF11 F1s1 vcmref 1G
+XF1c2 o1n F1s2 cap_cmim w=16.89u l=16.89u
+XSWF12 inp gF12 F1s2 0 sg13_lv_nmos w=2.584u l=0.13u ng=1 m=1
+VGF12 gF12 0 0
+RKF12 F1s2 vcmref 1G
+XF1c3 o1n F1s3 cap_cmim w=19.92u l=19.92u
+XSWF13 inp gF13 F1s3 0 sg13_lv_nmos w=3.591u l=0.13u ng=1 m=1
+VGF13 gF13 0 0
+RKF13 F1s3 vcmref 1G
+XF1c4 o1n F1s4 cap_cmim w=23.49u l=23.49u
+XSWF14 inp gF14 F1s4 0 sg13_lv_nmos w=4.989u l=0.13u ng=1 m=1
+VGF14 gF14 0 0
+RKF14 F1s4 vcmref 1G
+XF1c5 o1n F1s5 cap_cmim w=27.7u l=27.7u
+XSWF15 inp gF15 F1s5 0 sg13_lv_nmos w=6.932u l=0.13u ng=2 m=1
+VGF15 gF15 0 0
+RKF15 F1s5 vcmref 1G
+XF1c6 o1n F1s6 cap_cmim w=32.66u l=32.66u
+XSWF16 inp gF16 F1s6 0 sg13_lv_nmos w=9.632u l=0.13u ng=2 m=1
+VGF16 gF16 0 0
+RKF16 F1s6 vcmref 1G
+XF1c7 o1n F1s7 cap_cmim w=38.51u l=38.51u
+XSWF17 inp gF17 F1s7 0 sg13_lv_nmos w=13.38u l=0.13u ng=3 m=1
+VGF17 gF17 0 0
+RKF17 F1s7 vcmref 1G
+XF20 o1p inn cap_cmim w=22.98u l=22.98u
+XF2c1 o1p F2s1 cap_cmim w=14.32u l=14.32u
+XSWF21 inn gF21 F2s1 0 sg13_lv_nmos w=2u l=0.13u ng=1 m=1
+VGF21 gF21 0 0
+RKF21 F2s1 vcmref 1G
+XF2c2 o1p F2s2 cap_cmim w=16.89u l=16.89u
+XSWF22 inn gF22 F2s2 0 sg13_lv_nmos w=2.584u l=0.13u ng=1 m=1
+VGF22 gF22 0 0
+RKF22 F2s2 vcmref 1G
+XF2c3 o1p F2s3 cap_cmim w=19.92u l=19.92u
+XSWF23 inn gF23 F2s3 0 sg13_lv_nmos w=3.591u l=0.13u ng=1 m=1
+VGF23 gF23 0 0
+RKF23 F2s3 vcmref 1G
+XF2c4 o1p F2s4 cap_cmim w=23.49u l=23.49u
+XSWF24 inn gF24 F2s4 0 sg13_lv_nmos w=4.989u l=0.13u ng=1 m=1
+VGF24 gF24 0 0
+RKF24 F2s4 vcmref 1G
+XF2c5 o1p F2s5 cap_cmim w=27.7u l=27.7u
+XSWF25 inn gF25 F2s5 0 sg13_lv_nmos w=6.932u l=0.13u ng=2 m=1
+VGF25 gF25 0 0
+RKF25 F2s5 vcmref 1G
+XF2c6 o1p F2s6 cap_cmim w=32.66u l=32.66u
+XSWF26 inn gF26 F2s6 0 sg13_lv_nmos w=9.632u l=0.13u ng=2 m=1
+VGF26 gF26 0 0
+RKF26 F2s6 vcmref 1G
+XF2c7 o1p F2s7 cap_cmim w=38.51u l=38.51u
+XSWF27 inn gF27 F2s7 0 sg13_lv_nmos w=13.38u l=0.13u ng=3 m=1
+VGF27 gF27 0 0
+RKF27 F2s7 vcmref 1G
+XA2 y2p y2n o2p o2n vdd vcmref ota2
+XA3 y3p y3n o3p o3n vdd vcmref ota3
+XRI1 o1p y2p 0 rppd w=0.5u l=1.674u b=0 m=1
+XRI2 o1n y2n 0 rppd w=0.5u l=1.674u b=0 m=1
+XRQ1 o2n y2p 0 rppd w=0.5u l=1.674u b=0 m=1
+XRQ2 o2p y2n 0 rppd w=0.5u l=1.674u b=0 m=1
+XC10 o2n y2p cap_cmim w=72.78u l=72.78u
+XC1c1 o2n C1s1 cap_cmim w=45.4u l=45.4u
+XSWC11 y2p gC11 C1s1 0 sg13_lv_nmos w=18.6u l=0.13u ng=4 m=1
+VGC11 gC11 0 0
+RKC11 C1s1 vcmref 1G
+XC1c2 o2n C1s2 cap_cmim w=53.53u l=53.53u
+XSWC12 y2p gC12 C1s2 0 sg13_lv_nmos w=25.84u l=0.13u ng=6 m=1
+VGC12 gC12 0 0
+RKC12 C1s2 vcmref 1G
+XC1c3 o2n C1s3 cap_cmim w=63.11u l=63.11u
+XSWC13 y2p gC13 C1s3 0 sg13_lv_nmos w=35.91u l=0.13u ng=8 m=1
+VGC13 gC13 0 0
+RKC13 C1s3 vcmref 1G
+XC1c4 o2n C1s4 cap_cmim w=74.4u l=74.4u
+XSWC14 y2p gC14 C1s4 0 sg13_lv_nmos w=49.89u l=0.13u ng=10 m=1
+VGC14 gC14 0 0
+RKC14 C1s4 vcmref 1G
+XC1c5 o2n C1s5 cap_cmim w=87.71u l=87.71u
+XSWC15 y2p gC15 C1s5 0 sg13_lv_nmos w=69.32u l=0.13u ng=14 m=1
+VGC15 gC15 0 0
+RKC15 C1s5 vcmref 1G
+XC1c6 o2n C1s6 cap_cmim w=103.4u l=103.4u
+XSWC16 y2p gC16 C1s6 0 sg13_lv_nmos w=96.32u l=0.13u ng=20 m=1
+VGC16 gC16 0 0
+RKC16 C1s6 vcmref 1G
+XC1c7 o2n C1s7 cap_cmim w=121.9u l=121.9u
+XSWC17 y2p gC17 C1s7 0 sg13_lv_nmos w=133.8u l=0.13u ng=27 m=1
+VGC17 gC17 0 0
+RKC17 C1s7 vcmref 1G
+XC20 o2p y2n cap_cmim w=72.78u l=72.78u
+XC2c1 o2p C2s1 cap_cmim w=45.4u l=45.4u
+XSWC21 y2n gC21 C2s1 0 sg13_lv_nmos w=18.6u l=0.13u ng=4 m=1
+VGC21 gC21 0 0
+RKC21 C2s1 vcmref 1G
+XC2c2 o2p C2s2 cap_cmim w=53.53u l=53.53u
+XSWC22 y2n gC22 C2s2 0 sg13_lv_nmos w=25.84u l=0.13u ng=6 m=1
+VGC22 gC22 0 0
+RKC22 C2s2 vcmref 1G
+XC2c3 o2p C2s3 cap_cmim w=63.11u l=63.11u
+XSWC23 y2n gC23 C2s3 0 sg13_lv_nmos w=35.91u l=0.13u ng=8 m=1
+VGC23 gC23 0 0
+RKC23 C2s3 vcmref 1G
+XC2c4 o2p C2s4 cap_cmim w=74.4u l=74.4u
+XSWC24 y2n gC24 C2s4 0 sg13_lv_nmos w=49.89u l=0.13u ng=10 m=1
+VGC24 gC24 0 0
+RKC24 C2s4 vcmref 1G
+XC2c5 o2p C2s5 cap_cmim w=87.71u l=87.71u
+XSWC25 y2n gC25 C2s5 0 sg13_lv_nmos w=69.32u l=0.13u ng=14 m=1
+VGC25 gC25 0 0
+RKC25 C2s5 vcmref 1G
+XC2c6 o2p C2s6 cap_cmim w=103.4u l=103.4u
+XSWC26 y2n gC26 C2s6 0 sg13_lv_nmos w=96.32u l=0.13u ng=20 m=1
+VGC26 gC26 0 0
+RKC26 C2s6 vcmref 1G
+XC2c7 o2p C2s7 cap_cmim w=121.9u l=121.9u
+XSWC27 y2n gC27 C2s7 0 sg13_lv_nmos w=133.8u l=0.13u ng=27 m=1
+VGC27 gC27 0 0
+RKC27 C2s7 vcmref 1G
+XRL1 o3n y2p 0 rppd w=0.5u l=1.674u b=0 m=1
+XRL2 o3p y2n 0 rppd w=0.5u l=1.674u b=0 m=1
+XR31 o2p y3p 0 rppd w=0.5u l=1.674u b=0 m=1
+XR32 o2n y3n 0 rppd w=0.5u l=1.674u b=0 m=1
+XC30 o3n y3p cap_cmim w=72.78u l=72.78u
+XC3c1 o3n C3s1 cap_cmim w=45.4u l=45.4u
+XSWC31 y3p gC31 C3s1 0 sg13_lv_nmos w=18.6u l=0.13u ng=4 m=1
+VGC31 gC31 0 0
+RKC31 C3s1 vcmref 1G
+XC3c2 o3n C3s2 cap_cmim w=53.53u l=53.53u
+XSWC32 y3p gC32 C3s2 0 sg13_lv_nmos w=25.84u l=0.13u ng=6 m=1
+VGC32 gC32 0 0
+RKC32 C3s2 vcmref 1G
+XC3c3 o3n C3s3 cap_cmim w=63.11u l=63.11u
+XSWC33 y3p gC33 C3s3 0 sg13_lv_nmos w=35.91u l=0.13u ng=8 m=1
+VGC33 gC33 0 0
+RKC33 C3s3 vcmref 1G
+XC3c4 o3n C3s4 cap_cmim w=74.4u l=74.4u
+XSWC34 y3p gC34 C3s4 0 sg13_lv_nmos w=49.89u l=0.13u ng=10 m=1
+VGC34 gC34 0 0
+RKC34 C3s4 vcmref 1G
+XC3c5 o3n C3s5 cap_cmim w=87.71u l=87.71u
+XSWC35 y3p gC35 C3s5 0 sg13_lv_nmos w=69.32u l=0.13u ng=14 m=1
+VGC35 gC35 0 0
+RKC35 C3s5 vcmref 1G
+XC3c6 o3n C3s6 cap_cmim w=103.4u l=103.4u
+XSWC36 y3p gC36 C3s6 0 sg13_lv_nmos w=96.32u l=0.13u ng=20 m=1
+VGC36 gC36 0 0
+RKC36 C3s6 vcmref 1G
+XC3c7 o3n C3s7 cap_cmim w=121.9u l=121.9u
+XSWC37 y3p gC37 C3s7 0 sg13_lv_nmos w=133.8u l=0.13u ng=27 m=1
+VGC37 gC37 0 0
+RKC37 C3s7 vcmref 1G
+XC40 o3p y3n cap_cmim w=72.78u l=72.78u
+XC4c1 o3p C4s1 cap_cmim w=45.4u l=45.4u
+XSWC41 y3n gC41 C4s1 0 sg13_lv_nmos w=18.6u l=0.13u ng=4 m=1
+VGC41 gC41 0 0
+RKC41 C4s1 vcmref 1G
+XC4c2 o3p C4s2 cap_cmim w=53.53u l=53.53u
+XSWC42 y3n gC42 C4s2 0 sg13_lv_nmos w=25.84u l=0.13u ng=6 m=1
+VGC42 gC42 0 0
+RKC42 C4s2 vcmref 1G
+XC4c3 o3p C4s3 cap_cmim w=63.11u l=63.11u
+XSWC43 y3n gC43 C4s3 0 sg13_lv_nmos w=35.91u l=0.13u ng=8 m=1
+VGC43 gC43 0 0
+RKC43 C4s3 vcmref 1G
+XC4c4 o3p C4s4 cap_cmim w=74.4u l=74.4u
+XSWC44 y3n gC44 C4s4 0 sg13_lv_nmos w=49.89u l=0.13u ng=10 m=1
+VGC44 gC44 0 0
+RKC44 C4s4 vcmref 1G
+XC4c5 o3p C4s5 cap_cmim w=87.71u l=87.71u
+XSWC45 y3n gC45 C4s5 0 sg13_lv_nmos w=69.32u l=0.13u ng=14 m=1
+VGC45 gC45 0 0
+RKC45 C4s5 vcmref 1G
+XC4c6 o3p C4s6 cap_cmim w=103.4u l=103.4u
+XSWC46 y3n gC46 C4s6 0 sg13_lv_nmos w=96.32u l=0.13u ng=20 m=1
+VGC46 gC46 0 0
+RKC46 C4s6 vcmref 1G
+XC4c7 o3p C4s7 cap_cmim w=121.9u l=121.9u
+XSWC47 y3n gC47 C4s7 0 sg13_lv_nmos w=133.8u l=0.13u ng=27 m=1
+VGC47 gC47 0 0
+RKC47 C4s7 vcmref 1G
+CLP o3p 0 1p
+CLN o3n 0 1p
+RLD o3p o3n 20k
+.control
+op
+print v(o1p) v(o1n) v(o2p) v(o2n) v(o3p) v(o3n) v(inp) v(inn) -i(VDD)
+.endc
+.end
