@@ -458,6 +458,12 @@ function layoutFrame(F, R, ctx) {
 
   /* 6. node heights and column lines ------------------------------------ */
   const yNode = new Map();
+  // the tail above a P pair: at the level of the pair's sources, the tail drops onto it (mirror of the N case)
+  for (const i of cols.keys()) {
+    const col = cols[i], n = col.top;
+    if (col.pair == null || n === R.top || n === R.bot || !isTr(col.parts[0].c) || !order.axis.some((a) => cols[a].parts.some((p) => p.down === n))) continue;
+    yNode.set(n, pinP(col.parts[0].c.ref, 'top').y);
+  }
   for (const i of cols.keys()) {
     const col = cols[i], rows = lv[i].rows;
     col.parts.forEach((p, k) => {

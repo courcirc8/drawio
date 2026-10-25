@@ -18,7 +18,13 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
 - Une colonne par branche DC (rail haut → rail bas par les canaux), PMOS empilés depuis le haut, NMOS depuis le bas,
   rangées alignées d'une colonne à l'autre ; une résistance en série dans une branche reste dans la colonne.
 - Colonnes appariées (mêmes tailles, nets symétriques) en miroir autour d'un axe ; étages suivants vers l'extérieur.
-- Nœud de queue au niveau des sources ; nœud de sortie au milieu de la bande entre PMOS et NMOS.
+- **Source de queue sur l'axe** (règle d'Eric, 25.10) : le transistor de queue d'une paire différentielle est centré
+  entre les deux transistors, sur l'axe de symétrie, en dessous d'une paire NMOS, au-dessus d'une paire PMOS alimentée
+  par le haut. Mesure sur le **canal** (broches drain/source), pas sur la boîte du symbole décalée par la grille ;
+  tolérance une grille (10). Test : `test/tail-axis.test.js` (OTA Miller N et P, 5T N et P, StrongARM, folded
+  cascode, en `auto` et en `manuel`).
+- Nœud de queue au niveau des sources de la paire (N : la queue monte dessus ; P : la queue descend dessus) ; nœud de
+  sortie au milieu de la bande entre PMOS et NMOS.
 - Grilles : barre partagée entre grilles en regard, diode = boucle locale, grille commandée par un nœud = montée à
   côté de la colonne qui le commande, réseau de grille (diviseur) en échelle.
 - Ponts R/C (Miller) horizontaux au niveau de leurs nœuds.
