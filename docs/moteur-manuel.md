@@ -37,6 +37,14 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
   grilles d'interrupteurs sont des ports de commande, ou portent une **source de grille** (V/I d'une seule grille vers
   la masse ou un net commun, banques du TIA hiérarchique) dessinée pendue à la grille, bus B en dessous. Dessin : bus A en haut, bus B en bas, une tranche par colonne,
   la tranche directe en premier, éperons horizontaux à droite.
+- **Bandgap de Brokaw** (`lib/place-brokaw.js`, demande d'Eric du 25.10) : quand la lecture en colonnes échoue,
+  `brokawReading` lit les rôles (paire NPN de même base, chaînes R de collecteur vers la sortie X, R1 sous le grand
+  émetteur, R2 vers la masse, diviseur de base, amplificateur d'erreur MOS à miroir P, queue et diode de
+  polarisation, transistor de sortie, compensation R-C, charges, démarrage = pile série + transistors pendus).
+  Dessin en quatre cadres de gauche à droite : « Démarrage », « Cœur » (Q1 / Q2 côte à côte, rapport d'aires écrit
+  `A (×m)` / `nA (×m)`, R1 / R2 sous les émetteurs), « Amplificateur d'erreur » (miroir en haut, paire, queue sur
+  l'axe), « Sortie » (port vref, alimentation de banc à part). Formes acceptées : primitives SPICE ou primitives
+  IHP en `X` à résistances fractionnées. Test : `test/brokaw.test.js`.
 - Valeurs en notation ingénieur (`100 kΩ`, `497 fF`), W/L en µm, modèle pour les bipolaires.
 
 ## Critère « sûr »
