@@ -347,7 +347,7 @@ function pairColumns(cols, parts, R) {
   for (const c of cols) {
     if (c.pair != null) continue;
     const ns = c.parts.flatMap((p) => [p.up, p.down, gateOf(p.c)]).filter((n) => n && !isRail(n, R));
-    c.selfSym = cols.some((d) => d.pair != null) && ns.every((n) => !sigma.has(n) || sigma.get(n) === n) && ns.some((n) => cols.some((d) => d.pair != null && d.bot === n));
+    c.selfSym = cols.some((d) => d.pair != null) && ns.every((n) => !sigma.has(n) || sigma.get(n) === n) && ns.some((n) => cols.some((d) => d.pair != null && (d.bot === n || d.top === n)));   // tail below an N pair or above a P pair
   }
   for (const c of cols) c.sigma = sigma;
 }
