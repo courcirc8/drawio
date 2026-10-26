@@ -26,8 +26,8 @@ import { classify, activePins } from './components.js';
 import { pinAbs, routePage } from './route.js';
 import { rebuildLocalDots } from './generic-refinement.js';
 
-const RAIL = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss)$/i;
-const GNDN = /^(0|gnd\w*|vss\w*|vee\w*|avss|dvss)$/i;
+const RAIL = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_\w+)?|ground(?:_\w+)?)$/i;
+const GNDN = /^(0|gnd\w*|vss\w*|vee\w*|avss|dvss|ground(?:_\w+)?)$/i;
 const isAct = (c) => c.prefix === 'M' || c.prefix === 'Q';
 const D = (c) => c.nodes[0], G = (c) => c.nodes[1], S = (c) => c.nodes[2];
 

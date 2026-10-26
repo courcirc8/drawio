@@ -86,7 +86,7 @@ export function basicsReport(model, parsed) {
   }
   // isolated parts: far from every part they share a (non-rail) net with
   const rails = new Set(['0', ...Object.keys(roles).filter((n) => roles[n] === 'supply' || roles[n] === 'ground')]);
-  const isRail = (n) => rails.has(n) || /^(vdd|vcc|vss|gnd|avdd|dvdd|avss|dvss|agnd|dgnd|vpwr|vgnd)$/i.test(n);
+  const isRail = (n) => rails.has(n) || /^(vdd|vcc|vss|gnd|avdd|dvdd|avss|dvss|agnd|dgnd|vpwr|vgnd|power(?:_\w+)?|ground(?:_\w+)?)$/i.test(n);
   const placed = parsed.components.filter((c) => byRef.has(String(c.ref)));
   const nets = (c) => new Set(c.nodes.filter((n) => !isRail(n)));
   const near = [];

@@ -123,7 +123,7 @@ function wirePerPart(m, parsed) {
 /** CONNECTIONS BY NAME (Eric 2026-10-09: "on ne veut pas de connexions par
  *  nom"): nets drawn as two or more port labels of the same name instead of
  *  wires (v4 joins its blocks that way), supply and ground excepted. */
-const RAILNAME = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|v\+|v-)$/i;
+const RAILNAME = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|v\+|v-|power(?:_\w+)?|ground(?:_\w+)?)$/i;
 export function namedLinks(m) {
   const count = new Map();
   for (const c of allCells(m).map(cellInfo)) {

@@ -88,7 +88,7 @@ export const MOTIFS = [
     describe: 'Passive (R, L, C) between the drain/collector of an active and a rail: the stage load; drawn above the device under the rail.' },
 ];
 
-const RAIL_RE = /^(vdd|vcc|vee|vss|avdd|dvdd|v\+|v-|gnd)$/i;
+const RAIL_RE = /^(vdd|vcc|vee|vss|avdd|dvdd|v\+|v-|gnd|power(?:_\w+)?|ground(?:_\w+)?)$/i;
 const CLOCK_RE = /^(phi|ph\d|clk|ck\d*|clock|sw\d*|s\d+|en\b|sel|φ|cl\d)/i;
 const BIAS_RE = /^(vb|vbias|bias|vg\d|vcas|vc\d|vref|vbn|vbp|vcm)/i;
 const isPassive = (c) => c.prefix === 'R' || c.prefix === 'L' || c.prefix === 'C';

@@ -23,7 +23,7 @@ import { compare } from './lvs.js';
 import { geoLvs } from './geo-lvs.js';
 import { annotation as annotationOf } from './place-manuel.js';
 
-const RAILNAME = /^(0|vdd\w*|vss\w*|avdd\w*|dvdd\w*|vcc\w*|vee\w*|gnd\w*)$/i;
+const RAILNAME = /^(0|vdd\w*|vss\w*|avdd\w*|dvdd\w*|vcc\w*|vee\w*|gnd\w*|power(?:_\w+)?|ground(?:_\w+)?)$/i;
 
 /** text of a netlist whose top level is the body of .subckt `def` (other definitions kept) */
 function bodyText(parsed, def) {
@@ -150,7 +150,7 @@ function bankName(pins, banks) {
 
 
 /* ------------------------------------------------------------ top page */
-const RAIL0 = /^(0|gnd\w*|vss\w*)$/i;
+const RAIL0 = /^(0|gnd\w*|vss\w*|ground(?:_\w+)?)$/i;
 const IN_RE = /^(v?in\w*|v?i[pn]|v?[pn]in)$/i;
 const OUT_RE = /^(v?out\w*|v?o[pn]?\d*|v?o[pn]|y)$/i;
 const isSupply = (n) => RAILNAME.test(n) && !RAIL0.test(n);
@@ -391,6 +391,20 @@ async function drawPage(parsed, banks, chain = null) {
   return { model: getPage(w.doc), engine: w.label, golden: parsed };
 }
 
+/** the net of page P (lowercase) that carries the subcircuit pin `pin`: the pin's own name when the page writes
+ *  it, else the page net on the same terminal as the pin in the page's netlist (a pin drawn as a rail symbol,
+ *  ground_<dom> drawn as ground, or a pin the page leaves unnamed) */
+function pageNet(P, pin) {
+  const k = String(pin).toLowerCase();
+  if (P.ex.components.some((c) => c.nodes.some((n) => String(n).toLowerCase() === k))) return k;
+  const byRef = new Map(P.ex.components.map((c) => [String(c.ref).toUpperCase(), c]));
+  for (const g of P.golden?.components || []) {
+    const i = g.nodes.findIndex((n) => String(n).toLowerCase() === k), e = byRef.get(String(g.ref).toUpperCase());
+    if (i >= 0 && e && e.nodes[i] != null) return String(e.nodes[i]).toLowerCase();
+  }
+  return k;
+}
+
 /**
  * Hierarchical drawing of `text`: { doc, pages: [{name, kind, engine, lvs, geo}],
  * map: { flatRef: {page, cell} }, lvs: { pages: {name: match}, global } }.
@@ -406,7 +420,7 @@ export async function importHier(text, opts = {}) {
     if (name === 'top') { const src = d.model; while (m.firstChild) m.removeChild(m.firstChild); for (const n of Array.from(src.childNodes)) m.appendChild(doc.importNode(n, true)); }
     if (opts.onPage) opts.onPage(name, m);   // tests: corrupt a page before its extraction
     const ex = extractNetlist(m), rep = compare(ex, d.golden);
-    drawn.set(name, { ex, ...extra });
+    drawn.set(name, { ex, golden: d.golden, ...extra });
     pages.push({ name, kind, engine: d.engine, lvs: rep.match, ...(rep.match ? {} : { report: rep }), ...(d.geo ? { geo: d.geo.ok } : {}) });
   };
   // top
@@ -458,7 +472,7 @@ export async function importHier(text, opts = {}) {
       const inst = H.instances.find((i) => i.path.toUpperCase() === ref.toUpperCase());
       if (c.prefix === 'X' && inst) {
         const pg = pageOfInst.get(inst.path), pins = drawn.get(pg).pins || [];
-        expand(pg, new Map(pins.map((pn, i) => [String(pn).toLowerCase(), net(c.nodes[i])])), inst.path);
+        expand(pg, new Map(pins.map((pn, i) => [pageNet(drawn.get(pg), pn), net(c.nodes[i])])), inst.path);
         continue;
       }
       flat.push({ ...c, ref, nodes: c.nodes.map(net), ...(c.fullNodes ? { fullNodes: c.fullNodes.map(net) } : {}) });
