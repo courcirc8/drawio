@@ -33,7 +33,7 @@ export const ROLES = ['diff-pair', 'cross-coupled', 'mirror-ref', 'mirror-out', 
   'common-source', 'common-gate', 'follower', 'shunt-feedback', 'switch', 'inverter', 'diode', 'amplifier',
   'load', 'degeneration', 'feedback', 'coupling', 'bias', 'shunt', 'source', 'dummy', 'varactor', 'unknown'];
 
-const GND_RE = /^(0|gnd\w*|vss\w*|vee\w*|agnd|dgnd|avss|dvss|v-|ground(?:_\w+)?)$/i;
+const GND_RE = /^(0|gnd\w*|vss\w*|vee\w*|agnd|dgnd|avss|dvss|v-|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 const BIAS_RE = /^(vb|vbias|bias|vg\d|vcas|vc\d|vref|vbn|vbp|vcm)/i;   // (not IB: AnalogGenie's current ports are drains as well)
 const INPUT_RE = /^(in|vin|iin|rf|sig|lo|inp|inm|inn|vip|vim|vi\b|vi[pn])/i;
 // clock / control nets (AnalogGenie names them VCLK1, VLATCH1): a device they

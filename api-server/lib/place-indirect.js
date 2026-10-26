@@ -39,7 +39,7 @@ import { alignPorts } from './align-ports.js';
 import { attachPassives } from './template-attach.js';
 import { teeNet, mirrorNet, biasNet, alignRails, dropAmong, STF, relPin, atPin } from './place-ota.js';
 
-const RAIL = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_\w+)?|ground(?:_\w+)?)$/i;
+const RAIL = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 const D = (c) => c.nodes[0], G = (c) => c.nodes[1], S = (c) => c.nodes[2];
 const isMos = (c) => c.prefix === 'M' || c.prefix === 'Q' || c.prefix === 'J';
 
@@ -236,7 +236,7 @@ async function impose(model, parsed, R) {
   }
   // the output line: on the longest free stretch of the output column; load
   // capacitors (output to a rail) stand on it to the right, the port beyond
-  const GNDN = /^(0|gnd\w*|vss\w*|vee\w*|avss|dvss|ground(?:_\w+)?)$/i;
+  const GNDN = /^(0|gnd\w*|vss\w*|vee\w*|avss|dvss|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
   const stand = (ref, net, x, y, down) => {   // upright, pin on `net` at (x, y), the other end down / up
     const c0 = find(ref), pc = parsed.components.find((c) => c.ref === ref), k = pc.nodes.indexOf(net);
     for (const rot of [0, 90, 180, 270]) {

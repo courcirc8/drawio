@@ -27,7 +27,7 @@ function partsOf(model) {
     const cl = classify(c), key = shapeKeyOf(c) || '';
     const cx = c.x + c.w / 2, cy = c.y + c.h / 2;
     if (cl.role === 'ground') rails.push({ k: 'gnd', y: cy });
-    else if (cl.role === 'power') rails.push({ k: /^(vss|gnd|0|vee|avss|dvss|ground(?:_\w+)?)/i.test(String(cl.net)) ? 'gnd' : 'vdd', y: cy });
+    else if (cl.role === 'power') rails.push({ k: /^(vss|gnd|0|vee|avss|dvss|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)/i.test(String(cl.net)) ? 'gnd' : 'vdd', y: cy });
     else if (cl.role === 'component') {
       const k = /transistors\.(n|p)mos/.test(key) ? 'MOS' : ({ R: 'R', C: 'C', I: 'SRC', V: 'SRC' })[cl.prefix];
       if (k) parts.push({ k, x: cx, y: cy, s: Math.max(c.w, c.h) });

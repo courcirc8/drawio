@@ -41,3 +41,32 @@ test('rail names: power / ground with or without a domain; two ground domains ar
   assert.equal(groundAlias(['ground_ana', 'x']), 'ground_ana');
   assert.equal(groundAlias(['ground_ana', 'ground_dig']), null);
 });
+
+// Orchestrator batch item 3 (2026-10-26): power_down, power_good, ground_sense...
+// are signals, not rails; a ground_<dom> drawn as the ground keeps its domain
+// name visible next to the symbol (the extracted net stays `0`).
+test('rail names: obvious signals (power_down, power_good, power_on, ground_sense) are not rails', () => {
+  for (const n of ['power_down', 'POWER_GOOD', 'power_on', 'power_en_n', 'power_ok', 'ground_sense', 'ground_sns'])
+    assert.ok(!SUPPLY_NAME.test(n) && !GROUND_NAME.test(n) && !SUPPLY.test(n), n);
+  assert.ok(SUPPLY_NAME.test('power_vdd1') && GROUND_NAME.test('ground_dig'));
+  assert.equal(groundAlias(['ground_sense', 'x']), null);
+});
+
+test('a block pin power_down stays a signal port of the block page, not a supply', async () => {
+  const t = text.replace('.subckt ota inp', '.subckt ota power_down inp').replace('.ends ota', 'RPD power_down ground_ana 1meg\n.ends ota')
+    .replace('XOTA vin', 'XOTA pd vin').replace(/\.end\s*$/, 'RPDT pd 0 10k\n.end\n');
+  const r = await importHier(t, { symbols: { ota: 'box' } });
+  const p = blockPins(getPage(r.doc, 'top'), 'XOTA');
+  assert.ok(p.power_down, Object.keys(p).join(' '));
+  assert.ok(p.power_down.y !== 0, 'power_down is not on the supply side');
+});
+
+test('ground_ana drawn as the ground keeps its domain name visible', async () => {
+  const r = await importHier(text);
+  const m = getPage(r.doc, 'ota');
+  const g = allCells(m).map(cellInfo).filter((c) => /signal_ground/.test(c.styleRaw || ''));
+  assert.ok(g.length >= 1);
+  for (const c of g) assert.match(String(c.value || '').replace(/<[^>]+>/g, ''), /ground_ana/);
+  const nets = new Set(extractNetlist(m).components.flatMap((c) => c.nodes.map(String)));
+  assert.ok(nets.has('0') && !nets.has('ground_ana'), [...nets].join(' '));
+});

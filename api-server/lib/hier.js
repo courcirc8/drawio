@@ -24,7 +24,7 @@ import { geoLvs } from './geo-lvs.js';
 import { annotation as annotationOf } from './place-manuel.js';
 import { brokawReading, importBrokaw } from './place-brokaw.js';
 
-const RAILNAME = /^(0|vdd\w*|vss\w*|avdd\w*|dvdd\w*|vcc\w*|vee\w*|gnd\w*|power(?:_\w+)?|ground(?:_\w+)?)$/i;
+const RAILNAME = /^(0|vdd\w*|vss\w*|avdd\w*|dvdd\w*|vcc\w*|vee\w*|gnd\w*|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 
 /** text of a netlist whose top level is the body of .subckt `def` (other definitions kept) */
 function bodyText(parsed, def) {
@@ -172,7 +172,7 @@ function bankName(pins, banks) {
 
 
 /* ------------------------------------------------------------ top page */
-const RAIL0 = /^(0|gnd\w*|vss\w*|ground(?:_\w+)?)$/i;
+const RAIL0 = /^(0|gnd\w*|vss\w*|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 const IN_RE = /^(v?in\w*|v?i[pn]|v?[pn]in)$/i;
 const OUT_RE = /^(v?out\w*|v?o[pn]?\d*|v?o[pn]|y)$/i;
 const isSupply = (n) => RAILNAME.test(n) && !RAIL0.test(n);

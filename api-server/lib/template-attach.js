@@ -20,8 +20,8 @@ import { allCells, cellInfo, updateCell, getCell, freshId, deleteCell } from './
 import { classify, activePins } from './components.js';
 import { pinAbs } from './route.js';
 
-const RAIL = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_\w+)?|ground(?:_\w+)?)$/i;
-const GND = /^(0|gnd\w*|vss\w*|vee\w*|avss|dvss|ground(?:_\w+)?)$/i;
+const RAIL = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
+const GND = /^(0|gnd\w*|vss\w*|vee\w*|avss|dvss|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 
 /**
  * @param model   the page

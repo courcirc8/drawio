@@ -13,7 +13,7 @@ import { allCells, cellInfo, addWire, deleteCell } from './model.js';
 import { classify } from './components.js';
 import { routePage, pinAbs } from './route.js';
 
-const RAILNAME = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|v\+|v-|power(?:_\w+)?|ground(?:_\w+)?)$/i;
+const RAILNAME = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|v\+|v-|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 
 export async function wireNamedNets(model) {
   const cells = allCells(model).map(cellInfo);

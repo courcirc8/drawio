@@ -60,6 +60,9 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
 - **Rails** (D1) : `power`, `ground`, `power_<dom>`, `ground_<dom>` (convention d'analog-design) sont des
   alimentations et des masses comme `vdd`/`vss` : broche en haut ou en bas, symbole de rail sur les pages. Le LVS
   global lie une broche au net de la page sur la même borne quand la page l'a renommé (`ground_ana` dessiné en masse).
+  Un domaine dessiné en masse garde son nom écrit sous le symbole (`ground_ana`), le net extrait reste `0`. Les noms
+  de signal évidents ne sont pas des rails : `power_down`, `power_good`, `power_on`, `power_en`, `ground_sense`…
+  (suffixe `down`, `good`, `on`, `off`, `en`, `ok`, `sense`, `fail`, `rst`, `sel`, `det`, `ready`, `ctrl`… après `_`).
 - **Triangle d'ampli** (D2) : un `.subckt` défini qui est un ampli devient un triangle pointé à droite (`apiSymbol`) :
   `+`/`−` à gauche (polarité par le nom `inp`/`inn`, `vip`/`vin`… ; sinon l'ordre des broches et aucun signe), sortie à la pointe (`outp`/`outn`
   sur les côtés près de la pointe), alimentations sur le côté haut, masses et autres broches (`ibias`, `vcmref`) sur

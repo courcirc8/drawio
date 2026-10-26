@@ -149,7 +149,7 @@ export function qualityGate(model, parsed) {
 
   // an ABSURD netlist (a reading gone wrong): parts in two or more groups that
   // no non-rail net joins
-  const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_\w+)?|ground(?:_\w+)?)$/i;
+  const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
   // a part on rails only (the bench supply) joins no group and splits none
   const comps = parsed.components.filter((c) => c.nodes?.some((n) => !RAILN.test(n)));
   const uf = new Map(comps.map((c) => [c.ref, c.ref])), fd = (k) => { while (uf.get(k) !== k) k = uf.get(k); return k; };
