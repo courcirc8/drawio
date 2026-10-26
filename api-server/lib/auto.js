@@ -284,15 +284,21 @@ export async function autoPlace(parsed) {
   // (analog-design convention, Orchestrator 2026-10-26): a text value only, the
   // extracted net stays `0`
   const a = r?.ground?.alias ?? groundAlias(parsed.components.flatMap((c) => c.fullNodes || c.nodes || []));
-  if (a && /^ground_/i.test(a) && process.env.AUTO_GND !== '0' && r?.doc) {
-    for (const n of allCells(getPage(r.doc))) {
-      if (!/signal_ground/.test(cellInfo(n).styleRaw || '') || cellInfo(n).value) continue;
-      const cell = n.nodeName === 'mxCell' ? n : n.getElementsByTagName('mxCell')[0];
-      if (n.nodeName === 'object' || n.nodeName === 'UserObject') n.setAttribute('label', a); else n.setAttribute('value', a);
-      if (cell) cell.setAttribute('style', `${cell.getAttribute('style') || ''}verticalLabelPosition=bottom;verticalAlign=top;fontSize=10;`);
-    }
-  }
+  if (process.env.AUTO_GND !== '0' && r?.doc) labelGroundDomain(getPage(r.doc), a);
   return r;
+}
+
+/** a ground_<dom> drawn as the ground symbol keeps its domain name under it (a text value: the
+ *  extracted net stays `0`); other aliases (vss, gnd) are drawn as the plain ground */
+export function labelGroundDomain(model, alias) {
+  if (!alias || !/^ground_/i.test(alias)) return;
+  for (const n of allCells(model)) {
+    const info = cellInfo(n);
+    if (!/signal_ground/.test(info.styleRaw || '') || info.value) continue;
+    const cell = n.nodeName === 'mxCell' ? n : n.getElementsByTagName('mxCell')[0];
+    if (n.nodeName === 'object' || n.nodeName === 'UserObject') n.setAttribute('label', alias); else n.setAttribute('value', alias);
+    if (cell) cell.setAttribute('style', `${cell.getAttribute('style') || ''}verticalLabelPosition=bottom;verticalAlign=top;fontSize=10;`);
+  }
 }
 
 async function autoPlaceAliased(parsed) {

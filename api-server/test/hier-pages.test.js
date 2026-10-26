@@ -40,13 +40,13 @@ test('per-page SVG + geometry: every flattened ref placed on its page, blocks cl
   try {
     const r = await importHier(read('./fixtures/hier-rails/ota_rails.cir'));
     const out = await hierPages(r.doc, r.map);
-    assert.deepEqual(out.pages.map((p) => p.name), ['top', 'ota']);
+    assert.deepEqual(out.pages.map((p) => p.name), ['tb_ota', 'ota']);
     for (const p of out.pages) assert.match(p.svg, /^<\?xml[\s\S]*<svg[\s\S]*<\/svg>$/);
     // every device of the flattened netlist has a box on its page
     for (const ref of ['XOTA.M1', 'XOTA.M2', 'XOTA.MNT', 'XOTA.MN0', 'RB', 'RF1', 'CL']) {
       const b = out.map[ref];
       assert.ok(b && b.w > 0 && b.h > 0, ref);
-      assert.equal(b.page, ref.startsWith('XOTA.') ? 'ota' : 'top');
+      assert.equal(b.page, ref.startsWith('XOTA.') ? 'ota' : 'tb_ota');
     }
     // the boxes are in the SVG's units: inside its painted extent, and distinct
     const ota = out.pages.find((p) => p.name === 'ota');
@@ -54,7 +54,7 @@ test('per-page SVG + geometry: every flattened ref placed on its page, blocks cl
     for (const c of Object.values(ota.cells)) assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.w <= W + 1 && c.y + c.h <= H + 1, JSON.stringify(c));
     assert.notDeepEqual(out.map['XOTA.M1'], out.map['XOTA.M2']);
     // the block on the top page: a link to ota.svg over the triangle
-    const top = out.pages.find((p) => p.name === 'top');
+    const top = out.pages.find((p) => p.name === 'tb_ota');
     const blk = Object.values(top.cells).find((c) => c.block === 'ota');
     assert.equal(blk.page, 'ota');
     assert.match(top.svg, new RegExp(`<a xlink:href="ota\\.svg" data-page="ota"><rect x="${blk.x}" y="${blk.y}"`));

@@ -18,9 +18,9 @@ const pinsOf = (c) => Object.fromEntries((c.style.map.get('apiBlockPins') || '')
 
 test('an OTA subckt (pair + mirror + out) becomes a triangle: + / − left, out on the apex, power up, ground and ibias down', async () => {
   const r = await importHier(ota);
-  assert.deepEqual(r.lvs.pages, { top: true, ota: true });
+  assert.deepEqual(r.lvs.pages, { tb_ota: true, ota: true });
   assert.equal(r.lvs.global, true);
-  const top = getPage(r.doc, 'top'), c = cell(top, 'XOTA');
+  const top = getPage(r.doc), c = cell(top, 'XOTA');
   assert.match(c.styleRaw, /^triangle;/);
   assert.equal(c.style.map.get('apiSymbol'), 'ota');
   const p = pinsOf(c);
@@ -33,10 +33,10 @@ test('an OTA subckt (pair + mirror + out) becomes a triangle: + / − left, out 
 
 test('the choice is explicit when given: opts.symbols or *.symbol in the .subckt wins over the role', async () => {
   const box = await importHier(ota, { symbols: { ota: 'box' } });
-  assert.doesNotMatch(cell(getPage(box.doc, 'top'), 'XOTA').styleRaw, /^triangle;/);
+  assert.doesNotMatch(cell(getPage(box.doc), 'XOTA').styleRaw, /^triangle;/);
   assert.equal(box.lvs.global, true);
   const hinted = ota.replace('.subckt ota inp inn out ibias power_ana ground_ana', '.subckt ota inp inn out ibias power_ana ground_ana\n*.symbol box');
-  assert.doesNotMatch(cell(getPage((await importHier(hinted)).doc, 'top'), 'XOTA').styleRaw, /^triangle;/);
+  assert.doesNotMatch(cell(getPage((await importHier(hinted)).doc), 'XOTA').styleRaw, /^triangle;/);
   // a resistor divider named like an amplifier stays a box without a hint, a triangle with one
   const div = `.subckt amp in out power ground
 R1 power out 10k
@@ -71,16 +71,16 @@ RL op on 10k
 .end`;
   const r = await importHier(fd);
   assert.equal(r.lvs.global, true, JSON.stringify(r.lvs));
-  const c = cell(getPage(r.doc, 'top'), 'XFD'), p = pinsOf(c);
+  const c = cell(getPage(r.doc), 'XFD'), p = pinsOf(c);
   assert.equal(c.style.map.get('apiSymbol'), 'ota_fd');
   assert.ok(p.outp.y < p.outn.y && p.outp.x > 0.5 && p.outn.x > 0.5);
-  assert.equal(geoLvs(getPage(r.doc, 'top')).ok, true);
+  assert.equal(geoLvs(getPage(r.doc)).ok, true);
 });
 
 test('an amplifier whose pins do not fit a triangle (three inputs) stays a box', async () => {
   const t = ota.replace(/ota inp inn out ibias/g, 'ota inp inn in3 out ibias').replace('XOTA vin fb vout nb', 'XOTA vin fb vin vout nb').replace('M1 n1 inp t', 'M1 n1 inp t').replace('.ends ota', 'R9 in3 ground_ana 1k\n.ends ota');
   const r = await importHier(t);
-  assert.doesNotMatch(cell(getPage(r.doc, 'top'), 'XOTA').styleRaw, /^triangle;/);
+  assert.doesNotMatch(cell(getPage(r.doc), 'XOTA').styleRaw, /^triangle;/);
   assert.equal(r.lvs.global, true);
 });
 
@@ -88,7 +88,7 @@ test('acceptance: the Brokaw split as in the plan (ota + demarrage subckts): tri
   const r = await importHier(fs.readFileSync(new URL('./fixtures/hier-brokaw/brokaw_hier.cir', import.meta.url), 'utf8'));
   assert.ok(Object.values(r.lvs.pages).every(Boolean), JSON.stringify(r.lvs.pages));
   assert.equal(r.lvs.global, true);
-  const top = getPage(r.doc, 'top');
+  const top = getPage(r.doc);
   const ota = cell(top, 'XOTA'), dem = cell(top, 'XDEM'), p = pinsOf(ota);
   assert.equal(ota.style.map.get('apiSymbol'), 'ota');
   assert.ok(p.inp.x === 0 && p.inn.x === 0 && p.inp.y < p.inn.y, '+ = inp (c2) above − = inn (c1)');
@@ -117,12 +117,12 @@ V3 b 0 0.9
 RL o 0 10k
 .end`;
   const r = await importHier(v2i);
-  const top = getPage(r.doc, 'top');
+  const top = getPage(r.doc);
   assert.match(cell(top, 'XV').styleRaw, /^triangle;/);
   const signs = allCells(top).map(cellInfo).filter((c) => /^\s*[+−]\s*$/.test(String(c.value || '').replace(/<[^>]+>/g, '')));
   assert.deepEqual(signs.map((c) => c.value), [], 'no polarity sign');
   assert.equal(r.lvs.global, true);
   // with names that give it, the signs are there (inp / inn)
   const named = await importHier(v2i.replaceAll('inputcm_VNI', 'inn').replaceAll('inputcm_VPI', 'inp'));
-  assert.equal(allCells(getPage(named.doc, 'top')).map(cellInfo).filter((c) => /^\s*[+−]\s*$/.test(String(c.value || '').replace(/<[^>]+>/g, ''))).length, 2);
+  assert.equal(allCells(getPage(named.doc)).map(cellInfo).filter((c) => /^\s*[+−]\s*$/.test(String(c.value || '').replace(/<[^>]+>/g, ''))).length, 2);
 });

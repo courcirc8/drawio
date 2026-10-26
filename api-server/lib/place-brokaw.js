@@ -177,14 +177,18 @@ function read(parsed, opts = {}) {
       take(biasD, ...biasR.parts);
   }
   }
-  // 5. the output device: gate on the amplifier output, channel on X
-  const outs = gated(O).filter((c) => c.nodes[0] === X || c.nodes[2] === X);
-  if (outs.length !== 1) return null;
-  const out = outs[0];
-  take(out);
+  // 5. the output device: gate on the amplifier output, channel on X; none when the
+  //    amplifier block is complete (its output device inside: output on X)
+  let out = null;
+  if (!(amp && O === X)) {
+    const outs = gated(O).filter((c) => c.nodes[0] === X || c.nodes[2] === X);
+    if (outs.length !== 1) return null;
+    out = outs[0];
+    take(out);
+  }
   // 6. compensation O -> X (R, C strings) and the loads X -> ground
   const comp = [];
-  for (const p of twoOn(O)) {
+  if (out) for (const p of twoOn(O)) {
     if (used.has(p.ref)) continue;
     const s = string(O, p, 'RC');
     if (s.end !== X) return null;
@@ -347,15 +351,18 @@ export function importBrokaw(model, parsed, B) {
     }
     oNode = pin[it.pins.find((p) => p.side === 'right').name];
     const xEnd = xTri + 120;
+    let yAmp = yTop + 120 + 60;                 // the triangle and the ground symbols under it
     // the bias pin: straight down past the ground symbol to its resistor, then X (labelled)
     if (B.amp.bias) {
       const a = pin[B.amp.bias.name], yb = yTop + 140;
       S.path(B.NB, a, { x: a.x, y: yb });
       const pe = vString(B.biasR, a.x, yb, 1);
       S.path(B.X, pe, { x: a.x, y: pe.y + 20 }); lab(B.X, { x: a.x, y: pe.y + 20 }, 1);
+      yAmp = Math.max(yAmp, pe.y + 40);
     }
     ampRight = xEnd + 60;
-    frame("Amplificateur d'erreur", xTri - 40, ampRight, 40, S.bbox().y1 + 30);
+    // the frame hugs the amplifier (not the core's columns beside it)
+    frame("Amplificateur d'erreur", xTri - 40, ampRight, Math.min(yTop - 60, ...it.pins.filter((p) => p.side === 'top').map(() => yTop - 80)), yAmp + 20);
   } else {
     // left: the input on c(B) (its wire straight from Q(B)); yV: the amplifier's local supply line
     const mL = tr(ldL, xL, yV - gL.top.y, 1), mR = tr(ldR, xR, yV - trGeo(ldR, -1).top.y, -1);
@@ -411,7 +418,21 @@ export function importBrokaw(model, parsed, B) {
   const ampBottom = S.bbox().y1;
 
   /* ---- output: the output device on the amplifier output, compensation, loads, the vref port */
+  if (!B.out) {
+    // complete amplifier: its output IS the reference, the port at the apex (loads below it)
+    const y = oNode.y, xP = ampRight + 40 + (B.loads.length ? 40 : 0);
+    S.path(B.X, oNode, { x: xP, y });
+    const pv = portVert(S, B.X, { x: xP, y }, 1, true, 'output'); S.term(B.X, pv, pv.portPin);
+    B.loads.forEach((c, i) => {
+      const xc = ampRight + 20 + i * 40;
+      S.path(B.X, { x: xc, y }, { x: xc, y: y + 30 });
+      const v = placeTwo(S, c, xc, y + 30, B.X, true, 1);
+      S.term(B.X, v, v.first);
+      gnd(GND, S.term(GND, v, v.other));
+    });
+  }
   const xO = B.amp ? ampRight + 340 : 1620;
+  if (B.out) {
   const outDir = -1, go = trGeo(B.out, outDir);
   const ov = tr(B.out, xO, oNode.y - go.gate.y, outDir);
   S.path(B.O, oNode, ov.gate);
@@ -445,12 +466,13 @@ export function importBrokaw(model, parsed, B) {
   });
   // the bench supply, apart on the right: vdd above, ground below
   if (B.supply) {
-    const xv = xO + 200, c = B.supply;
+    const xv = xO + 300, c = B.supply;     // a bench source: outside the frames
     const v = placeTwo(S, c, xv, y + 30, B.VDD, true, 1);
     vdd(B.VDD, S.term(B.VDD, v, v.first));
     const b = S.term(GND, v, v.other); gnd(GND, b); yl = Math.max(yl, b.y);
   }
-  frame('Sortie', ampRight + 20, xO + (B.supply ? 280 : 220), 40, Math.max(yl + 60, ampBottom + 30));
+  frame('Sortie', ampRight + 20, xO + 220, 40, B.amp ? yl + 60 : Math.max(yl + 60, ampBottom + 30));
+  }
 
   /* ---- start-up: the block (hierarchical top), or the stack and the devices hanging on its nodes */
   if (B.start && B.start.block) {

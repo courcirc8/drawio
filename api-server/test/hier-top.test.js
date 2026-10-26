@@ -53,5 +53,6 @@ test('Brokaw top: Q1 / Q2 columns, the OTA beside them, the start-up box on the 
 
 test('a top the figure does not read keeps the block placer', async () => {
   const r = await importHier(fs.readFileSync(new URL('./fixtures/hier-rails/ota_rails.cir', import.meta.url), 'utf8'));
-  assert.equal(r.pages.find((p) => p.name === 'top').engine, 'blocks');
+  assert.equal(r.pages[0].name, 'tb_ota');      // its sources, the OTA and its feedback: a testbench
+  assert.equal(r.pages[0].engine, 'blocks');
 });

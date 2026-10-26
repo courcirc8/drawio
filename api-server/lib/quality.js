@@ -20,6 +20,9 @@
  *   mirrorRef  no current mirror without a reference current (a netlist error)
  *   uWires     no detour: a wire longer than the Manhattan distance of its
  *              ends by more than 1.5 median part sizes (long U loops)
+ *   sources    opts.block (a block page of a hierarchy, not its testbench): no
+ *              voltage or current source (Eric, 2026-10-26: only the testbench
+ *              page tb_<bloc> carries them)
  *
  * Returns { pass, checks: {name: {ok, n, detail}} }. Geometry only.
  */
@@ -32,7 +35,7 @@ import { TRIANGLE, crossesTriangle } from './geo-lvs.js';
 import { misalignedPorts } from './align-ports.js';
 import { mirrorsWithoutReference } from './netcheck.js';
 
-export function qualityGate(model, parsed) {
+export function qualityGate(model, parsed, opts = {}) {
   const cs = allCells(model).map(cellInfo), byId = new Map(cs.map((c) => [c.id, c]));
   const verts = cs.filter((c) => c.kind === 'vertex'), edges = cs.filter((c) => c.kind === 'edge');
   const dev = (ref) => verts.find((c) => String(c.refdes || '') === ref);
@@ -167,5 +170,9 @@ export function qualityGate(model, parsed) {
   const mp = misalignedPorts(model);
   checks.ports = { ok: !mp.length, n: mp.length, detail: mp };
 
+  if (opts.block) {
+    const src = (parsed.components || []).filter((c) => /^[VI]$/i.test(c.prefix || String(c.ref || '')[0])).map((c) => c.ref);
+    checks.sources = { ok: src.length === 0, n: src.length, detail: src };
+  }
   return { pass: Object.values(checks).every((c) => c.ok), checks };
 }

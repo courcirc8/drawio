@@ -23,8 +23,12 @@ import { compare } from './lvs.js';
 import { geoLvs } from './geo-lvs.js';
 import { annotation as annotationOf } from './place-manuel.js';
 import { brokawReading, importBrokaw } from './place-brokaw.js';
+import { withGroundAlias } from './ground-alias.js';
 
 const RAILNAME = /^(0|vdd\w*|vss\w*|avdd\w*|dvdd\w*|vcc\w*|vee\w*|gnd\w*|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
+
+/** parts of a bank or a resistor string from which it gets its own page */
+export const GROUP_PAGE_MIN = 12;
 
 /** text of a netlist whose top level is the body of .subckt `def` (other definitions kept) */
 function bodyText(parsed, def) {
@@ -52,7 +56,10 @@ export function hierReading(text, opts = {}) {
   const banks = opts.banks === false ? [] : bankReading(top).map((b) => ({ ...b, kind: 'bank' }));
   const taken = new Set(banks.flatMap((b) => b.parts.map((c) => c.ref)));
   const chains = opts.banks === false ? [] : chainReading(top, taken);
-  return { flat, top, defs, banks: [...banks, ...chains], instances: flat.instances };
+  // a group becomes its own page only when large (Eric, 2026-10-26: too many pages draw
+  // badly); a shorter resistor string or bank stays on its parent page
+  const large = (b) => b.parts.length >= GROUP_PAGE_MIN;
+  return { flat, top, defs, banks: [...banks, ...chains].filter(large), instances: flat.instances };
 }
 
 /* ------------------------------------------------------------ symbols */
@@ -466,9 +473,12 @@ export function importBlockPage(model, parsed, banks = [], symbols = new Map()) 
 
 /* ------------------------------------------------------------ the document */
 /** one page drawn from `parsed` into a fresh document: blocks/banks -> block page, else autoPlace */
-async function drawPage(parsed, banks, chain = null, symbols = new Map()) {
+async function drawPage(parsed, banks, chain = null, symbols = new Map(), figure = true) {
   const doc = newDocument(), m = getPage(doc);
   if (chain) { const r = importChainPage(m, parsed, chain); return { model: m, engine: 'chain', golden: parsed, geo: r.geo }; }
+  // D3: a page of blocks a flat figure reads (the Brokaw with its OTA and start-up blocks)
+  const fig = figure && !banks.length ? await drawFigure(parsed, symbols) : null;
+  if (fig) return fig;
   if (banks.length || parsed.components.some((c) => c.block)) {
     const r = importBlockPage(m, parsed, banks, symbols);
     return { model: m, engine: 'blocks', golden: r.golden, geo: r.geo };
@@ -478,19 +488,33 @@ async function drawPage(parsed, banks, chain = null, symbols = new Map()) {
   return { model: getPage(w.doc), engine: w.label, golden: parsed };
 }
 
-/** D3: the TOP page drawn like a flat figure when one reads it with its amplifier block taken as an
- *  amplifier (the Brokaw bandgap of place-brokaw.js); null otherwise. The figure draws the resistor
- *  strings itself: no bank page then. */
-function drawTopFigure(parsed, symbols) {
-  const blocks = pageItems(parsed, [], symbols).filter((i) => i.kind === 'block');
+/** D3: a page of blocks drawn like a flat figure when one reads it with its amplifier block taken as
+ *  an amplifier (the Brokaw bandgap of place-brokaw.js); null otherwise. The figure draws the resistor
+ *  strings itself: no bank page then. A ground_<dom> is drawn as the ground, its name kept. */
+async function drawFigure(parsed, symbols) {
+  const P = withGroundAlias(parsed);
+  const blocks = pageItems(P, [], symbols).filter((i) => i.kind === 'block');
   if (!blocks.some((i) => i.tri)) return null;
-  const B = brokawReading(parsed, { blocks });
+  const B = brokawReading(P, { blocks });
   if (!B || !B.amp) return null;
   const doc = newDocument(), m = getPage(doc);
   try {
-    const r = importBrokaw(m, parsed, { ...B, vertex: { box: blockVertex, tri: triangleVertex, pinText: trianglePinText } });
+    const r = importBrokaw(m, P, { ...B, vertex: { box: blockVertex, tri: triangleVertex, pinText: trianglePinText } });
+    const { labelGroundDomain } = await import('./auto.js');
+    labelGroundDomain(m, P.groundAlias);
     return { model: m, engine: 'brokaw', golden: parsed, geo: r.geo };
   } catch { return null; }
+}
+
+/** the testbench reading of a top level (Eric, 2026-10-26): its sources, plus ONE block (the DUT) and
+ *  passive loads only -> { dut }; sources with any other circuit -> { mixed }; no source -> null */
+export function testbenchReading(top) {
+  const src = top.components.filter((c) => /^[VI]$/.test(c.prefix));
+  if (!src.length) return null;
+  const rest = top.components.filter((c) => !src.includes(c));
+  const blocks = rest.filter((c) => c.block);
+  if (blocks.length === 1 && rest.every((c) => c.block || /^[RCL]$/.test(c.prefix))) return { dut: blocks[0].block, sources: src.map((c) => c.ref) };
+  return { mixed: true, sources: src.map((c) => c.ref) };
 }
 
 /** D4: set on every block cell (apiBlock) the drawio page link to the page it stands for: the page of its
@@ -506,7 +530,7 @@ function linkBlocks(doc, per) {
       const def = /(?:^|;)apiBlockDef=([^;]*)/.exec(st);
       if (!/(?:^|;)apiBlock=1(;|$)/.test(st) || !def) continue;
       const ref = obj.getAttribute('refdes') || obj.getAttribute('id');
-      const inst = per === 'instance' ? idOf(page === 'top' ? ref : `${page}.${ref}`) : null;
+      const inst = per === 'instance' ? idOf(dia === dias[0] ? ref : `${page}.${ref}`) : null;
       const id = inst || idOf(decodeURIComponent(def[1]));
       if (id) obj.setAttribute('link', `data:page/id,${id}`);
     }
@@ -535,11 +559,18 @@ function pageNet(P, pin) {
 export async function importHier(text, opts = {}) {
   const per = opts.per === 'instance' ? 'instance' : 'definition';
   const H = hierReading(text, opts);
-  const doc = newDocument('top');
+  // the top page: tb_<dut> when it is a testbench (its sources, the DUT one block, loads)
+  const tb = testbenchReading(H.top);
+  const TOP = tb?.dut ? `tb_${tb.dut}` : 'top';
+  const warnings = [];
+  const doc = newDocument(TOP);
   const pages = [], drawn = new Map();       // page name -> {ex, golden, pins}
   const finish = (name, kind, d, extra = {}) => {
-    const m = name === 'top' ? getPage(doc) : addPage(doc, name, d.model);
-    if (name === 'top') { const src = d.model; while (m.firstChild) m.removeChild(m.firstChild); for (const n of Array.from(src.childNodes)) m.appendChild(doc.importNode(n, true)); }
+    const m = name === TOP ? getPage(doc) : addPage(doc, name, d.model);
+    // a source on a block page (any page but the testbench): a quality-gate failure, reported
+    const src = (d.golden?.components || []).filter((c) => /^[VI]$/.test(c.prefix)).map((c) => c.ref);
+    if (src.length && kind !== 'testbench') warnings.push(`source on block page ${name}: ${src.join(' ')} (write the block as a .subckt under a tb_<bloc> testbench)`);
+    if (name === TOP) { const src = d.model; while (m.firstChild) m.removeChild(m.firstChild); for (const n of Array.from(src.childNodes)) m.appendChild(doc.importNode(n, true)); }
     if (opts.onPage) opts.onPage(name, m);   // tests: corrupt a page before its extraction
     const ex = extractNetlist(m), rep = compare(ex, d.golden);
     drawn.set(name, { ex, golden: d.golden, ...extra });
@@ -547,14 +578,14 @@ export async function importHier(text, opts = {}) {
   };
   // top
   const symbols = new Map([...H.defs.values()].map((d) => [d.name.toUpperCase(), d.symbol]));
-  const figure = opts.figure === false ? null : drawTopFigure(H.top, symbols);
+  const figure = opts.figure === false ? null : await drawFigure(H.top, symbols);
   const banks = figure ? [] : H.banks;
-  finish('top', 'top', figure || await drawPage(H.top, banks, null, symbols));
+  finish(TOP, tb?.dut ? 'testbench' : 'top', figure || await drawPage(H.top, banks, null, symbols, false));
   // banks: their parts with the top's net names, every pin an I/O
   for (const b of banks) finish(b.name, b.kind, await drawPage({ ...H.top, components: b.parts, warnings: [] }, [], b.kind === 'chain' ? b : null), { pins: b.pins });
   // definitions (one drawing each), copied per instance when asked
   const defPage = new Map();
-  for (const d of H.defs.values()) defPage.set(d.name, await drawPage(d.parsed, [], null, symbols));
+  for (const d of H.defs.values()) defPage.set(d.name, await drawPage(d.parsed, [], null, symbols, opts.figure !== false));
   const pageOfInst = new Map();              // instance path -> page name
   if (per === 'instance') {
     for (const inst of H.instances) {
@@ -572,11 +603,11 @@ export async function importHier(text, opts = {}) {
   const place = (ref) => {
     const p = instPaths.find((q) => ref.toUpperCase().startsWith(q.toUpperCase() + '.'));
     if (p) return { page: pageOfInst.get(p), cell: ref.slice(p.length + 1) };
-    return { page: bankOf.get(ref) || 'top', cell: ref };
+    return { page: bankOf.get(ref) || TOP, cell: ref };
   };
   for (const c of H.flat.components) map[c.ref] = place(c.ref);
   for (const inst of H.instances) map[inst.path] = place(inst.path);
-  for (const b of banks) map[b.name] = { page: 'top', cell: b.name };
+  for (const b of banks) map[b.name] = { page: TOP, cell: b.name };
   // D4: every block links to its page (drawio `link="data:page/id,<page id>"`: a click opens the block's page)
   linkBlocks(doc, per);
   // global LVS: the drawing flattened back through the blocks against the flattened netlist
@@ -605,10 +636,10 @@ export async function importHier(text, opts = {}) {
       flat.push({ ...c, ref, nodes: c.nodes.map(net), ...(c.fullNodes ? { fullNodes: c.fullNodes.map(net) } : {}) });
     }
   };
-  expand('top', null, '');
+  expand(TOP, null, '');
   // simulation directives (.nodeset, .ic) are not circuit: reported, not failed
   const directive = (w) => /^directive not representable/.test(typeof w === 'string' ? w : w.message || w.code || '');
   const global = compare({ components: flat, issues: [] }, { ...H.flat, warnings: (H.flat.warnings || []).filter((w) => !directive(w)) });
-  const warnings = (H.flat.warnings || []).filter(directive);
+  warnings.push(...(H.flat.warnings || []).filter(directive));
   return { doc, pages, map, lvs: { pages: Object.fromEntries(pages.map((p) => [p.name, p.lvs])), global: global.match, ...(global.match ? {} : { globalReport: global }), ...(warnings.length ? { warnings } : {}) }, banks: banks.map((b) => ({ name: b.name, kind: b.kind, pins: b.pins, parts: b.parts.map((c) => c.ref) })) };
 }

@@ -19,9 +19,9 @@ const blockPins = (m, ref) => {
 
 test('power_<dom> / ground_<dom> pins: on top and bottom of the block, LVS per page and global green', async () => {
   const r = await importHier(text, { symbols: { ota: 'box' } });   // the box (the triangle: hier-symbols.test.js)
-  assert.deepEqual(r.lvs.pages, { top: true, ota: true });
+  assert.deepEqual(r.lvs.pages, { tb_ota: true, ota: true });
   assert.equal(r.lvs.global, true, JSON.stringify(r.lvs.globalReport || {}).slice(0, 400));
-  const p = blockPins(getPage(r.doc, 'top'), 'XOTA');
+  const p = blockPins(getPage(r.doc), 'XOTA');
   assert.equal(p.power_ana.y, 0, 'power_ana on the top side');
   assert.equal(p.ground_ana.y, 1, 'ground_ana on the bottom side');
   assert.equal(p.inp.x, 0); assert.equal(p.out.x, 1);
@@ -56,7 +56,7 @@ test('a block pin power_down stays a signal port of the block page, not a supply
   const t = text.replace('.subckt ota inp', '.subckt ota power_down inp').replace('.ends ota', 'RPD power_down ground_ana 1meg\n.ends ota')
     .replace('XOTA vin', 'XOTA pd vin').replace(/\.end\s*$/, 'RPDT pd 0 10k\n.end\n');
   const r = await importHier(t, { symbols: { ota: 'box' } });
-  const p = blockPins(getPage(r.doc, 'top'), 'XOTA');
+  const p = blockPins(getPage(r.doc), 'XOTA');
   assert.ok(p.power_down, Object.keys(p).join(' '));
   assert.ok(p.power_down.y !== 0, 'power_down is not on the supply side');
 });
