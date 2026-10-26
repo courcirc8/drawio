@@ -91,8 +91,8 @@ une commande (net propre ou net de polarisation) ; un seul éperon par nœud.
 2. Un gabarit (approuvé par Eric) lit aussi le circuit → les candidats habituels tournent ; `manuel` n'est retenu que
    s'il échoue à **moins** de contrôles de la porte qualité que le dessin élu (égalité : le dessin élu). Ainsi
    `bench:templates` ne peut pas reculer.
-   Exception : le gabarit `ldo` (approuvé par Eric) reste élu même si `manuel` échoue à moins de contrôles
-   (Orchestrateur, 26.10) ; l'écart est rapporté dans `manuelVs`.
+   Le gabarit `ldo` suit la même règle : Eric a choisi le dessin `manuel` du LDO (26.10) ; l'écart reste rapporté
+   dans `manuelVs`.
 3. `AUTO_MANUEL=0` coupe le moteur.
 
 Les fils de rail et les boucles de diode portent `drawioApiTemplate=1`, comme les fils de `lib/rails.js` : ils sont
