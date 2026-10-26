@@ -99,3 +99,30 @@ test('acceptance: the Brokaw split as in the plan (ota + demarrage subckts): tri
   assert.equal(r.map['XOTA.XM1'].page, 'ota');
   assert.equal(r.map['XDEM.XMPL4'].page, 'demarrage');
 });
+
+test('no + / − on the triangle when the pin names do not give the polarity (V2I: inputcm_VNI / inputcm_VPI)', async () => {
+  const v2i = `.subckt v2i inputcm_VNI inputcm_VPI out power ground
+M1 d1 inputcm_VNI t ground nmos
+M2 out inputcm_VPI t ground nmos
+M3 d1 d1 power power pmos
+M4 out d1 power power pmos
+M5 t vb ground ground nmos
+M6 vb vb ground ground nmos
+R1 power vb 100k
+.ends v2i
+XV a b o vdd 0 v2i
+V1 vdd 0 1.8
+V2 a 0 0.9
+V3 b 0 0.9
+RL o 0 10k
+.end`;
+  const r = await importHier(v2i);
+  const top = getPage(r.doc, 'top');
+  assert.match(cell(top, 'XV').styleRaw, /^triangle;/);
+  const signs = allCells(top).map(cellInfo).filter((c) => /^\s*[+−]\s*$/.test(String(c.value || '').replace(/<[^>]+>/g, '')));
+  assert.deepEqual(signs.map((c) => c.value), [], 'no polarity sign');
+  assert.equal(r.lvs.global, true);
+  // with names that give it, the signs are there (inp / inn)
+  const named = await importHier(v2i.replaceAll('inputcm_VNI', 'inn').replaceAll('inputcm_VPI', 'inp'));
+  assert.equal(allCells(getPage(named.doc, 'top')).map(cellInfo).filter((c) => /^\s*[+−]\s*$/.test(String(c.value || '').replace(/<[^>]+>/g, ''))).length, 2);
+});

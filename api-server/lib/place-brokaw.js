@@ -280,8 +280,8 @@ export function importBrokaw(model, parsed, B) {
   const yC = Math.max(pA.y, pB.y);
   let xL = 800, xR = 1000, xT = (xL + xR) / 2, yV = yRef, inL, inR, ldL, ldR, gL, yCA, yCB;
   if (B.amp) {
-    // the amplifier triangle: the collector taps level with its '+' (upper) and '−' pins, 40 apart
-    const plus = B.amp.it.pins.find((p) => p.side === 'left' && B.amp.it.tri[p.name].sign === '+');
+    // the amplifier triangle: the collector taps level with its upper ('+') and lower ('−') inputs, 40 apart
+    const plus = B.amp.it.pins.filter((p) => p.side === 'left').sort((a, b) => B.amp.it.tri[a.name].y - B.amp.it.tri[b.name].y)[0];
     yCA = plus.net === B.CA ? yC + 40 : yC + 80; yCB = plus.net === B.CB ? yC + 40 : yC + 80;
   } else {
     // the amplifier's mirror first: the collector taps run below its diode loop

@@ -305,10 +305,13 @@ function triangleOf(it, symbol) {
   const outs = names.filter((n) => OUT_RE.test(n));
   const ins = names.filter((n) => IN_RE.test(n) && !outs.includes(n));
   if (ins.length !== 2 || outs.length !== (symbol === 'ota_fd' ? 2 : 1)) return null;
-  // polarity from the name (inp / inn, vip / vin, in_plus / in_minus), else the pin order
+  // polarity from the name (inp / inn, vip / vin, in_plus / in_minus); when the names do not give it
+  // (in1 / in2, inputcm_VNI / inputcm_VPI) the pin order places them and no sign is written: a wrong
+  // '+' is worse than none (review of #68)
   const sign = (n) => (/(p|plus|pos)$/i.test(n) ? 1 : /(n|m|minus|neg)$/i.test(n) ? -1 : 0);
+  const known = sign(ins[0]) !== sign(ins[1]);
   const [plus, minus] = sign(ins[0]) < sign(ins[1]) ? [ins[1], ins[0]] : [ins[0], ins[1]];
-  const rel = { [plus]: { x: 0, y: 1 / 3, sign: '+' }, [minus]: { x: 0, y: 2 / 3, sign: '−' } };
+  const rel = { [plus]: { x: 0, y: 1 / 3, ...(known ? { sign: '+' } : {}) }, [minus]: { x: 0, y: 2 / 3, ...(known ? { sign: '−' } : {}) } };
   const side = { [plus]: 'left', [minus]: 'left' };
   if (outs.length === 1) { rel[outs[0]] = { x: 1, y: 0.5 }; side[outs[0]] = 'right'; }
   else {
