@@ -17,6 +17,8 @@ test('fixture: the bench lines are where the tests expect them', () => assert.ok
 test('a testbench written as .subckt tb_bandgap, instantiated at the top: its sources pass, LVS green', async () => {
   const r = await importHier(asSubckt('tb_bandgap'));
   assert.equal(r.errors, undefined, JSON.stringify(r.errors));
+  // unwrapped to the top: one testbench page, no extra top page holding only XTB (review of #72, minor)
+  assert.deepEqual(r.pages.map((p) => `${p.name}:${p.kind}`), ['tb_bandgap:testbench', 'bandgap:subckt', 'ota:subckt', 'demarrage:subckt']);
   assert.ok(Object.values(r.lvs.pages).every(Boolean), JSON.stringify(r.lvs.pages));
   assert.equal(r.lvs.global, true);
 });
@@ -59,4 +61,23 @@ test('macro=1 models are listed; a source definition redefined as macro=1 is war
   assert.ok(c.warnings.some((w) => /\.subckt demarrage defined twice.*first holds a source: VX.*macro=1/.test(w)), JSON.stringify(c.warnings));
   const r = await importHier(twice);
   assert.deepEqual(r.macroModels, ['demarrage']);
+});
+
+// review of #72 (Orchestrator, 2026-10-26, REVUE-72.md): B1 and B2
+test('B1: an instance read as the parser reads it (a parameter before the name): its definition is checked', () => {
+  const m1 = TB.replace('XDEM vref power ground demarrage', 'XDEM vref power ground m=1 demarrage').replace('.ends demarrage', 'VX gs ground 3.3\n.ends demarrage');
+  assert.ok(m1.includes('m=1 demarrage'));
+  assert.ok(blockSourceCheck(m1).errors.some((e) => /source in block demarrage: VX/.test(e)), 'm=1 before the name');
+  const named = TB.replace(/\.subckt demarrage/g, '.subckt macro=1').replace(/\bdemarrage\b/g, 'macro=1').replace('.ends macro=1', 'VX gs ground 1\n.ends macro=1');
+  const c = blockSourceCheck(named);
+  assert.ok(c.errors.some((e) => /source in block macro=1: VX/.test(e)), JSON.stringify(c));
+  assert.deepEqual(c.macro, []);
+});
+
+test('B2: a tb_ exempts only a bench body (sources, block instances, R/C/L loads): tb_flat and tb_core are refused', async () => {
+  const flat = '* flat in tb\n.subckt tb_flat\nVDD vdd 0 3.3\nXQ1 c1 vb e 0 npn13G2 Nx=18\nXMS vdd gs vref 0 sg13_hv_nmos w=2u l=0.45u ng=1\nRL vref 0 10k\nRB vb 0 10k\nRC c1 vdd 10k\nRE e 0 1k\n.ends tb_flat\nXTB tb_flat\n.end\n';
+  assert.ok(blockSourceCheck(flat).errors.some((e) => /source in block tb_flat: VDD/.test(e)), 'transistors in the tb_');
+  const core = TB.replace(BENCH, '').replace('.subckt bandgap vref power ground', '.subckt tb_core vref power ground').replace('.ends bandgap', 'VINT power ground 3.3\n.ends tb_core') + 'XC vref vdd 0 tb_core\n.end\n';
+  assert.ok(blockSourceCheck(core).errors.some((e) => /source in block tb_core: VINT/.test(e)), 'a block renamed tb_core');
+  assert.ok((await importHier(core)).errors?.length);
 });

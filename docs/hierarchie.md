@@ -100,9 +100,13 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
     transitoire ;
   - un `.subckt … macro=1` (macro-modèle) : listé dans `macroModels` de la réponse, avec un avertissement s'il
     contient une source ;
-  - le banc écrit en `.subckt tb_*` : le haut n'a que son instance, et aucune définition ne l'instancie (un `tb_x`
-    sous un bloc reste un bloc) ;
-  - une `.subckt` qu'aucune instance n'atteint depuis le haut (bibliothèque) : avertissement seulement.
+  - le banc écrit en `.subckt tb_*` : le haut n'a que son instance, aucune définition ne l'instancie (un `tb_x`
+    sous un bloc reste un bloc), et son corps est un banc (sources, instances de blocs, charges R/C/L, aucun
+    composant actif ; un `tb_` qui contient des transistors est un bloc avec des sources). Un banc sans broche
+    instancié une fois est déplié au haut : sa page est la page `tb_<bloc>` du banc, sans page `top` en plus ;
+  - une `.subckt` qu'aucune instance n'atteint depuis le haut (bibliothèque) : avertissement seulement. Les
+    instances sont lues comme le parseur les lit (la définition est le dernier mot sans `=`, même après `m=1`), et
+    toute définition que le parseur développe compte comme utilisée.
   Une `.subckt` définie deux fois est signalée (la dernière est dessinée). Un import refusé (règle des sources ou LVS) ne remplace jamais le document. Le contrôle `sources` de la porte qualité (`qualityGate(model, parsed,
   { block: true })`) dit la même chose page par page. Une source sur une page de banque, ou une page du haut qui mêle
   sources et circuit, reste un avertissement : écrire le DUT en `.subckt`.

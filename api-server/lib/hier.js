@@ -584,13 +584,17 @@ async function drawFigure(parsed, symbols) {
  *  definition are all seen. Exceptions:
  *  - a .subckt marked macro=1 (listed in `macro`, warned when it holds a source);
  *  - a probe VSONDE_* of value 0 (`0`, `DC 0`, `0e0`, an inline `$` / `;` comment allowed);
- *  - the testbench written as a .subckt: a tb_* definition the top only instantiates (nothing else at the top)
- *    and no definition instantiates (a tb_x below a block stays a block);
+ *  - the testbench written as a .subckt: a tb_* definition the top only instantiates (nothing else at the top),
+ *    no definition instantiates (a tb_x below a block stays a block) and whose body reads as a bench: sources,
+ *    block instances and R / C / L loads, no device (a tb_ holding transistors is a block with sources);
  *  - a definition no instance reaches from the top: not drawn, a warning only.
- *  Returns { errors, warnings, macro }: one error per definition. */
+ *  The instances are read as the parser reads them (the definition: the last token without '='), and every
+ *  definition the parser expands counts as used.
+ *  Returns { errors, warnings, macro, benchText }: one error per definition; benchText = the text with a single
+ *  pinless bench .subckt unwrapped to the top (its page then is the testbench page, no extra top page). */
 const XSPICE_SOURCES = /^(d_source|filesource|sine|triangle|square|d_osc|d_pulse|d_pwm|oneshot)$/i;
 const zeroValue = (x) => /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?v?$/i.test(x) && parseFloat(x) === 0;
-export function blockSourceCheck(text) {
+export function blockSourceCheck(text, H = hierReading(text)) {
   const lines = [];
   let inControl = false;
   for (const raw of String(text).split(/\r?\n/)) {
@@ -601,22 +605,24 @@ export function blockSourceCheck(text) {
     else lines.push(raw);
   }
   const defs = [], stack = [], top = { insts: [], other: false }, models = new Map();
-  for (const raw of lines) {
+  const benchTop = [];             // [line index, definition key] of the top X lines
+  for (const [i, raw] of lines.entries()) {
     const line = raw.replace(/\s\$.*$/, '').replace(/;.*$/, '').trim();
     if (!line || line.startsWith('*')) continue;
     const t = line.split(/\s+/), low = t[0].toLowerCase();
     if (low === '.subckt') {
-      const d = { name: t[1] || '', key: (t[1] || '').toUpperCase(), macro: t.slice(2).some((x) => /^macro=(1|true)$/i.test(x)), sources: [], xspice: [], insts: [] };
+      const d = { name: t[1] || '', key: (t[1] || '').toUpperCase(), macro: t.slice(2).some((x) => /^macro=(1|true)$/i.test(x)), sources: [], xspice: [], insts: [], pins: t.slice(2).filter((x) => !x.includes('=') && !/^params:/i.test(x)), start: i };
       defs.push(d); stack.push(d); continue;
     }
-    if (low.startsWith('.ends')) { stack.pop(); continue; }
+    if (low.startsWith('.ends')) { const d = stack.pop(); if (d) d.end = i; continue; }
     if (low === '.model' && t[2]) { models.set(t[1].toUpperCase(), t[2].replace(/\(.*$/, '')); continue; }
     if (low.startsWith('.')) continue;
     const at = stack[stack.length - 1] || null, ref = t[0];
     if (/^X/i.test(ref)) {
-      const k = t.slice(1).findIndex((x) => x.includes('=') || /^params:/i.test(x));
-      const head = t.slice(1, k < 0 ? t.length : k + 1);
-      (at || top).insts.push(String(head[head.length - 1] || '').toUpperCase());
+      const rest = t.slice(1).filter((x) => !x.includes('='));     // as lib/netlist.js reads an X line
+      const key = String(rest[rest.length - 1] || '').toUpperCase();
+      (at || top).insts.push(key);
+      if (!at) benchTop.push([i, key]);
       continue;
     }
     if (!at) { top.other = true; continue; }
@@ -636,17 +642,27 @@ export function blockSourceCheck(text) {
     eff.set(d.key, d);
   }
   const below = new Set([...eff.values()].flatMap((d) => d.insts));
-  const bench = new Set(!top.other && top.insts.length && top.insts.every((k) => /^TB_/.test(k) && eff.has(k) && !below.has(k)) ? top.insts : []);
-  const reached = new Set(), todo = [...top.insts];
-  while (todo.length) { const k = todo.pop(); if (reached.has(k) || !eff.has(k)) continue; reached.add(k); todo.push(...eff.get(k).insts); }
+  const parsedOf = (k) => [...H.defs.values()].find((d) => d.name.toUpperCase() === k)?.parsed;
+  const benchBody = (k) => {
+    const cs = parsedOf(k)?.components || [];
+    return cs.some((c) => c.block) && cs.some((c) => /^[VIBEGFH]$/.test(c.prefix)) && cs.every((c) => c.block || /^[VIBEGFHRCL]$/.test(c.prefix));
+  };
+  const bench = new Set(!top.other && top.insts.length && top.insts.every((k) => /^TB_/.test(k) && eff.has(k) && !below.has(k) && benchBody(k)) ? top.insts : []);
+  const reached = new Set([...H.defs.values()].map((d) => d.name.toUpperCase()).concat((H.instances || []).map((x) => String(x.def).toUpperCase())));
+  const seen = new Set(), todo = [...top.insts];
+  while (todo.length) { const k = todo.pop(); if (seen.has(k) || !eff.has(k)) continue; seen.add(k); reached.add(k); todo.push(...eff.get(k).insts); }
   const macro = [];
   for (const d of eff.values()) {
     if (d.macro) { macro.push(d.name); if (d.sources.length) warnings.push(`macro-model ${d.name}: sources not checked (${d.sources.join(' ')})`); continue; }
     if (!d.sources.length || bench.has(d.key)) continue;
+    if (d.name.includes('=')) { errors.push(`source in block ${d.name}: ${d.sources.join(' ')} (a .subckt name holding '=' cannot be instantiated: rename it)`); continue; }
     if (!reached.has(d.key)) { warnings.push(`unused .subckt ${d.name} holds a source (${d.sources.join(' ')}): not instantiated, not drawn`); continue; }
     errors.push(`source in block ${d.name}: ${d.sources.join(' ')} (sources belong to the tb_<bloc> testbench; a macro-model: .subckt … macro=1)`);
   }
-  return { errors, warnings, macro };
+  let benchText;
+  const b = bench.size === 1 && benchTop.length === 1 && eff.get(benchTop[0][1]);
+  if (b && !b.pins.length && b.end != null) benchText = lines.filter((l, i) => i !== b.start && i !== b.end && i !== benchTop[0][0]).join('\n');
+  return { errors, warnings, macro, ...(benchText ? { benchText } : {}) };
 }
 
 /** the testbench reading of a top level (Eric, 2026-10-26): its sources, plus ONE block (the DUT) and
@@ -701,11 +717,13 @@ function pageNet(P, pin) {
  */
 export async function importHier(text, opts = {}) {
   const per = opts.per === 'instance' ? 'instance' : 'definition';
-  const H = hierReading(text, opts);
+  let H = hierReading(text, opts), SC = blockSourceCheck(text, H);
+  // a bench written as a pinless .subckt tb_*: unwrapped to the top, so that its page is the testbench page
+  if (SC.benchText) { text = SC.benchText; H = hierReading(text, opts); SC = blockSourceCheck(text, H); }
   // the top page: tb_<dut> when it is a testbench (its sources, the DUT one block, loads)
   const tb = testbenchReading(H.top);
   const TOP = tb?.dut ? `tb_${tb.dut}` : 'top';
-  const SC = blockSourceCheck(text), warnings = [...SC.warnings], errors = SC.errors;
+  const warnings = [...SC.warnings], errors = SC.errors;
   const doc = newDocument(TOP);
   const pages = [], drawn = new Map();       // page name -> {ex, golden, pins}
   const finish = (name, kind, d, extra = {}) => {
