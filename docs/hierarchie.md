@@ -6,7 +6,10 @@ sous-circuit, une par banque ou chaîne regroupée, et une page `top` de blocs.
 
 ## API
 
-`POST /documents/:id/netlist/import?hier=1[&per=instance][&force=1]`, corps `{spice}` ou texte.
+`POST /documents/:id/netlist/import?hier=1[&per=instance][&symbols=…][&force=1]`, corps `{spice}` ou texte.
+
+`symbols` (D2) : `ota:ota,demarrage:box` ou un objet JSON (aussi `{"symbols": …}` dans le corps), symbole de chaque
+`.subckt` sur les pages qui l'instancient : `ota` (triangle), `ota_fd` (triangle, `outp`/`outn`), `box`.
 
 Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
 
@@ -23,6 +26,10 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
 - `map` : toute référence aplatie (comme le parseur l'écrit, `XA1.XM5`) → page et identifiant de cellule (la
   référence locale). Les surimpressions par transistor (analog-design) passent par là.
 - `GET /documents/:id/export?format=png&page=<nom>` rend une page ; `format=xml` rend le `.drawio` multipage.
+- `GET /documents/:id/hier/pages[?scale=1]` (D5) : `{ pages: [{ name, id, svg, mapping, cells }], map }`. Chaque page
+  en SVG ; `cells` = boîte de chaque composant et bloc en unités du SVG (`{x, y, w, h, ref, block?, page?}`) ; `map`
+  = la `map` du dernier import `?hier=1`, chaque référence aplatie avec sa page et sa boîte. C'est ce qu'il faut à
+  `calques.py` pour poser les valeurs page par page. Chaque bloc porte une zone cliquable `<a xlink:href="<page>.svg">`.
 
 ## Pages
 
@@ -50,6 +57,17 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
   **série** dans l'intervalle suivant, charges après le dernier étage, entrée avant le premier, sources à gauche.
 - v1 : connexions par **étiquettes** (chaque broche a son fil court et son nom) ; fils directs entre broches voisines
   = amélioration possible.
+- **Rails** (D1) : `power`, `ground`, `power_<dom>`, `ground_<dom>` (convention d'analog-design) sont des
+  alimentations et des masses comme `vdd`/`vss` : broche en haut ou en bas, symbole de rail sur les pages. Le LVS
+  global lie une broche au net de la page sur la même borne quand la page l'a renommé (`ground_ana` dessiné en masse).
+- **Triangle d'ampli** (D2) : un `.subckt` défini qui est un ampli devient un triangle pointé à droite (`apiSymbol`) :
+  `+`/`−` à gauche (polarité par le nom `inp`/`inn`, `vip`/`vin`…, sinon l'ordre), sortie à la pointe (`outp`/`outn`
+  sur les côtés près de la pointe), alimentations sur le côté haut, masses et autres broches (`ibias`, `vcmref`) sur
+  le côté bas puis haut, au plus 3 par côté. Choix explicite d'abord (`symbols`, commentaire `*.symbol ota` dans le
+  `.subckt`), sinon le rôle : une paire d'entrée sur deux broches, une diode de miroir, une ou deux sorties. Des
+  broches qui n'entrent pas (trois entrées…) gardent la boîte. Le LVS géométrique juge le triangle, pas sa boîte.
+- **Liens** (D4) : chaque bloc porte `link="data:page/id,<page>"` vers la page de sa définition (ou de son chemin
+  d'instance avec `per=instance`, ou de sa banque) : un clic dans draw.io ouvre le bloc.
 
 ## LVS
 
@@ -72,9 +90,14 @@ modèle et W/L en µm.
 
 `test/hier.test.js` : primitives IHP ; cas multi-instances imbriqué (`fixtures/hier/multi.sp`, écrit pour ce test) par
 définition et par instance ; ordre des broches d'un bloc (une liaison permutée échoue) ; TIA `sim/op.cir` (6 banques
-en échelle, top ≤ 30) ; TIA proj5 cycle 5 (chaînes, transistors seuls au top, LVS global).
+en échelle, top ≤ 30) ; TIA proj5 cycle 5 (chaînes, transistors seuls au top, LVS global). `hier-rails.test.js`
+(D1), `hier-symbols.test.js` (D2 ; acceptation : Brokaw découpé comme dans le plan,
+`fixtures/hier-brokaw/brokaw_hier.cir`), `hier-pages.test.js` (D4, D5).
 
 ## Limites connues
+
+- Page d'un `.subckt` : une broche dont le net touche plusieurs composants (`ibias` sur la diode MN0) n'a pas
+  toujours de port nommé ; le LVS global passe par les bornes, mais la page ne montre pas le nom de la broche.
 
 - Pages de sous-circuit : la qualité est celle du moteur plat (`auto`). L'OTA cascodé du proj5 (41 composants) n'est
   pas lu par le moteur manuel → repli `sa`, peu lisible.

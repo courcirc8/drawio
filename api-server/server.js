@@ -404,6 +404,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     try { r = await importHier(spice, { per: req.query.per, symbols }); } catch (e) { throw model.httpError(e.status || 422, e.message); }
     entry.doc = r.doc;
     entry.importNetlist = { '': spice };
+    entry.hierMap = r.map;
     const ok = r.lvs.global && Object.values(r.lvs.pages).every(Boolean);
     const force = req.query.force === '1' || req.query.force === 'true';
     return res.status(ok || force ? 201 : 422).json({ engine: 'hier', per: req.query.per === 'instance' ? 'instance' : 'definition',
@@ -694,6 +695,14 @@ app.get('/documents/:id/export', wrap(async (req, res) => {
     region,
   });
   res.type(out.contentType).send(out.buffer);
+}));
+
+// D5 (PLAN-HIERARCHIE): every page as an SVG + the geometry of its cells in SVG units, the flattened refs
+// placed through the `map` of the last ?hier=1 import; blocks link to their page's SVG
+app.get('/documents/:id/hier/pages', wrap(async (req, res) => {
+  const { entry } = pageOf(req);
+  const { hierPages } = await import('./lib/hier-export.js');
+  res.json(await hierPages(entry.doc, entry.hierMap || null, { scale: req.query.scale != null ? parseFloat(req.query.scale) : 1 }));
 }));
 
 // ------------------------------------------------------------- checkpoints
