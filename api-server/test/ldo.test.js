@@ -30,12 +30,11 @@ test('ldo: a 5T OTA alone is not read', () => {
   assert.equal(ldoReading(parseSpice(LDO.replace(/^M5.*\n/m, ''))), null);
 });
 
-test('ldo: auto draws it with the template, LVS-clean', async () => {
+test('ldo: auto keeps the manual drawing, which fails fewer checks than the template, LVS-clean', async () => {
   const p = parseSpice(LDO);
   const r = await autoPlace(p);
-  assert.equal(r.label, 'ldo');
-  // the manual drawing is weighed and reported, but never replaces the approved
-  // template, even when it fails fewer checks (Orchestrator, 2026-10-26)
+  // Eric chose the manual drawing over the ldo template (2026-10-26); the gap stays reported
+  assert.equal(r.label, 'manuel');
   assert.ok(r.manuelVs && r.manuelVs.manuel < r.manuelVs.ldo, JSON.stringify(r.manuelVs));
   assert.ok(compare(extractNetlist(getPage(r.doc)), p).match);
 });
