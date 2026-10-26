@@ -20,8 +20,8 @@ import { allCells, cellInfo, updateCell, getCell, freshId, deleteCell } from './
 import { classify, activePins } from './components.js';
 import { pinAbs } from './route.js';
 
-const RAIL = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss)$/i;
-const GND = /^(0|gnd\w*|vss\w*|vee\w*|avss|dvss)$/i;
+const RAIL = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_\w+)?|ground(?:_\w+)?)$/i;
+const GND = /^(0|gnd\w*|vss\w*|vee\w*|avss|dvss|ground(?:_\w+)?)$/i;
 
 /**
  * @param model   the page

@@ -24,7 +24,7 @@
  * (the caller then keeps the other engines): that is the "sure" criterion.
  */
 
-export const SUPPLY = /^(a?v(dd|cc)\w*|vpwr|vdda|dvdd|vcca)$/i;
+export const SUPPLY = /^(a?v(dd|cc)\w*|vpwr|vdda|dvdd|vcca|power(?:_\w+)?)$/i;
 const GND = '0';
 export const BIASNAME = /^(v?bias\w*|vb\w*|[np]bias\w*|vc[mnp]\w*|vref\w*|vg\w*)$/i;
 const OUTNAME = /^(v?out\w*|o(ut)?[pn]?)$/i;

@@ -23,7 +23,7 @@ import { compare } from './lvs.js';
 import { geoLvs } from './geo-lvs.js';
 import { annotation as annotationOf } from './place-manuel.js';
 
-const RAILNAME = /^(0|vdd\w*|vss\w*|avdd\w*|dvdd\w*|vcc\w*|vee\w*|gnd\w*)$/i;
+const RAILNAME = /^(0|vdd\w*|vss\w*|avdd\w*|dvdd\w*|vcc\w*|vee\w*|gnd\w*|power(?:_\w+)?|ground(?:_\w+)?)$/i;
 
 /** text of a netlist whose top level is the body of .subckt `def` (other definitions kept) */
 function bodyText(parsed, def) {
@@ -44,7 +44,7 @@ export function hierReading(text, opts = {}) {
     const d = flat.subckts[String(name).toUpperCase()];
     if (!d || defs.has(d.name)) return;
     const parsed = parseSpice(`* .subckt ${d.name}\n` + bodyText(flat, d), { blocks: true });
-    defs.set(d.name, { name: d.name, pins: d.pins, parsed });
+    defs.set(d.name, { name: d.name, pins: d.pins, parsed, symbol: symbolOf(d, parsed, opts.symbols) });
     for (const c of parsed.components) if (c.block) visit(c.block);
   };
   for (const c of top.components) if (c.block) visit(c.block);
@@ -52,6 +52,27 @@ export function hierReading(text, opts = {}) {
   const taken = new Set(banks.flatMap((b) => b.parts.map((c) => c.ref)));
   const chains = opts.banks === false ? [] : chainReading(top, taken);
   return { flat, top, defs, banks: [...banks, ...chains], instances: flat.instances };
+}
+
+/* ------------------------------------------------------------ symbols */
+/** the symbol of a definition on the page that instantiates it (D2, PLAN-HIERARCHIE §3.2):
+ *  'ota' (triangle, one output), 'ota_fd' (triangle, outp / outn) or 'box'. An explicit
+ *  choice wins: opts.symbols { name: 'ota' | 'opamp' | 'ota_fd' | 'box' }, else a comment
+ *  `*.symbol ota` in the .subckt; without one, the role: an input pair on two pins (same
+ *  device, common source), a diode (the mirror) and one or two output pins. */
+const SYMBOLS = { ota: 'ota', opamp: 'ota', amp: 'ota', ota_fd: 'ota_fd', opamp_fd: 'ota_fd', box: 'box', block: 'box' };
+function symbolOf(d, parsed, given = {}) {
+  const key = Object.keys(given || {}).find((k) => k.toLowerCase() === d.name.toLowerCase());
+  const hint = key != null ? given[key] : (d.lines.map((l) => /^\s*\*\s*\.?symbol\s+(\S+)/i.exec(l)).find(Boolean) || [])[1];
+  if (hint != null) return SYMBOLS[String(hint).toLowerCase()] || 'box';
+  const pins = new Set(d.pins.map((p) => p.toLowerCase()));
+  const trs = parsed.components.filter((c) => /^[MQ]$/.test(c.prefix) && c.nodes.length >= 3);
+  const lc = (n) => String(n).toLowerCase();
+  const pair = trs.some((a) => trs.some((b) => a !== b && a.model === b.model && lc(a.nodes[2]) === lc(b.nodes[2]) && !pins.has(lc(a.nodes[2])) &&
+    a.nodes[1] !== b.nodes[1] && pins.has(lc(a.nodes[1])) && pins.has(lc(b.nodes[1]))));
+  const diode = trs.some((c) => c.nodes[0] === c.nodes[1]);
+  const outs = d.pins.filter((p) => OUT_RE.test(p)).length;
+  return pair && diode && outs >= 1 && outs <= 2 ? (outs === 2 ? 'ota_fd' : 'ota') : 'box';
 }
 
 /* ------------------------------------------------------------ chains */
@@ -150,7 +171,7 @@ function bankName(pins, banks) {
 
 
 /* ------------------------------------------------------------ top page */
-const RAIL0 = /^(0|gnd\w*|vss\w*)$/i;
+const RAIL0 = /^(0|gnd\w*|vss\w*|ground(?:_\w+)?)$/i;
 const IN_RE = /^(v?in\w*|v?i[pn]|v?[pn]in)$/i;
 const OUT_RE = /^(v?out\w*|v?o[pn]?\d*|v?o[pn]|y)$/i;
 const isSupply = (n) => RAILNAME.test(n) && !RAIL0.test(n);
@@ -166,12 +187,17 @@ function pinSide(name) {
 
 /** the items of a page with blocks: X instances (stages), banks, flat parts.
  *  Returns [{kind, ref, comp, nets, pins?}] */
-function pageItems(parsed, banks) {
+function pageItems(parsed, banks, symbols = new Map()) {
   const inBank = new Set(banks.flatMap((b) => b.parts.map((c) => c.ref)));
   const items = [];
   for (const c of parsed.components) {
     if (inBank.has(c.ref)) continue;
-    if (c.block) items.push({ kind: 'block', ref: c.ref, comp: c, pins: c.pins.map((p, i) => ({ name: p, net: c.nodes[i], side: pinSide(p) })) });
+    if (c.block) {
+      const it = { kind: 'block', ref: c.ref, comp: c, pins: c.pins.map((p, i) => ({ name: p, net: c.nodes[i], side: pinSide(p) })) };
+      const tri = triangleOf(it, symbols.get(String(c.block).toUpperCase()));
+      if (tri) { it.symbol = tri.symbol; it.tri = tri.rel; for (const p of it.pins) p.side = tri.side[p.name]; }
+      items.push(it);
+    }
     else items.push({ kind: 'part', ref: c.ref, comp: c });
   }
   for (const b of banks) {
@@ -255,13 +281,58 @@ function drawBlock(S, it) {
   B.forEach((p, i) => { rel[p.name] = { x: (i + 1) / (B.length + 1), y: 1 }; });
   const pins = it.pins.map((p) => ({ name: p.name, ...rel[p.name] }));
   const label = it.kind === 'bank' ? `<b>${it.ref}</b><br><font style="font-size:10px">${it.bankNote}</font>` : `<b>${it.ref}</b><br>${it.comp.block}`;
-  const st = `rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=default;fontSize=12;apiBlock=1;apiBlockPins=${blockPinsStyle(pins)};` + (it.kind === 'bank' ? 'dashed=1;' : '');
+  const st = `rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=default;fontSize=12;apiBlock=1;apiBlockDef=${encodeURIComponent(it.comp.block)};apiBlockPins=${blockPinsStyle(pins)};` + (it.kind === 'bank' ? 'dashed=1;' : '');
   const v = S.vert({ id: it.ref, c: it.comp, style: st, x: 0, y: -h / 2, w, h, pins: rel, value: label, refdes: it.ref });
   for (const p of it.pins) {
     const a = S.term(p.net, v, p.name);
     endAt(S, p.net, a, { left: 'l', right: 'r', top: 'u', bottom: 'd' }[p.side]);
     // the pin name inside the box
     if (p.side === 'left' || p.side === 'right') S.text(p.name, p.side === 'left' ? a.x + 4 : a.x - 64, a.y - 9, 60, 18, p.side, 10);
+  }
+}
+/** an amplifier triangle pointing right (box 120 x 120): '+' and '−' on the left, the output on the apex
+ *  (outp / outn on the slanted sides near it), supplies on the upper side, grounds and other pins (ibias…) on
+ *  the lower side, then the upper one; at most 3 per side, on the 20 grid. Returns null when the pins do not
+ *  fit (two inputs and one or two outputs needed): the block stays a box. */
+function triangleOf(it, symbol) {
+  if (symbol !== 'ota' && symbol !== 'ota_fd') return null;
+  const names = it.pins.map((p) => p.name);
+  const outs = names.filter((n) => OUT_RE.test(n));
+  const ins = names.filter((n) => IN_RE.test(n) && !outs.includes(n));
+  if (ins.length !== 2 || outs.length !== (symbol === 'ota_fd' ? 2 : 1)) return null;
+  // polarity from the name (inp / inn, vip / vin, in_plus / in_minus), else the pin order
+  const sign = (n) => (/(p|plus|pos)$/i.test(n) ? 1 : /(n|m|minus|neg)$/i.test(n) ? -1 : 0);
+  const [plus, minus] = sign(ins[0]) < sign(ins[1]) ? [ins[1], ins[0]] : [ins[0], ins[1]];
+  const rel = { [plus]: { x: 0, y: 1 / 3, sign: '+' }, [minus]: { x: 0, y: 2 / 3, sign: '−' } };
+  const side = { [plus]: 'left', [minus]: 'left' };
+  if (outs.length === 1) { rel[outs[0]] = { x: 1, y: 0.5 }; side[outs[0]] = 'right'; }
+  else {
+    const [p, n] = /n$/i.test(outs[0]) ? [outs[1], outs[0]] : outs;
+    rel[p] = { x: 2 / 3, y: 1 / 3 }; rel[n] = { x: 2 / 3, y: 2 / 3 }; side[p] = side[n] = 'right';
+  }
+  const others = names.filter((n) => !rel[n]);
+  const up = others.filter((n) => isSupply(n)), down = others.filter((n) => RAIL0.test(n));
+  for (const n of others) if (!up.includes(n) && !down.includes(n)) (down.length < 3 - (outs.length === 2 ? 1 : 0) ? down : up).push(n);
+  const XS = { 1: [1 / 2], 2: [1 / 3, 1 / 2], 3: [1 / 6, 1 / 3, 1 / 2] };
+  const cap = outs.length === 2 ? 2 : 3;     // past x = 1/2 the side meets an outp / outn stub
+  if (up.length > cap || down.length > cap) return null;
+  up.forEach((n, i) => { const x = XS[up.length][i]; rel[n] = { x, y: x / 2 }; side[n] = 'top'; });
+  down.forEach((n, i) => { const x = XS[down.length][i]; rel[n] = { x, y: 1 - x / 2 }; side[n] = 'bottom'; });
+  return { symbol, rel, side };
+}
+function drawTriangle(S, it) {
+  const W = 120, H = 120;
+  const pins = it.pins.map((p) => ({ name: p.name, x: it.tri[p.name].x, y: it.tri[p.name].y }));
+  const rel = Object.fromEntries(pins.map((p) => [p.name, { x: p.x, y: p.y }]));
+  const st = `triangle;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=default;fontSize=11;align=left;spacingLeft=14;apiBlock=1;apiSymbol=${it.symbol};apiBlockDef=${encodeURIComponent(it.comp.block)};apiBlockPins=${blockPinsStyle(pins)};`;
+  const v = S.vert({ id: it.ref, c: it.comp, style: st, x: 0, y: -H / 2, w: W, h: H, pins: rel, value: `<b>${it.ref}</b><br>${it.comp.block}`, refdes: it.ref });
+  for (const p of it.pins) {
+    const a = S.term(p.net, v, p.name);
+    endAt(S, p.net, a, { left: 'l', right: 'r', top: 'u', bottom: 'd' }[p.side]);
+    const t = it.tri[p.name];
+    if (t.sign) S.text(t.sign, a.x + 3, a.y - 9, 14, 18, 'left', 13);
+    // a side pin other than a rail (ibias, vcmref): its name inside, over (under) the pin
+    else if ((p.side === 'top' || p.side === 'bottom') && !isRail(p.name)) S.text(p.name, a.x - 25, p.side === 'top' ? a.y + 4 : a.y - 18, 50, 14, 'center', 9);
   }
 }
 function drawPart(S, it) {
@@ -318,8 +389,8 @@ export function importChainPage(model, parsed, ch) {
 }
 
 /** draw a page whose items are blocks, banks and flat parts, by labels */
-export function importBlockPage(model, parsed, banks = []) {
-  const items = pageItems(parsed, banks);
+export function importBlockPage(model, parsed, banks = [], symbols = new Map()) {
+  const items = pageItems(parsed, banks, symbols);
   for (const b of banks) {
     const it = items.find((i) => i.ref === b.name);
     if (it) it.bankNote = b.kind === 'chain' ? `${b.parts.length} × ${annotationOf(b.parts[0])}` : `${b.parts.length} parts`;
@@ -331,6 +402,7 @@ export function importBlockPage(model, parsed, banks = []) {
     if (it.kind === 'part' && it.comp.nodes.length === 2) drawPart(S, it);
     else if (it.kind === 'part' && /^[MQJ]$/.test(it.comp.prefix) && it.comp.nodes.length === 3) drawTr(S, it);
     else if (it.kind === 'part') throw new Error(`hier: part ${it.ref} with ${it.comp.nodes.length} pins on a block page`);
+    else if (it.tri) drawTriangle(S, it);
     else drawBlock(S, it);
     sheets.push(S);
     const b = S.bbox();
@@ -379,16 +451,50 @@ export function importBlockPage(model, parsed, banks = []) {
 
 /* ------------------------------------------------------------ the document */
 /** one page drawn from `parsed` into a fresh document: blocks/banks -> block page, else autoPlace */
-async function drawPage(parsed, banks, chain = null) {
+async function drawPage(parsed, banks, chain = null, symbols = new Map()) {
   const doc = newDocument(), m = getPage(doc);
   if (chain) { const r = importChainPage(m, parsed, chain); return { model: m, engine: 'chain', golden: parsed, geo: r.geo }; }
   if (banks.length || parsed.components.some((c) => c.block)) {
-    const r = importBlockPage(m, parsed, banks);
+    const r = importBlockPage(m, parsed, banks, symbols);
     return { model: m, engine: 'blocks', golden: r.golden, geo: r.geo };
   }
   const { autoPlace } = await import('./auto.js');
   const w = await autoPlace(parsed);
   return { model: getPage(w.doc), engine: w.label, golden: parsed };
+}
+
+/** D4: set on every block cell (apiBlock) the drawio page link to the page it stands for: the page of its
+ *  definition (or of its bank), or with per = 'instance' the page of its instance path */
+function linkBlocks(doc, per) {
+  const dias = Array.from(doc.getElementsByTagName('diagram'));
+  const idOf = (name) => dias.find((d) => String(d.getAttribute('name')).toUpperCase() === String(name).toUpperCase())?.getAttribute('id');
+  for (const dia of dias) {
+    const page = dia.getAttribute('name');
+    for (const obj of Array.from(dia.getElementsByTagName('object'))) {
+      const cell = Array.from(obj.childNodes).find((n) => n.nodeName === 'mxCell');
+      const st = cell?.getAttribute('style') || '';
+      const def = /(?:^|;)apiBlockDef=([^;]*)/.exec(st);
+      if (!/(?:^|;)apiBlock=1(;|$)/.test(st) || !def) continue;
+      const ref = obj.getAttribute('refdes') || obj.getAttribute('id');
+      const inst = per === 'instance' ? idOf(page === 'top' ? ref : `${page}.${ref}`) : null;
+      const id = inst || idOf(decodeURIComponent(def[1]));
+      if (id) obj.setAttribute('link', `data:page/id,${id}`);
+    }
+  }
+}
+
+/** the net of page P (lowercase) that carries the subcircuit pin `pin`: the pin's own name when the page writes
+ *  it, else the page net on the same terminal as the pin in the page's netlist (a pin drawn as a rail symbol,
+ *  ground_<dom> drawn as ground, or a pin the page leaves unnamed) */
+function pageNet(P, pin) {
+  const k = String(pin).toLowerCase();
+  if (P.ex.components.some((c) => c.nodes.some((n) => String(n).toLowerCase() === k))) return k;
+  const byRef = new Map(P.ex.components.map((c) => [String(c.ref).toUpperCase(), c]));
+  for (const g of P.golden?.components || []) {
+    const i = g.nodes.findIndex((n) => String(n).toLowerCase() === k), e = byRef.get(String(g.ref).toUpperCase());
+    if (i >= 0 && e && e.nodes[i] != null) return String(e.nodes[i]).toLowerCase();
+  }
+  return k;
 }
 
 /**
@@ -406,16 +512,17 @@ export async function importHier(text, opts = {}) {
     if (name === 'top') { const src = d.model; while (m.firstChild) m.removeChild(m.firstChild); for (const n of Array.from(src.childNodes)) m.appendChild(doc.importNode(n, true)); }
     if (opts.onPage) opts.onPage(name, m);   // tests: corrupt a page before its extraction
     const ex = extractNetlist(m), rep = compare(ex, d.golden);
-    drawn.set(name, { ex, ...extra });
+    drawn.set(name, { ex, golden: d.golden, ...extra });
     pages.push({ name, kind, engine: d.engine, lvs: rep.match, ...(rep.match ? {} : { report: rep }), ...(d.geo ? { geo: d.geo.ok } : {}) });
   };
   // top
-  finish('top', 'top', await drawPage(H.top, H.banks));
+  const symbols = new Map([...H.defs.values()].map((d) => [d.name.toUpperCase(), d.symbol]));
+  finish('top', 'top', await drawPage(H.top, H.banks, null, symbols));
   // banks: their parts with the top's net names, every pin an I/O
   for (const b of H.banks) finish(b.name, b.kind, await drawPage({ ...H.top, components: b.parts, warnings: [] }, [], b.kind === 'chain' ? b : null), { pins: b.pins });
   // definitions (one drawing each), copied per instance when asked
   const defPage = new Map();
-  for (const d of H.defs.values()) defPage.set(d.name, await drawPage(d.parsed, []));
+  for (const d of H.defs.values()) defPage.set(d.name, await drawPage(d.parsed, [], null, symbols));
   const pageOfInst = new Map();              // instance path -> page name
   if (per === 'instance') {
     for (const inst of H.instances) {
@@ -438,6 +545,8 @@ export async function importHier(text, opts = {}) {
   for (const c of H.flat.components) map[c.ref] = place(c.ref);
   for (const inst of H.instances) map[inst.path] = place(inst.path);
   for (const b of H.banks) map[b.name] = { page: 'top', cell: b.name };
+  // D4: every block links to its page (drawio `link="data:page/id,<page id>"`: a click opens the block's page)
+  linkBlocks(doc, per);
   // global LVS: the drawing flattened back through the blocks against the flattened netlist
   const flat = [];
   const expand = (pageName, bind, path, ns = path) => {   // ns: prefix of internal nets (a bank keeps flat refs but private nets)
@@ -458,7 +567,7 @@ export async function importHier(text, opts = {}) {
       const inst = H.instances.find((i) => i.path.toUpperCase() === ref.toUpperCase());
       if (c.prefix === 'X' && inst) {
         const pg = pageOfInst.get(inst.path), pins = drawn.get(pg).pins || [];
-        expand(pg, new Map(pins.map((pn, i) => [String(pn).toLowerCase(), net(c.nodes[i])])), inst.path);
+        expand(pg, new Map(pins.map((pn, i) => [pageNet(drawn.get(pg), pn), net(c.nodes[i])])), inst.path);
         continue;
       }
       flat.push({ ...c, ref, nodes: c.nodes.map(net), ...(c.fullNodes ? { fullNodes: c.fullNodes.map(net) } : {}) });

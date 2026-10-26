@@ -55,7 +55,7 @@ export function otaReading(parsed) {
       // the tail: a transistor's drain on the source net, or a source /
       // resistor from the source net to a rail (a resistor between the pair's
       // sources and a mirror node is not a tail: AnalogGenie 155)
-      const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss)$/i;
+      const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_\w+)?|ground(?:_\w+)?)$/i;
       const tail = parsed.components.find((c) => !used.has(c.ref) && (isMos(c) ? D(c) === S(p)
         : ['I', 'R'].includes(c.prefix) && c.nodes.includes(S(p)) && c.nodes.some((n) => n !== S(p) && RAILN.test(n))));
       if (tail) used.add(tail.ref);
@@ -63,7 +63,7 @@ export function otaReading(parsed) {
       const bias = tail && isMos(tail) ? parsed.components.find((c) => !used.has(c.ref) && isMos(c) && G(c) === G(tail) && D(c) === G(c) && isPmosLike(c) === isPmosLike(tail)) : null;
       if (bias) used.add(bias.ref);
       // the reference feeding the bias diode: a 2-terminal source / resistor from a rail
-      const ref = bias ? parsed.components.find((c) => !used.has(c.ref) && ['I', 'R'].includes(c.prefix) && c.nodes.includes(D(bias)) && c.nodes.some((n) => n !== D(bias) && /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*)$/i.test(n))) : null;
+      const ref = bias ? parsed.components.find((c) => !used.has(c.ref) && ['I', 'R'].includes(c.prefix) && c.nodes.includes(D(bias)) && c.nodes.some((n) => n !== D(bias) && /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|power(?:_\w+)?|ground(?:_\w+)?)$/i.test(n))) : null;
       if (ref) used.add(ref.ref);
       return { iA: iA.ref, iB: iB.ref, mA: dio.ref, mB: out.ref, tail: tail?.ref, bias: bias?.ref, ref: ref?.ref, pmosIn: isPmosLike(p), out: D(iB), used };
     }
@@ -79,7 +79,7 @@ export function otaReading(parsed) {
 export function millerReading(parsed) {
   const O = otaReading(parsed);
   if (!O) return null;
-  const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss)$/i;
+  const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_\w+)?|ground(?:_\w+)?)$/i;
   const byRef = new Map(parsed.components.map((c) => [c.ref, c]));
   const pIn = isPmosLike(byRef.get(O.iA));
   const m6 = parsed.components.find((c) => !O.used.has(c.ref) && isMos(c) && G(c) === O.out && RAILN.test(S(c)) && isPmosLike(c) !== pIn);

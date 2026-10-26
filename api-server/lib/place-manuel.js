@@ -973,7 +973,7 @@ export function ladderReading(parsed) {
   }
 }
 
-const RAIL0 = /^(0|gnd|vss)$/i;
+const RAIL0 = /^(0|gnd|vss|ground(?:_\w+)?)$/i;
 function importLadder(model, parsed, L) {
   const S = new Sheet();
   const PITCH = L.gsrc && L.gsrc.size ? 400 : 320, yA = 60, GAP = 50;

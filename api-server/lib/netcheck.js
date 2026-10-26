@@ -14,7 +14,7 @@
  */
 import { detectStructures } from './patterns.js';
 
-const RAIL = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss)$/i;
+const RAIL = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_\w+)?|ground(?:_\w+)?)$/i;
 // an internal node: a number or a tool-generated name (net12, n3, N_5)
 const INTERNAL = /^(\d+|net\d*\w*|n_?\d+\w*|x\d+)$/i;
 

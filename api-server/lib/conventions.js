@@ -64,7 +64,7 @@ export function conventionReport(model, parsed, opts = {}) {
   }
   // motif-local conventions
   const railOf = (ref) => parsed.components.find((c) => c.ref === ref).nodes.find((n) => rails.has(n));
-  const down = (n) => n === '0' || /^(vee|vss|v-)$/i.test(n || '');
+  const down = (n) => n === '0' || /^(vee|vss|v-|ground(?:_\w+)?)$/i.test(n || '');
   const rel = (a, b) => { const pa = pos.get(a), pb = pos.get(b); return pa && pb ? { dx: pa.x - pb.x, dy: pa.y - pb.y } : null; };
   for (const i of mo.instances) {
     if (i.motif === 'load') { const r = rel(i.refs[0], i.device); if (r) push(`load-on-rail-side:${i.refs[0]}`, MOTIF_W, down(railOf(i.refs[0])) ? r.dy > 20 : r.dy < -20, r); }

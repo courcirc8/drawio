@@ -166,7 +166,8 @@ async function exportDocumentImpl(doc, model, { format = 'png', scale = 2, borde
         return s.outerHTML;
       });
       if (svg == null) throw new Error('no SVG produced');
-      return { buffer: Buffer.from('<?xml version="1.0" encoding="UTF-8"?>\n' + svg, 'utf8'), contentType: 'image/svg+xml' };
+      // diagram -> SVG user units: (x + tx) * scale (the SVG is not clipped)
+      return { buffer: Buffer.from('<?xml version="1.0" encoding="UTF-8"?>\n' + svg, 'utf8'), contentType: 'image/svg+xml', mapping: { scale: xf.s, tx: xf.tx, ty: xf.ty } };
     }
 
     // BUG (2026-08-28): this used to clamp the clip origin with

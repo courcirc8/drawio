@@ -6,8 +6,8 @@
 // ring-reading.mjs — lecture d'un oscillateur en anneau CMOS dans une netlist.
 // Module ES, Node 22, sans dépendance.
 
-const RAIL_POS = /^(vdd\w*|vcc\w*|vp|avdd|dvdd)$/i;
-const RAIL_NEG = /^(0|gnd\w*|vss\w*|vee\w*|avss|dvss)$/i;
+const RAIL_POS = /^(vdd\w*|vcc\w*|vp|avdd|dvdd|power(?:_\w+)?)$/i;
+const RAIL_NEG = /^(0|gnd\w*|vss\w*|vee\w*|avss|dvss|ground(?:_\w+)?)$/i;
 const OUT_RE = /^v?out/i;
 
 const isRailPos = (n) => typeof n === 'string' && RAIL_POS.test(n);

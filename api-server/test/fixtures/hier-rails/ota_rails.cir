@@ -1,0 +1,17 @@
+* 5T OTA with a bias diode, rails named by the analog-design convention (power_<dom> / ground_<dom>)
+.subckt ota inp inn out ibias power_ana ground_ana
+M1 n1 inp t ground_ana nmos w=10u l=1u
+M2 out inn t ground_ana nmos w=10u l=1u
+M3 n1 n1 power_ana power_ana pmos w=20u l=1u
+M4 out n1 power_ana power_ana pmos w=20u l=1u
+MNT t ibias ground_ana ground_ana nmos w=10u l=2u
+MN0 ibias ibias ground_ana ground_ana nmos w=10u l=2u
+.ends ota
+XOTA vin fb vout nb vdd 0 ota
+RB vdd nb 100k
+RF1 vout fb 10k
+RF2 fb 0 10k
+VDD vdd 0 1.8
+VIN vin 0 0.9
+CL vout 0 1p
+.end

@@ -145,7 +145,7 @@ export function qualityGate(model, parsed) {
 
   // an ABSURD netlist (a reading gone wrong): parts in two or more groups that
   // no non-rail net joins
-  const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss)$/i;
+  const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_\w+)?|ground(?:_\w+)?)$/i;
   const comps = parsed.components.filter((c) => c.nodes?.length);
   const uf = new Map(comps.map((c) => [c.ref, c.ref])), fd = (k) => { while (uf.get(k) !== k) k = uf.get(k); return k; };
   const byNet = new Map();

@@ -393,9 +393,18 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   if (req.query.hier === '1' || req.query.hier === 'true') {
     const { importHier } = await import('./lib/hier.js');
     let r;
-    try { r = await importHier(spice, { per: req.query.per }); } catch (e) { throw model.httpError(e.status || 422, e.message); }
+    // ?symbols=ota:opamp,demarrage:box (or a JSON object, or {"symbols": …} in the body): the symbol of each
+    // .subckt on the pages that instantiate it (triangle 'ota' / 'ota_fd', or 'box'); without it, the role decides
+    let symbols = typeof req.body === 'object' && req.body ? req.body.symbols : undefined;
+    const q = req.query.symbols;
+    if (q) {
+      try { symbols = String(q).trim().startsWith('{') ? JSON.parse(q) : Object.fromEntries(String(q).split(',').map((t) => t.split(':').map((x) => x.trim())).filter((kv) => kv.length === 2 && kv[0])); }
+      catch { throw model.httpError(400, 'symbols: name:symbol,… or a JSON object'); }
+    }
+    try { r = await importHier(spice, { per: req.query.per, symbols }); } catch (e) { throw model.httpError(e.status || 422, e.message); }
     entry.doc = r.doc;
     entry.importNetlist = { '': spice };
+    entry.hierMap = r.map;
     const ok = r.lvs.global && Object.values(r.lvs.pages).every(Boolean);
     const force = req.query.force === '1' || req.query.force === 'true';
     return res.status(ok || force ? 201 : 422).json({ engine: 'hier', per: req.query.per === 'instance' ? 'instance' : 'definition',
@@ -686,6 +695,14 @@ app.get('/documents/:id/export', wrap(async (req, res) => {
     region,
   });
   res.type(out.contentType).send(out.buffer);
+}));
+
+// D5 (PLAN-HIERARCHIE): every page as an SVG + the geometry of its cells in SVG units, the flattened refs
+// placed through the `map` of the last ?hier=1 import; blocks link to their page's SVG
+app.get('/documents/:id/hier/pages', wrap(async (req, res) => {
+  const { entry } = pageOf(req);
+  const { hierPages } = await import('./lib/hier-export.js');
+  res.json(await hierPages(entry.doc, entry.hierMap || null, { scale: req.query.scale != null ? parseFloat(req.query.scale) : 1 }));
 }));
 
 // ------------------------------------------------------------- checkpoints
