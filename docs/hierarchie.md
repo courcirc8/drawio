@@ -94,8 +94,16 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
 - **Jamais de source dans un bloc** (bloquant, revue de #70) : une source V/I dans un `.subckt` fait échouer
   `?hier=1` en 422 (`errors: ["source in block …"]`), même avec `?force=1`. Sont des sources : V, I, B
   (comportementale), E, G, F, H (commandées), lues sur les lignes brutes de chaque `.subckt`, y compris une
-  `.subckt` au nom de primitive du PDK. Exceptions : une sonde `VSONDE_*` de valeur 0 (sans AC ni transitoire), un
-  `.subckt … macro=1` (macro-modèle). Un import refusé (règle des sources ou LVS) ne remplace jamais le document. Le contrôle `sources` de la porte qualité (`qualityGate(model, parsed,
+  `.subckt` au nom de primitive du PDK, une définition imbriquée et une source XSPICE `A` à modèle de source
+  (`d_source`, `filesource`, `sine`…). Exceptions (`blockSourceCheck`, suite de la revue de #71) :
+  - une sonde `VSONDE_*` de valeur 0 (`0`, `DC 0`, `0e0`, commentaire `$` / `;` en fin de ligne admis), sans AC ni
+    transitoire ;
+  - un `.subckt … macro=1` (macro-modèle) : listé dans `macroModels` de la réponse, avec un avertissement s'il
+    contient une source ;
+  - le banc écrit en `.subckt tb_*` : le haut n'a que son instance, et aucune définition ne l'instancie (un `tb_x`
+    sous un bloc reste un bloc) ;
+  - une `.subckt` qu'aucune instance n'atteint depuis le haut (bibliothèque) : avertissement seulement.
+  Une `.subckt` définie deux fois est signalée (la dernière est dessinée). Un import refusé (règle des sources ou LVS) ne remplace jamais le document. Le contrôle `sources` de la porte qualité (`qualityGate(model, parsed,
   { block: true })`) dit la même chose page par page. Une source sur une page de banque, ou une page du haut qui mêle
   sources et circuit, reste un avertissement : écrire le DUT en `.subckt`.
 - Pas de page pour une **primitive du PDK** (`rhigh`, `rppd`, `npn13G2`, `cap_cmim`, `sg13_*`…), même si le deck la

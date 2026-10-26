@@ -406,13 +406,13 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     const force = req.query.force === '1' || req.query.force === 'true';
     // Eric's rule (26.10): a source inside a block .subckt fails the import, ?force=1 or not
     // (exceptions: VSONDE_* probes of value 0, a .subckt marked macro=1); a refused drawing is never stored
-    if (r.errors?.length) return res.status(422).json({ engine: 'hier', error: r.errors.join('; '), errors: r.errors, pages: r.pages, lvs: r.lvs });
-    if (!ok && !force) return res.status(422).json({ engine: 'hier', per: req.query.per === 'instance' ? 'instance' : 'definition', error: 'hierarchical LVS failed', pages: r.pages, map: r.map, lvs: r.lvs, banks: r.banks });
+    if (r.errors?.length) return res.status(422).json({ engine: 'hier', error: r.errors.join('; '), errors: r.errors, ...(r.macroModels ? { macroModels: r.macroModels } : {}), pages: r.pages, lvs: r.lvs });
+    if (!ok && !force) return res.status(422).json({ engine: 'hier', per: req.query.per === 'instance' ? 'instance' : 'definition', error: 'hierarchical LVS failed', pages: r.pages, map: r.map, lvs: r.lvs, banks: r.banks, ...(r.macroModels ? { macroModels: r.macroModels } : {}) });
     entry.doc = r.doc;
     entry.importNetlist = { '': spice };
     entry.hierMap = r.map;
     return res.status(201).json({ engine: 'hier', per: req.query.per === 'instance' ? 'instance' : 'definition',
-      ...(ok ? {} : { error: 'hierarchical LVS failed' }), pages: r.pages, map: r.map, lvs: r.lvs, banks: r.banks });
+      ...(ok ? {} : { error: 'hierarchical LVS failed' }), pages: r.pages, map: r.map, lvs: r.lvs, banks: r.banks, ...(r.macroModels ? { macroModels: r.macroModels } : {}) });
   }
   // a ground spelled vss / gnd (alone) is drawn as ground: one GND rail (lib/ground-alias.js)
   const parsed = withGroundAlias(netlist.parseSpice(spice));
