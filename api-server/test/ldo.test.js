@@ -30,10 +30,14 @@ test('ldo: a 5T OTA alone is not read', () => {
   assert.equal(ldoReading(parseSpice(LDO.replace(/^M5.*\n/m, ''))), null);
 });
 
-test('ldo: auto draws it with the template, LVS-clean', async () => {
+test('ldo: auto weighs the template against manuel (fewer quality-gate fails wins), LVS-clean', async () => {
   const p = parseSpice(LDO);
   const r = await autoPlace(p);
-  assert.equal(r.label, 'ldo');
+  // since the manual engine mirrors the amplifier pair (test/cascode-ota.test.js),
+  // its drawing fails fewer checks than the template's: docs/moteur-manuel.md
+  assert.ok(r.manuelVs && 'ldo' in r.manuelVs, JSON.stringify(r.manuelVs));
+  assert.equal(r.label, r.manuelVs.manuel < r.manuelVs.ldo ? 'manuel' : 'ldo');
+  assert.equal(r.label, 'manuel');
   assert.ok(compare(extractNetlist(getPage(r.doc)), p).match);
 });
 

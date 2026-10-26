@@ -31,6 +31,19 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
 - Un rail et un symbole par cadre ; points de jonction seulement aux T.
 - Polarisation et CMFB : cadres « Polarisation » / « CMFB » sous le cœur. Les nets de **polarisation**
   (`vb*`, `vbias*`, `vc[mnp]*`, `vref*`, `vg*`) sont reliés par **étiquettes** ; les nets de **signal** restent des fils.
+- **OTA cascodé télescopique** (OTA du TIA proj5, 26.10, `test/cascode-ota.test.js`) :
+  - **Répliques de polarisation** : une branche en série avec une diode, un seul bout sur un rail et l'autre sur un
+    nœud de colonne du cœur, va dans « Polarisation ». Cela vaut pour MBN + RBN vers `tail` ou MPD/MQ1, à condition
+    que ses grilles soient sa diode, un net de polarisation ou une entrée.
+  - **Démarrage** : un transistor du cœur dont la grille n'est commandée que par un RC vers les rails (au moins une
+    capacité ; un diviseur R ou une source est une polarisation) va dans
+    le cadre « Démarrage », avec ces passifs. C'est le cas du kick XKA/XKB par RPOR/CPOR.
+  - Les chaînes passives entre cadres s'arrêtent sur un net partagé avec un autre cadre ; le degré du net est compté
+    sur tout le circuit.
+  - **Branche R ∥ C** de détection (RCMA ∥ CCMA) : un seul échelon, avec le partenaire dessiné à côté et relié aux
+    deux bouts. Le nom du bout haut est posé dans l'axe de l'échelon, sans coude.
+  - **Paire du CMFB** en miroir : la grille de référence (`vcmref`) sort du côté extérieur, comme celle de sa
+    partenaire.
 - **Échelle entre deux bus** (banque de capacités / résistances commutées) : quand la lecture en colonnes échoue,
   `ladderReading` cherche deux bus A et B reliés par des tranches en série (une capacité, un interrupteur…) ; les
   autres composants sont des éperons d'un nœud de tranche vers un net commun (étiquette, ex. `vg`) ou un port ; les
