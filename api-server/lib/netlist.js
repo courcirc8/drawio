@@ -58,7 +58,7 @@ export function parseSpice(text, opts = {}) {
     if (low.startsWith('.subckt')) {
       const t = line.split(/\s+/);
       const pins = t.slice(2).filter((x) => !x.includes('='));
-      cur = { name: t[1], key: (t[1] || '').toUpperCase(), pins, lines: [] };
+      cur = { name: t[1], key: (t[1] || '').toUpperCase(), pins, lines: [], macro: t.slice(2).some((x) => /^macro=(1|true)$/i.test(x)) };
       if (cur.name) subckts[cur.key] = cur; else warnings.push('malformed .subckt skipped: ' + line);
       first = false;
       continue;
@@ -101,7 +101,8 @@ export function parseSpice(text, opts = {}) {
       const rest = tokens.slice(1).filter((x) => !x.includes('='));
       const name = rest[rest.length - 1];
       const nodes0 = rest.slice(0, -1);
-      const def = subckts[(name || '').toUpperCase()];
+      // a PDK primitive stays the device it is, even when the deck also defines it (never a page)
+      const def = ihpPrimitive(name) ? null : subckts[(name || '').toUpperCase()];
       if (def) {
         if (ctx.depth >= 8) { warnings.push('subckt nesting too deep, instance skipped: ' + line); return; }
         if (def.pins.length !== nodes0.length) { warnings.push(`X ${ref}: ${nodes0.length} nodes for .subckt ${def.name} with ${def.pins.length} pins, instance skipped`); return; }

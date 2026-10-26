@@ -33,7 +33,7 @@ import { isPmosLike } from './patterns.js';
 const RELPOS = '/AI/datasets/human-layouts/relpos.json';
 let STATS = null;
 const stats = () => (STATS ??= JSON.parse(fs.readFileSync(RELPOS, 'utf8')));
-const RAIL = /^(0|gnd|vdd|vss|vcc|vee|avdd|avss|dvdd|dvss|agnd|dgnd|vpwr|vgnd|power(?:_\w+)?|ground(?:_\w+)?)$/i;
+const RAIL = /^(0|gnd|vdd|vss|vcc|vee|avdd|avss|dvdd|dvss|agnd|dgnd|vpwr|vgnd|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 
 function rolesOf(c) {
   const names = c.prefix === 'M' ? ['D', 'G', 'S', 'B'] : c.prefix === 'Q' ? ['C', 'B', 'E', 'S'] : ['p', 'n'];
@@ -63,7 +63,7 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   // a vertical two-terminal part on a rail turns its rail pin towards the rail
   // (ground pin at the bottom, supply pin on top): place2 can draw it upside
   // down, and the ground symbol then hangs beside the part with a wire round it
-  const isGndN = (n) => /^(0|gnd|vss|vee|avss|dvss|agnd|dgnd|vgnd|ground(?:_\w+)?)$/i.test(n), isSupN = (n) => RAIL.test(n) && !isGndN(n);
+  const isGndN = (n) => /^(0|gnd|vss|vee|avss|dvss|agnd|dgnd|vgnd|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i.test(n), isSupN = (n) => RAIL.test(n) && !isGndN(n);
   if (opts.saRailTurn ?? (process.env.SA_RAIL_TURN !== '0')) for (const p of parts) {
     if (['M', 'Q'].includes(p.pc.prefix) || p.pins.length !== 2 || p.bh <= p.bw) continue;
     const ya = pinAbs(p.cell, p.pins[0]).y, yb = pinAbs(p.cell, p.pins[1]).y, [na, nb] = p.pc.nodes;
@@ -145,8 +145,8 @@ export async function importNetlistSA(model, parsed, opts = {}) {
   }
   // global flow: level 0 at VDD, 1 at ground, by graph distance through parts
   // (humans draw the supply on top, ground at the bottom: the strongest convention)
-  const isSup = (n) => RAIL.test(n) && n !== '0' && !/^(gnd|vss|vee|avss|dvss|agnd|dgnd|vgnd|ground(?:_\w+)?)$/i.test(n);
-  const isGnd = (n) => n === '0' || /^(gnd|vss|vee|avss|dvss|agnd|dgnd|vgnd|ground(?:_\w+)?)$/i.test(n);
+  const isSup = (n) => RAIL.test(n) && n !== '0' && !/^(gnd|vss|vee|avss|dvss|agnd|dgnd|vgnd|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i.test(n);
+  const isGnd = (n) => n === '0' || /^(gnd|vss|vee|avss|dvss|agnd|dgnd|vgnd|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i.test(n);
   // terminals that carry current: the bulk (4th MOS node, often tied to a rail)
   // must not make a transistor count as "on the supply"
   const termNets = (p) => (p.pc.prefix === 'M' || p.pc.prefix === 'Q' ? p.pc.nodes.slice(0, 3) : p.pc.nodes);

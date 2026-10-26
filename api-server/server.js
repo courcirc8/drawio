@@ -407,6 +407,9 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     entry.hierMap = r.map;
     const ok = r.lvs.global && Object.values(r.lvs.pages).every(Boolean);
     const force = req.query.force === '1' || req.query.force === 'true';
+    // Eric's rule (26.10): a V/I source inside a block .subckt fails the import, ?force=1 or not
+    // (exceptions: VSONDE_* probes, a .subckt marked macro=1)
+    if (r.errors?.length) return res.status(422).json({ engine: 'hier', error: r.errors.join('; '), errors: r.errors, pages: r.pages, lvs: r.lvs });
     return res.status(ok || force ? 201 : 422).json({ engine: 'hier', per: req.query.per === 'instance' ? 'instance' : 'definition',
       ...(ok ? {} : { error: 'hierarchical LVS failed' }), pages: r.pages, map: r.map, lvs: r.lvs, banks: r.banks });
   }
@@ -703,6 +706,13 @@ app.get('/documents/:id/hier/pages', wrap(async (req, res) => {
   const { entry } = pageOf(req);
   const { hierPages } = await import('./lib/hier-export.js');
   res.json(await hierPages(entry.doc, entry.hierMap || null, { scale: req.query.scale != null ? parseFloat(req.query.scale) : 1 }));
+}));
+// the same pages as one HTML viewer: tabs in hierarchy order, breadcrumb, a click on a block opens its page
+app.get('/documents/:id/hier/viewer.html', wrap(async (req, res) => {
+  const { entry } = pageOf(req);
+  const { hierPages, hierViewerHtml } = await import('./lib/hier-export.js');
+  res.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:");
+  res.type('html').send(hierViewerHtml(await hierPages(entry.doc, entry.hierMap || null), req.params.id));
 }));
 
 // ------------------------------------------------------------- checkpoints

@@ -78,7 +78,8 @@ test('TIA (proj5, cycle 5): resistor strings grouped as chains, lone keepers on 
   const H = hierReading(text);
   const chains = H.banks.filter((b) => b.kind === 'chain');
   assert.ok(chains.some((c) => c.name === 'chain_XRF1' && c.parts.length === 23), chains.map((c) => c.name).join(' '));
-  assert.ok(topItems(H) <= 32, `top items ${topItems(H)}`);
+  // the 2-part strings XRI1 / XRI2 stay on the top (no page under GROUP_PAGE_MIN parts, Eric 26.10)
+  assert.ok(topItems(H) <= 36, `top items ${topItems(H)}`);
   const r = await importHier(text);
   assert.ok(allGreen(r), JSON.stringify(r.lvs).slice(0, 2000));
   assert.deepEqual(r.map.XRF1u7, { page: 'chain_XRF1', cell: 'XRF1u7' });

@@ -39,18 +39,23 @@ const isNpn = (c) => c.prefix === 'Q' && !isP(c);
 const TWO = new Set(['R', 'C']);
 
 /* ---------------------------------------------------------------- reading */
-export function brokawReading(parsed) {
-  try { return read(parsed); } catch { return null; }
+export function brokawReading(parsed, opts = {}) {
+  try { return read(parsed, opts); } catch { return null; }
 }
 
-function read(parsed) {
+/** opts.blocks: the block items of a hierarchical TOP page (lib/hier.js pageItems): an amplifier
+ *  triangle on the two collectors stands for the error amplifier, a box on the rails and X for the
+ *  start-up circuit (D3, PLAN-HIERARCHIE §3.2) */
+function read(parsed, opts = {}) {
+  const blocks = new Map((opts.blocks || []).map((it) => [it.ref, it]));
+  const isBlk = (c) => blocks.has(c.ref);
   // the bench supply (V from the supply net to the ground) is drawn apart, beside the output
   const isSrc = (c) => c.prefix === 'V' && c.nodes.length === 2 && c.nodes.includes(GND) && SUPPLY.test(c.nodes.find((n) => n !== GND) || '');
   const supplies = parsed.components.filter(isSrc);
   if (supplies.length > 1) return null;
   const comps = parsed.components.filter((c) => !isSrc(c));
   if (comps.length < 8 || comps.length > 60) return null;
-  if (comps.some((c) => !isMos(c) && c.prefix !== 'Q' && !TWO.has(c.prefix))) return null;
+  if (comps.some((c) => !isMos(c) && c.prefix !== 'Q' && !TWO.has(c.prefix) && !isBlk(c))) return null;
   const nets = new Set(comps.flatMap((c) => c.nodes));
   if (!nets.has(GND)) return null;
   const sup = [...nets].filter((n) => SUPPLY.test(n));
@@ -61,7 +66,8 @@ function read(parsed) {
   const on = new Map();
   const add = (n, c, k) => { if (!on.has(n)) on.set(n, []); on.get(n).push({ c, k }); };
   for (const c of comps) {
-    if (c.prefix === 'M' || c.prefix === 'Q') { add(c.nodes[0], c, 'top'); add(c.nodes[1], c, 'gate'); add(c.nodes[2], c, 'bot'); }
+    if (isBlk(c)) for (const n of c.nodes) add(n, c, 'pin');
+    else if (c.prefix === 'M' || c.prefix === 'Q') { add(c.nodes[0], c, 'top'); add(c.nodes[1], c, 'gate'); add(c.nodes[2], c, 'bot'); }
     else { add(c.nodes[0], c, 'a'); add(c.nodes[1], c, 'b'); }
   }
   const at = (n) => on.get(n) || [];
@@ -124,40 +130,65 @@ function read(parsed) {
   // 4. the error amplifier: the pair on the two collectors
   const CA = core.small.nodes[0], CB = core.big.nodes[0];
   const gated = (n) => at(n).filter((x) => x.k === 'gate' && isMos(x.c)).map((x) => x.c);
-  const mA = gated(CA), mB = gated(CB);
-  if (mA.length !== 1 || mB.length !== 1) return null;
-  const inA = mA[0], inB = mB[0];
-  if (inA.nodes[2] !== inB.nodes[2] || isP(inA) !== isP(inB) || isP(inA)) return null;
-  const T = inA.nodes[2];
-  const loadOf = (d) => at(d).filter((x) => x.k === 'top' && x.c !== inA && x.c !== inB && isMos(x.c) && isP(x.c) && x.c.nodes[0] === d && x.c.nodes[2] === VDD).map((x) => x.c);
-  const lA = loadOf(inA.nodes[0]), lB = loadOf(inB.nodes[0]);
-  if (lA.length !== 1 || lB.length !== 1 || lA[0].nodes[1] !== lB[0].nodes[1]) return null;
-  const diodeSide = lA[0].nodes[1] === lA[0].nodes[0] ? 'A' : lB[0].nodes[1] === lB[0].nodes[0] ? 'B' : null;
-  if (!diodeSide) return null;
-  const O = diodeSide === 'A' ? inB.nodes[0] : inA.nodes[0];
-  const tails = at(T).filter((x) => x.k === 'top' && isMos(x.c) && x.c !== inA && x.c !== inB && x.c.nodes[2] === GND).map((x) => x.c);
-  if (tails.length !== 1) return null;
-  const tail = tails[0], NB = tail.nodes[1];
-  take(inA, inB, lA[0], lB[0], tail);
-  let biasD = null, biasR = null;
-  if (!rail(NB)) {
-    const d = at(NB).filter((x) => x.k === 'top' && isMos(x.c) && x.c.nodes[1] === NB && x.c.nodes[2] === GND).map((x) => x.c);
-    if (d.length !== 1) return null;
-    biasD = d[0];
-    const rs = twoOn(NB).filter((c) => c.prefix === 'R');
-    if (rs.length !== 1) return null;
-    biasR = string(NB, rs[0]);
-    if (biasR.end !== X && biasR.end !== VDD) return null;
-    take(biasD, ...biasR.parts);
+  let amp = null, inA = null, inB = null, lA = [null], lB = [null], diodeSide = null, O, T = null, tail = null, NB = null, biasD = null, biasR = null;
+  const tri = [...blocks.values()].filter((it) => it.tri && it.pins.filter((p) => p.side === 'left').map((p) => p.net).sort().join() === [CA, CB].sort().join());
+  if (tri.length === 1) {
+    // the amplifier block: one output, supplies on top, grounds below, at most one bias pin (fed by a resistor from X)
+    const it = tri[0], outs = it.pins.filter((p) => p.side === 'right');
+    if (outs.length !== 1) return null;
+    O = outs[0].net;
+    if (it.pins.some((p) => rail(p.net) && (p.side !== (p.net === VDD ? 'top' : 'bottom')))) return null;
+    const extra = it.pins.filter((p) => p.side !== 'left' && p.side !== 'right' && !rail(p.net));
+    if (extra.length > 1) return null;
+    take(it.comp);
+    if (extra.length) {
+      NB = extra[0].net;
+      const rs = twoOn(NB).filter((c) => c.prefix === 'R');
+      if (rs.length !== 1 || at(NB).length !== 2) return null;
+      biasR = string(NB, rs[0]);
+      if (biasR.end !== X) return null;
+      take(...biasR.parts);
+    }
+    amp = { it, bias: extra[0] || null };
+  } else {
+    const mA = gated(CA), mB = gated(CB);
+    if (mA.length !== 1 || mB.length !== 1) return null;
+    inA = mA[0]; inB = mB[0];
+    if (inA.nodes[2] !== inB.nodes[2] || isP(inA) !== isP(inB) || isP(inA)) return null;
+    T = inA.nodes[2];
+    const loadOf = (d) => at(d).filter((x) => x.k === 'top' && x.c !== inA && x.c !== inB && isMos(x.c) && isP(x.c) && x.c.nodes[0] === d && x.c.nodes[2] === VDD).map((x) => x.c);
+    lA = loadOf(inA.nodes[0]); lB = loadOf(inB.nodes[0]);
+    if (lA.length !== 1 || lB.length !== 1 || lA[0].nodes[1] !== lB[0].nodes[1]) return null;
+    diodeSide = lA[0].nodes[1] === lA[0].nodes[0] ? 'A' : lB[0].nodes[1] === lB[0].nodes[0] ? 'B' : null;
+    if (!diodeSide) return null;
+    O = diodeSide === 'A' ? inB.nodes[0] : inA.nodes[0];
+    const tails = at(T).filter((x) => x.k === 'top' && isMos(x.c) && x.c !== inA && x.c !== inB && x.c.nodes[2] === GND).map((x) => x.c);
+    if (tails.length !== 1) return null;
+    tail = tails[0]; NB = tail.nodes[1];
+    take(inA, inB, lA[0], lB[0], tail);
+    if (!rail(NB)) {
+      const d = at(NB).filter((x) => x.k === 'top' && isMos(x.c) && x.c.nodes[1] === NB && x.c.nodes[2] === GND).map((x) => x.c);
+      if (d.length !== 1) return null;
+      biasD = d[0];
+      const rs = twoOn(NB).filter((c) => c.prefix === 'R');
+      if (rs.length !== 1) return null;
+      biasR = string(NB, rs[0]);
+      if (biasR.end !== X && biasR.end !== VDD) return null;
+      take(biasD, ...biasR.parts);
   }
-  // 5. the output device: gate on the amplifier output, channel on X
-  const outs = gated(O).filter((c) => c.nodes[0] === X || c.nodes[2] === X);
-  if (outs.length !== 1) return null;
-  const out = outs[0];
-  take(out);
+  }
+  // 5. the output device: gate on the amplifier output, channel on X; none when the
+  //    amplifier block is complete (its output device inside: output on X)
+  let out = null;
+  if (!(amp && O === X)) {
+    const outs = gated(O).filter((c) => c.nodes[0] === X || c.nodes[2] === X);
+    if (outs.length !== 1) return null;
+    out = outs[0];
+    take(out);
+  }
   // 6. compensation O -> X (R, C strings) and the loads X -> ground
   const comp = [];
-  for (const p of twoOn(O)) {
+  if (out) for (const p of twoOn(O)) {
     if (used.has(p.ref)) continue;
     const s = string(O, p, 'RC');
     if (s.end !== X) return null;
@@ -170,7 +201,13 @@ function read(parsed) {
   //    devices hanging (gate) on its nodes
   const rest = comps.filter((c) => !used.has(c.ref));
   let start = null;
-  if (rest.length) {
+  if (rest.length === 1 && isBlk(rest[0])) {
+    // the start-up block: a box on the rails and X
+    const it = blocks.get(rest[0].ref);
+    if (it.tri || !rest[0].nodes.every((n) => rail(n) || n === X)) return null;
+    start = { block: it };
+    take(rest[0]);
+  } else if (rest.length) {
     if (rest.some((c) => !isMos(c))) return null;
     const restSet = new Set(rest.map((c) => c.ref));
     const chanOn = (n) => at(n).filter((x) => x.k !== 'gate' && restSet.has(x.c.ref)).map((x) => x.c);
@@ -202,7 +239,7 @@ function read(parsed) {
   }
   if (used.size !== comps.length) return null;
   if (supplies.length && supplies[0].nodes.find((n) => n !== GND) !== VDD) return null;
-  return { VDD, X, VB, E, CA, CB, O, T, NB, core, r1, r2, divUp, divDown, inA, inB, loadA: lA[0], loadB: lB[0], diodeSide, tail, biasD, biasR, out, comp: comp[0] || null, loads, start, supply: supplies[0] || null };
+  return { VDD, X, VB, E, CA, CB, O, T, NB, core, r1, r2, divUp, divDown, amp, inA, inB, loadA: lA[0], loadB: lB[0], diodeSide, tail, biasD, biasR, out, comp: comp[0] || null, loads, start, supply: supplies[0] || null };
 }
 
 /* ---------------------------------------------------------------- drawing */
@@ -216,6 +253,7 @@ const mult = (c) => {
   return m ? parseFloat(m[1]) : 1;
 };
 
+/** B.vertex (hierarchical top, D3): { box, tri, pinText } of lib/hier.js, to draw B.amp and B.start.block */
 export function importBrokaw(model, parsed, B) {
   const S = new Sheet();
   const boxes = [];
@@ -244,14 +282,21 @@ export function importBrokaw(model, parsed, B) {
   const rcA = QA === B.core.a ? B.core.rcA : B.core.rcB, rcB = QA === B.core.a ? B.core.rcB : B.core.rcA;
   const pA = vString(rev(rcA), xA, yRef, -1), pB = vString(rev(rcB), xB, yRef, 1);
   const yC = Math.max(pA.y, pB.y);
-  // the amplifier's mirror first: the collector taps run below its diode loop
-  const xL = 800, xR = 1000, xT = (xL + xR) / 2, yV = yRef;
-  const inL = B.inA.nodes[1] === B.CB ? B.inA : B.inB, inR = inL === B.inA ? B.inB : B.inA;
-  const ldL = inL === B.inA ? B.loadA : B.loadB, ldR = inL === B.inA ? B.loadB : B.loadA;
-  const gL = trGeo(ldL, 1), loopY = yV - gL.top.y + gL.bot.y + 20;
-  // the collector nodes: c(A) tap high (its wire crosses the c(B) segment of Q(B) and the left amplifier column), c(B) lower
-  const yCA = Math.max(yC + 40, loopY + 30), yCB = yCA + 40;
-  const gA = trGeo(QA, 1), yQ = yCB + 40;           // Q tops below the two taps
+  let xL = 800, xR = 1000, xT = (xL + xR) / 2, yV = yRef, inL, inR, ldL, ldR, gL, yCA, yCB;
+  if (B.amp) {
+    // the amplifier triangle: the collector taps level with its upper ('+') and lower ('−') inputs, 40 apart
+    const plus = B.amp.it.pins.filter((p) => p.side === 'left').sort((a, b) => B.amp.it.tri[a.name].y - B.amp.it.tri[b.name].y)[0];
+    yCA = plus.net === B.CA ? yC + 40 : yC + 80; yCB = plus.net === B.CB ? yC + 40 : yC + 80;
+  } else {
+    // the amplifier's mirror first: the collector taps run below its diode loop
+    inL = B.inA.nodes[1] === B.CB ? B.inA : B.inB; inR = inL === B.inA ? B.inB : B.inA;
+    ldL = inL === B.inA ? B.loadA : B.loadB; ldR = inL === B.inA ? B.loadB : B.loadA;
+    gL = trGeo(ldL, 1);
+    const loopY = yV - gL.top.y + gL.bot.y + 20;
+    // the collector nodes: c(A) tap high (its wire crosses the c(B) segment of Q(B) and the left amplifier column), c(B) lower
+    yCA = Math.max(yC + 40, loopY + 30); yCB = yCA + 40;
+  }
+  const gA = trGeo(QA, 1), yQ = Math.max(yCA, yCB) + 40;   // Q tops below the two taps
   const qa = tr(QA, xA, yQ - gA.top.y, 1), qb = tr(QB, xB, yQ - trGeo(QB, -1).top.y, -1);
   S.path(B.CA, pA, qa.top); S.path(B.CB, pB, qb.top);
   // emitter areas: A and nA beside the bipolars (the ratio sets the PTAT voltage)
@@ -273,9 +318,10 @@ export function importBrokaw(model, parsed, B) {
   S.path(B.E, { x: xA, y: yE }, { x: xA, y: yE + 30 });
   const yG = pR2.y + 20;
   gnd(GND, pR2);
-  // the vref bus, named at its left end
+  // the vref bus, named at its left end (or wired there from the start-up block)
   S.path(B.X, { x: xDiv, y: yRef }, { x: xA, y: yRef }); S.path(B.X, { x: xA, y: yRef }, { x: xB, y: yRef });   // split at RC(A)'s pin
-  lab(B.X, { x: xDiv - 40, y: yRef }, -1); S.path(B.X, { x: xDiv - 40, y: yRef }, { x: xDiv, y: yRef });
+  if (!(B.start && B.start.block)) { lab(B.X, { x: xDiv - 40, y: yRef }, -1); S.path(B.X, { x: xDiv - 40, y: yRef }, { x: xDiv, y: yRef }); }
+  else { S.path(B.X, { x: xB, y: yRef }, { x: xB + 40, y: yRef }); lab(B.X, { x: xB + 40, y: yRef }, 1); }   // named at its right end
   // divider: X -> vb (labelled) -> ground
   if (B.divUp) {
     const pv = vString(rev(B.divUp), xDiv, yRef, -1);
@@ -289,60 +335,105 @@ export function importBrokaw(model, parsed, B) {
   frame('Cœur', xDiv - 130, xB + 100, 40, coreBottom + 30);
 
   /* ---- error amplifier: mirror on top, pair, tail; the bias beside */
-  // left: the input on c(B) (its wire straight from Q(B)); yV: the amplifier's local supply line
-  const mL = tr(ldL, xL, yV - gL.top.y, 1), mR = tr(ldR, xR, yV - trGeo(ldR, -1).top.y, -1);
-  S.path(B.VDD, { x: xL, y: yV }, { x: xR, y: yV }); vdd(B.VDD, { x: xT, y: yV });
-  S.path(B.VDD, mL.top, { x: xL, y: yV }); S.path(B.VDD, mR.top, { x: xR, y: yV });
-  S.path(ldL.nodes[1], mL.gate, mR.gate);            // the mirror's gate bar
-  const diodeV = ldL.nodes[1] === ldL.nodes[0] ? mL : mR;
-  const yBar = mL.gate.y, xD = diodeV === mL ? xL : xR;
-  S.path(ldL.nodes[1], { x: xT, y: yBar }, { x: xT, y: diodeV.bot.y + 20 }, { x: xD, y: diodeV.bot.y + 20 });
-  S.mark({ x: xT, y: diodeV.bot.y + 20 }); S.mark({ x: xD, y: diodeV.bot.y + 20 });
-  // the pair: gates on the collector taps (c(A) high, c(B) lower), crossing plain wires only
-  const gi = trGeo(inL, -1), yIn = yCB + 40 - (gi.gate.y - gi.top.y) + 40;
-  // mirrored like the textbook pair: gates outward (left one left, right one right)
-  const pl = tr(inL, xL, yIn - gi.top.y, -1), pr = tr(inR, xR, yIn - trGeo(inR, 1).top.y, 1);
-  S.path(inL.nodes[0], mL.bot, pl.top); S.path(inR.nodes[0], mR.bot, pr.top);
-  if (!(pl.top.y > yCA + 10) || !(pl.gate.y > yCB)) throw new Error('brokaw: pair too high');
-  const sL = pl.gate.x - 30, sR = pr.gate.x + 30;
-  S.path(B.CB, { x: xB, y: yCB }, { x: sL, y: yCB }, { x: sL, y: pl.gate.y }, pl.gate);
-  S.path(B.CA, { x: xA, y: yCA }, { x: sR, y: yCA }, { x: sR, y: pr.gate.y }, pr.gate);
-  // tail node, tail source on the axis, ground
-  // tail node level with the sources (the rule of the manuel engine)
-  if (Math.abs(pl.bot.y - pr.bot.y) > 0.5) throw new Error('brokaw: pair sources not level');
-  const yTn = pl.bot.y;
-  S.path(B.T, pl.bot, pr.bot);
-  const gt = trGeo(B.tail, 1);
-  const tt = tr(B.tail, xT, yTn + 30 - gt.top.y, 1);
-  S.path(B.T, { x: xT, y: yTn }, tt.top);
-  gnd(GND, tt.bot);
-  // the bias: diode-connected device right of the tail, its resistor above from X (label) or the supply
-  if (B.biasD) {
-    const xN = xT + 270;
-    const gd = trGeo(B.biasD, -1);
-    const bd = tr(B.biasD, xN, tt.top.y - gd.top.y + gt.top.y, -1);
-    // gate bar tail <-> bias diode, diode loop on the bias column
-    S.path(B.NB, tt.gate, bd.gate);
-    const yLoop = bd.top.y - 20;
-    S.path(B.NB, { x: (tt.gate.x + bd.gate.x) / 2, y: bd.gate.y }, { x: (tt.gate.x + bd.gate.x) / 2, y: yLoop }, { x: xN, y: yLoop });
-    S.mark({ x: (tt.gate.x + bd.gate.x) / 2, y: yLoop }); S.mark({ x: xN, y: yLoop });
-    S.path(B.NB, bd.top, { x: xN, y: yLoop });
-    const len = B.biasR.parts.length * 110 + 40;
-    const yR = yLoop - len;
-    const pb = vString({ parts: [...B.biasR.parts].reverse(), nets: [...B.biasR.nets].reverse() }, xN, yR, 1);
-    S.path(B.NB, pb, { x: xN, y: yLoop });
-    if (B.biasR.end === B.VDD) vdd(B.VDD, { x: xN, y: yR });
-    else { S.path(B.X, { x: xN, y: yR }, { x: xN, y: yR - 20 }); lab(B.X, { x: xN, y: yR - 20 }, 1); }
-    gnd(GND, bd.bot);
+  let oNode, ampRight;
+  if (B.amp) {
+    // the triangle beside the core, its inputs wired straight from the collector taps
+    const it = B.amp.it, xTri = xB + 200, yTop = Math.min(yCA, yCB) - 40;
+    const tv = B.vertex.tri(S, it, xTri, yTop);
+    const pin = {};
+    for (const p of it.pins) { pin[p.name] = S.term(p.net, tv, p.name); B.vertex.pinText(S, it, p, pin[p.name]); }
+    for (const p of it.pins) {
+      const a = pin[p.name];
+      if (p.net === B.CA) S.path(B.CA, { x: xA, y: yCA }, a);
+      else if (p.net === B.CB) S.path(B.CB, { x: xB, y: yCB }, a);
+      else if (p.net === B.VDD) vdd(B.VDD, a);
+      else if (p.net === GND) gnd(GND, a);
+    }
+    oNode = pin[it.pins.find((p) => p.side === 'right').name];
+    const xEnd = xTri + 120;
+    const yAmp = yTop + 120 + 50;               // the triangle and the ground symbols under it
+    // the bias pin: straight down out of the frame to its resistor (a bias element of this page, not of the
+    // amplifier: Orchestrator 26.10), then X (labelled)
+    if (B.amp.bias) {
+      const a = pin[B.amp.bias.name], yb = yAmp + 40;
+      S.path(B.NB, a, { x: a.x, y: yb });
+      const pe = vString(B.biasR, a.x, yb, 1);
+      S.path(B.X, pe, { x: a.x, y: pe.y + 20 }); lab(B.X, { x: a.x, y: pe.y + 20 }, 1);
+    }
+    ampRight = xEnd + 60;
+    // the frame hugs the amplifier (not the core's columns beside it)
+    frame("Amplificateur d'erreur", xTri - 40, ampRight, Math.min(yTop - 60, ...it.pins.filter((p) => p.side === 'top').map(() => yTop - 80)), yAmp);
+  } else {
+    // left: the input on c(B) (its wire straight from Q(B)); yV: the amplifier's local supply line
+    const mL = tr(ldL, xL, yV - gL.top.y, 1), mR = tr(ldR, xR, yV - trGeo(ldR, -1).top.y, -1);
+    S.path(B.VDD, { x: xL, y: yV }, { x: xR, y: yV }); vdd(B.VDD, { x: xT, y: yV });
+    S.path(B.VDD, mL.top, { x: xL, y: yV }); S.path(B.VDD, mR.top, { x: xR, y: yV });
+    S.path(ldL.nodes[1], mL.gate, mR.gate);            // the mirror's gate bar
+    const diodeV = ldL.nodes[1] === ldL.nodes[0] ? mL : mR;
+    const yBar = mL.gate.y, xD = diodeV === mL ? xL : xR;
+    S.path(ldL.nodes[1], { x: xT, y: yBar }, { x: xT, y: diodeV.bot.y + 20 }, { x: xD, y: diodeV.bot.y + 20 });
+    S.mark({ x: xT, y: diodeV.bot.y + 20 }); S.mark({ x: xD, y: diodeV.bot.y + 20 });
+    // the pair: gates on the collector taps (c(A) high, c(B) lower), crossing plain wires only
+    const gi = trGeo(inL, -1), yIn = yCB + 40 - (gi.gate.y - gi.top.y) + 40;
+    // mirrored like the textbook pair: gates outward (left one left, right one right)
+    const pl = tr(inL, xL, yIn - gi.top.y, -1), pr = tr(inR, xR, yIn - trGeo(inR, 1).top.y, 1);
+    S.path(inL.nodes[0], mL.bot, pl.top); S.path(inR.nodes[0], mR.bot, pr.top);
+    if (!(pl.top.y > yCA + 10) || !(pl.gate.y > yCB)) throw new Error('brokaw: pair too high');
+    const sL = pl.gate.x - 30, sR = pr.gate.x + 30;
+    S.path(B.CB, { x: xB, y: yCB }, { x: sL, y: yCB }, { x: sL, y: pl.gate.y }, pl.gate);
+    S.path(B.CA, { x: xA, y: yCA }, { x: sR, y: yCA }, { x: sR, y: pr.gate.y }, pr.gate);
+    // tail node, tail source on the axis, ground
+    // tail node level with the sources (the rule of the manuel engine)
+    if (Math.abs(pl.bot.y - pr.bot.y) > 0.5) throw new Error('brokaw: pair sources not level');
+    const yTn = pl.bot.y;
+    S.path(B.T, pl.bot, pr.bot);
+    const gt = trGeo(B.tail, 1);
+    const tt = tr(B.tail, xT, yTn + 30 - gt.top.y, 1);
+    S.path(B.T, { x: xT, y: yTn }, tt.top);
+    gnd(GND, tt.bot);
+    // the bias: diode-connected device right of the tail, its resistor above from X (label) or the supply
+    if (B.biasD) {
+      const xN = xT + 270;
+      const gd = trGeo(B.biasD, -1);
+      const bd = tr(B.biasD, xN, tt.top.y - gd.top.y + gt.top.y, -1);
+      // gate bar tail <-> bias diode, diode loop on the bias column
+      S.path(B.NB, tt.gate, bd.gate);
+      const yLoop = bd.top.y - 20;
+      S.path(B.NB, { x: (tt.gate.x + bd.gate.x) / 2, y: bd.gate.y }, { x: (tt.gate.x + bd.gate.x) / 2, y: yLoop }, { x: xN, y: yLoop });
+      S.mark({ x: (tt.gate.x + bd.gate.x) / 2, y: yLoop }); S.mark({ x: xN, y: yLoop });
+      S.path(B.NB, bd.top, { x: xN, y: yLoop });
+      const len = B.biasR.parts.length * 110 + 40;
+      const yR = yLoop - len;
+      const pb = vString({ parts: [...B.biasR.parts].reverse(), nets: [...B.biasR.nets].reverse() }, xN, yR, 1);
+      S.path(B.NB, pb, { x: xN, y: yLoop });
+      if (B.biasR.end === B.VDD) vdd(B.VDD, { x: xN, y: yR });
+      else { S.path(B.X, { x: xN, y: yR }, { x: xN, y: yR - 20 }); lab(B.X, { x: xN, y: yR - 20 }, 1); }
+      gnd(GND, bd.bot);
+    }
+    ampRight = xT + 380;
+    frame("Amplificateur d'erreur", sL - 40, ampRight, 40, S.bbox().y1 + 30);
+    // the amplifier output tapped just under its mirror device, above the diode loop and the collector wires
+    oNode = B.O === inL.nodes[0] ? { x: xL, y: mL.bot.y + 20 } : { x: xR, y: mR.bot.y + 20 };
   }
   const ampBottom = S.bbox().y1;
-  frame("Amplificateur d'erreur", sL - 40, xT + 380, 40, ampBottom + 30);
 
   /* ---- output: the output device on the amplifier output, compensation, loads, the vref port */
-  const xO = 1620;
+  if (!B.out) {
+    // complete amplifier: its output IS the reference, the port at the apex (loads below it)
+    const y = oNode.y, xP = ampRight + 40 + (B.loads.length ? 40 : 0);
+    S.path(B.X, oNode, { x: xP, y });
+    const pv = portVert(S, B.X, { x: xP, y }, 1, true, 'output'); S.term(B.X, pv, pv.portPin);
+    B.loads.forEach((c, i) => {
+      const xc = ampRight + 20 + i * 40;
+      S.path(B.X, { x: xc, y }, { x: xc, y: y + 30 });
+      const v = placeTwo(S, c, xc, y + 30, B.X, true, 1);
+      S.term(B.X, v, v.first);
+      gnd(GND, S.term(GND, v, v.other));
+    });
+  }
+  const xO = B.amp ? ampRight + 340 : 1620;
+  if (B.out) {
   const outDir = -1, go = trGeo(B.out, outDir);
-  // the amplifier output tapped just under its mirror device, above the diode loop and the collector wires
-  const oNode = B.O === inL.nodes[0] ? { x: xL, y: mL.bot.y + 20 } : { x: xR, y: mR.bot.y + 20 };
   const ov = tr(B.out, xO, oNode.y - go.gate.y, outDir);
   S.path(B.O, oNode, ov.gate);
   const xOut = ov.top, xOutB = ov.bot;
@@ -352,7 +443,7 @@ export function importBrokaw(model, parsed, B) {
   let y = xOutB.y + 40;
   S.path(botNet, xOutB, { x: xO, y });
   if (B.comp) {
-    const xs = xT + 430;
+    const xs = ampRight + 50;
     const yb = y;
     S.path(B.O, { x: xs, y: oNode.y }, { x: xs, y: yb });
     let p = { x: xs, y: yb };
@@ -375,15 +466,27 @@ export function importBrokaw(model, parsed, B) {
   });
   // the bench supply, apart on the right: vdd above, ground below
   if (B.supply) {
-    const xv = xO + 200, c = B.supply;
+    const xv = xO + 300, c = B.supply;     // a bench source: outside the frames
     const v = placeTwo(S, c, xv, y + 30, B.VDD, true, 1);
     vdd(B.VDD, S.term(B.VDD, v, v.first));
     const b = S.term(GND, v, v.other); gnd(GND, b); yl = Math.max(yl, b.y);
   }
-  frame('Sortie', xT + 400, xO + (B.supply ? 280 : 220), 40, Math.max(yl + 60, ampBottom + 30));
+  frame('Sortie', ampRight + 20, xO + 220, 40, B.amp ? yl + 60 : Math.max(yl + 60, ampBottom + 30));
+  }
 
-  /* ---- start-up: the stack, the devices hanging on its nodes */
-  if (B.start) {
+  /* ---- start-up: the block (hierarchical top), or the stack and the devices hanging on its nodes */
+  if (B.start && B.start.block) {
+    // X on the right side, wired to the vref bus; supply on top, ground below
+    const it = { ...B.start.block, pins: B.start.block.pins.map((p) => ({ ...p, side: p.net === B.X ? 'right' : p.net === B.VDD ? 'top' : 'bottom' })) };
+    const nR = it.pins.filter((p) => p.side === 'right').length, h = (Math.max(nR, 1) + 1) * 40, w = 60 * (Math.max(it.pins.filter((p) => p.side === 'top').length, it.pins.filter((p) => p.side === 'bottom').length, 2) + 1);
+    const x0 = xDiv - 130 - 80 - w, v = B.vertex.box(S, it, x0, yRef - h / (nR + 1));
+    for (const p of it.pins) {
+      const a = S.term(p.net, v, p.name);
+      if (p.side === 'right') S.path(B.X, a, { x: xDiv, y: a.y });
+      else if (p.side === 'top') vdd(B.VDD, a);
+      else gnd(GND, a);
+    }
+  } else if (B.start) {
     const xS = -420, xH = -240;
     let p = { x: xS, y: yRef };
     vdd(B.VDD, p);

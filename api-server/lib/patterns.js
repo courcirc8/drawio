@@ -24,7 +24,7 @@ export function detectStructures(parsed) {
   const railNames = new Set(['0']);
   for (const n of new Set(comps.flatMap((c) => c.nodes))) {
     // + the supply names of the open PDKs (sky130 VPWR/VGND, vccd1, vssa1…)
-    if (/^(vdd|vcc|vss|avdd|dvdd|avss|dvss|gnd|agnd|dgnd|vpwr|vgnd|vpb|vnb|vccd\d*|vssd\d*|vdda\d*|vssa\d*|vccio|vssio|power(?:_\w+)?|ground(?:_\w+)?)$/i.test(n)) railNames.add(n);
+    if (/^(vdd|vcc|vss|avdd|dvdd|avss|dvss|gnd|agnd|dgnd|vpwr|vgnd|vpb|vnb|vccd\d*|vssd\d*|vdda\d*|vssa\d*|vccio|vssio|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i.test(n)) railNames.add(n);
   }
   const out = { diffPairs: [], mirrors: [], cascodes: [], crossCoupled: [], diodes: [], tails: [] };
 

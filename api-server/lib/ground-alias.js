@@ -15,9 +15,9 @@
  * reads vdd, vcc, avdd, vccd, vpwr (sky130), vdda, dvdd, vcca as the supply.
  */
 /** The supply names lib/place2.js draws as a supply tap (shared with lib/place4.js). */
-export const SUPPLY_NAME = /^(a?v(dd|cc)d?|vpwr|vdda|dvdd|vcca|power(?:_\w+)?)$/i;
+export const SUPPLY_NAME = /^(a?v(dd|cc)d?|vpwr|vdda|dvdd|vcca|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 
-export const GROUND_NAME = /^(gnd|vss|vgnd|agnd|dgnd|avss|dvss|vssa|vssd|gnda|gndd|gnd!|vss!|0!|ground(?:_\w+)?)$/i;
+export const GROUND_NAME = /^(gnd|vss|vgnd|agnd|dgnd|avss|dvss|vssa|vssd|gnda|gndd|gnd!|vss!|0!|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 
 /** The single ground alias among `nets` (iterable of names), else null. */
 export function groundAlias(nets) {

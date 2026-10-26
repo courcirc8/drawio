@@ -33,11 +33,12 @@ const EMPTY_MODEL =
   'pageHeight="1100" math="0" shadow="0"><root>' +
   '<mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel>';
 
+const xmlAttr = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 /** Create a new empty document (mxfile DOM with one page). */
 export function newDocument(pageName = 'Page-1') {
   return parseXml(
     `<mxfile host="drawio-api-server" modified="" agent="drawio-api-server" version="1">` +
-    `<diagram id="page-1" name="${pageName}">${EMPTY_MODEL}</diagram></mxfile>`);
+    `<diagram id="page-1" name="${xmlAttr(pageName)}">${EMPTY_MODEL}</diagram></mxfile>`);
 }
 
 /**

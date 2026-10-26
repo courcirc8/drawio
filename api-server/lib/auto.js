@@ -51,7 +51,7 @@ import { wireNamedNets } from './wirenames.js';
 import { straighten, checkerErrors, fixDots } from './straighten.js';
 import { extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
-import { withGroundAlias } from './ground-alias.js';
+import { withGroundAlias, groundAlias } from './ground-alias.js';
 import { crossingCount } from './crossings.js';
 import { importNetlistManuel, ladderReading } from './place-manuel.js';
 import { manuelReading } from './manuel-reading.js';
@@ -123,7 +123,7 @@ function wirePerPart(m, parsed) {
 /** CONNECTIONS BY NAME (Eric 2026-10-09: "on ne veut pas de connexions par
  *  nom"): nets drawn as two or more port labels of the same name instead of
  *  wires (v4 joins its blocks that way), supply and ground excepted. */
-const RAILNAME = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|v\+|v-|power(?:_\w+)?|ground(?:_\w+)?)$/i;
+const RAILNAME = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|v\+|v-|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 export function namedLinks(m) {
   const count = new Map();
   for (const c of allCells(m).map(cellInfo)) {
@@ -269,7 +269,7 @@ function checkPyErrors(doc) {
  *  when every candidate failed. */
 /** engine manuel, or null when its reading is not sure or a check fails */
 export function tryManuel(parsed) {
-  if (!manuelReading(parsed) && !brokawReading(parsed) && !ladderReading(parsed)) return null;
+  if (!manuelReading(parsed) && !manuelReading(parsed, { textbook: false }) && !brokawReading(parsed) && !ladderReading(parsed)) return null;
   try {
     const doc = newDocument(), m = getPage(doc);
     const placed = importNetlistManuel(m, parsed);      // throws on a geometric LVS failure
@@ -279,6 +279,29 @@ export function tryManuel(parsed) {
 }
 
 export async function autoPlace(parsed) {
+  const r = await autoPlaceAliased(parsed);
+  // a ground_<dom> drawn as the ground keeps its domain name next to the symbol
+  // (analog-design convention, Orchestrator 2026-10-26): a text value only, the
+  // extracted net stays `0`
+  const a = r?.ground?.alias ?? groundAlias(parsed.components.flatMap((c) => c.fullNodes || c.nodes || []));
+  if (process.env.AUTO_GND !== '0' && r?.doc) labelGroundDomain(getPage(r.doc), a);
+  return r;
+}
+
+/** a ground_<dom> drawn as the ground symbol keeps its domain name under it (a text value: the
+ *  extracted net stays `0`); other aliases (vss, gnd) are drawn as the plain ground */
+export function labelGroundDomain(model, alias) {
+  if (!alias || !/^ground_/i.test(alias)) return;
+  for (const n of allCells(model)) {
+    const info = cellInfo(n);
+    if (!/signal_ground/.test(info.styleRaw || '') || info.value) continue;
+    const cell = n.nodeName === 'mxCell' ? n : n.getElementsByTagName('mxCell')[0];
+    if (n.nodeName === 'object' || n.nodeName === 'UserObject') n.setAttribute('label', alias); else n.setAttribute('value', alias);
+    if (cell) cell.setAttribute('style', `${cell.getAttribute('style') || ''}verticalLabelPosition=bottom;verticalAlign=top;fontSize=10;`);
+  }
+}
+
+async function autoPlaceAliased(parsed) {
   // a ground spelled vss / gnd (alone, no `0`) drawn as ground: one GND rail
   // (lib/ground-alias.js); AUTO_GND=0 draws it as written (before / after renders)
   const aliased = process.env.AUTO_GND !== '0' ? withGroundAlias(parsed) : parsed;

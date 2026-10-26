@@ -60,14 +60,54 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
 - **Rails** (D1) : `power`, `ground`, `power_<dom>`, `ground_<dom>` (convention d'analog-design) sont des
   alimentations et des masses comme `vdd`/`vss` : broche en haut ou en bas, symbole de rail sur les pages. Le LVS
   global lie une broche au net de la page sur la même borne quand la page l'a renommé (`ground_ana` dessiné en masse).
+  Un domaine dessiné en masse garde son nom écrit sous le symbole (`ground_ana`), le net extrait reste `0`. Les noms
+  de signal évidents ne sont pas des rails : `power_down`, `power_good`, `power_on`, `power_en`, `ground_sense`…
+  (suffixe `down`, `good`, `on`, `off`, `en`, `ok`, `sense`, `fail`, `rst`, `sel`, `det`, `ready`, `ctrl`… après `_`).
 - **Triangle d'ampli** (D2) : un `.subckt` défini qui est un ampli devient un triangle pointé à droite (`apiSymbol`) :
-  `+`/`−` à gauche (polarité par le nom `inp`/`inn`, `vip`/`vin`…, sinon l'ordre), sortie à la pointe (`outp`/`outn`
+  `+`/`−` à gauche (polarité par le nom `inp`/`inn`, `vip`/`vin`… ; sinon l'ordre des broches et aucun signe), sortie à la pointe (`outp`/`outn`
   sur les côtés près de la pointe), alimentations sur le côté haut, masses et autres broches (`ibias`, `vcmref`) sur
   le côté bas puis haut, au plus 3 par côté. Choix explicite d'abord (`symbols`, commentaire `*.symbol ota` dans le
   `.subckt`), sinon le rôle : une paire d'entrée sur deux broches, une diode de miroir, une ou deux sorties. Des
   broches qui n'entrent pas (trois entrées…) gardent la boîte. Le LVS géométrique juge le triangle, pas sa boîte.
+- **Figure du top** (D3) : si le top est une figure plate connue, l'ampli (triangle) tenant le rôle de
+  l'amplificateur, cette figure remplace le placeur de blocs. Cas du bandgap de Brokaw (`lib/place-brokaw.js`,
+  `brokawReading(parsed, { blocks })`) : un triangle dont les deux entrées sont les collecteurs, une seule sortie,
+  au plus une broche de polarisation alimentée par une résistance depuis X. La boîte de démarrage n'a que les rails
+  et X. Le dessin a des **fils réels** :
+  - les collecteurs vont au `+` et au `−` à hauteur des broches ;
+  - la sortie va à la grille de MP ;
+  - RB va sous `ibias` ;
+  - la boîte de démarrage est reliée au bus vref.
+  Les chaînes de résistances restent sur le top, sans page `chain_*`. `opts.figure = false` garde le placeur de
+  blocs. Moteur de la page : `brokaw`.
 - **Liens** (D4) : chaque bloc porte `link="data:page/id,<page>"` vers la page de sa définition (ou de son chemin
   d'instance avec `per=instance`, ou de sa banque) : un clic dans draw.io ouvre le bloc.
+
+
+### Banc de test, bloc, sous-blocs (correction d'Eric, 26.10)
+
+- Niveaux : page de **banc de test** `tb_<bloc>` (ses sources, le DUT en un seul bloc, les charges) → page du DUT
+  (`bandgap`) → pages de sous-blocs modérés (`ota`, `demarrage`). Une page du haut qui n'a que des sources, un bloc
+  et des charges R/C/L s'appelle `tb_<bloc>` (`kind: 'testbench'`).
+- **Jamais de source dans un bloc** (bloquant, revue de #70) : une source V/I dans un `.subckt` fait échouer
+  `?hier=1` en 422 (`errors: ["source in block …"]`), même avec `?force=1`. Exceptions : une sonde `VSONDE_*`, un
+  `.subckt … macro=1` (macro-modèle). Le contrôle `sources` de la porte qualité (`qualityGate(model, parsed,
+  { block: true })`) dit la même chose page par page. Une source sur une page de banque, ou une page du haut qui mêle
+  sources et circuit, reste un avertissement : écrire le DUT en `.subckt`.
+- Pas de page pour une **primitive du PDK** (`rhigh`, `rppd`, `npn13G2`, `cap_cmim`, `sg13_*`…), même si le deck la
+  définit en `.subckt` ; une chaîne de résistances ou une banque reste sur sa page mère sous `GROUP_PAGE_MIN` (12)
+  pièces.
+- OTA **complet** (deux étages : MP, Cc, Rz dans l'OTA) : la figure Brokaw prend la sortie du triangle comme `vref`,
+  sans cadre « Sortie ». Cible : `test/fixtures/hier-brokaw/brokaw_tb.cir`, quatre pages, `test/hier-tb.test.js`.
+- **Banc classique** (`importTestbench`) : le bloc au centre, les noms de broches écrits dessus ; la source
+  d'alimentation à gauche, câblée par le haut jusqu'à la broche ; une source d'entrée à gauche de sa broche ; la
+  sortie câblée vers la droite, les charges pendues à la masse, une flèche de sortie au bout ; les broches de masse à
+  la masse. Repli sur le placeur de blocs si la page contient autre chose (moteur `testbench` sinon `blocks`).
+- **Onglets** : le `.drawio` a une page par niveau, nommée comme la cellule, dans l'ordre de la hiérarchie (drawio les
+  montre en onglets). `GET /documents/:id/hier/pages` donne pour chaque page `order`, `parent`, `depth`, `children`
+  et les liens bloc → page ; `GET /documents/:id/hier/viewer.html` est une visionneuse HTML autonome (onglets
+  indentés, fil d'Ariane, clic sur un bloc ; noms de pages en nœuds texte, en-tête CSP). Tests : `test/hier-tabs.test.js`,
+  `test/hier-http.test.js`.
 
 ## LVS
 
@@ -92,7 +132,8 @@ modèle et W/L en µm.
 définition et par instance ; ordre des broches d'un bloc (une liaison permutée échoue) ; TIA `sim/op.cir` (6 banques
 en échelle, top ≤ 30) ; TIA proj5 cycle 5 (chaînes, transistors seuls au top, LVS global). `hier-rails.test.js`
 (D1), `hier-symbols.test.js` (D2 ; acceptation : Brokaw découpé comme dans le plan,
-`fixtures/hier-brokaw/brokaw_hier.cir`), `hier-pages.test.js` (D4, D5).
+`fixtures/hier-brokaw/brokaw_hier.cir`), `hier-pages.test.js` (D4, D5), `hier-top.test.js` (D3 ; acceptation : porte qualité 0 échec, LVS géo, par page
+et global verts, colonnes Q1/Q2, OTA à côté, boîte de démarrage).
 
 ## Limites connues
 

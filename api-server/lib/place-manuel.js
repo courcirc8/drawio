@@ -256,6 +256,7 @@ function layoutFrame(F, R, ctx) {
   /* 1. sides and order ----------------------------------------------- */
   const side = new Array(cols.length).fill(0), rank = new Array(cols.length).fill(0);
   const order = { L: [], R: [], axis: [], rest: [] };
+  const mirrorRef = new Set();     // columns drawn as the reference half of the tail mirror
   if (paired) {
     const seedI = cols.findIndex((c) => c.seed) >= 0 ? cols.findIndex((c) => c.seed) : cols.findIndex((c) => c.pair != null);
     const sideOf = new Map();
@@ -272,6 +273,14 @@ function layoutFrame(F, R, ctx) {
       }
     }
     for (let i = 0; i < cols.length; i++) if (cols[i].pair != null && !sideOf.has(i)) { const s = i < cols[i].pair ? -1 : 1; sideOf.set(i, s); rank[i] = 9; }
+    // a lone diode-connected device whose gate drives a device of another column: the column of that device
+    const mirrorRefOf = (i) => {
+      const ps = cols[i].parts;
+      if (ps.length !== 1 || !isTr(ps[0].c) || gateOf(ps[0].c) !== ps[0].up) return null;
+      const g = gateOf(ps[0].c);
+      const j = cols.findIndex((col, k) => k !== i && col.parts.some((p) => isTr(p.c) && gateOf(p.c) === g));
+      return j >= 0 ? j : null;
+    };
     const seq = (s) => [...sideOf].filter(([, x]) => x === s).map(([i]) => i).sort((a, b) => rank[a] - rank[b] || a - b);
     order.L = seq(-1); order.R = seq(1);
     // the pair of the left side mirrors the right one: same rank order
@@ -284,7 +293,14 @@ function layoutFrame(F, R, ctx) {
       const par = parentOf(i);
       if (cols[i].selfSym && !axisUsed) { order.axis.push(i); axisUsed = true; continue; }
       if (par != null && side[par] !== 0) { const L = side[par] < 0 ? order.L : order.R; L.splice(L.indexOf(par) + 1, 0, i); side[i] = side[par]; continue; }
+      if (ctx.textbook !== false && mirrorRefOf(i) != null) continue;     // placed after the axis is known
       order.R.push(i); side[i] = 1;
+    }
+    // the reference diode of the tail's mirror: outermost on the left, its gate toward the tail
+    for (let i = 0; i < cols.length; i++) {
+      if (cols[i].pair != null || order.axis.includes(i) || order.L.includes(i) || order.R.includes(i)) continue;
+      const a = mirrorRefOf(i);
+      if (a != null && order.axis.includes(a)) { order.L.push(i); side[i] = -1; mirrorRef.add(i); } else { order.R.push(i); side[i] = 1; }
     }
   } else {
     // no symmetry: left to right, a hanging column right after its parent
@@ -381,6 +397,7 @@ function layoutFrame(F, R, ctx) {
   if (paired) { order.L.forEach((i, k) => posIdx.set(i, -(k + 1))); order.R.forEach((i, k) => posIdx.set(i, k + 1)); order.axis.forEach((i) => posIdx.set(i, 0)); } else order.rest.forEach((i, k) => posIdx.set(i, k));
   const gateDir = new Map();
   const sharedBar = new Map();     // ref -> partner ref (gates joined across the axis)
+  const mirrorBar = new Set();     // refs whose bar joins a tail off the axis gap (mirror reference)
   for (const i of cols.keys()) {
     const col = cols[i], sg = sgnOf(i);
     col.parts.forEach((p, k) => {
@@ -389,7 +406,12 @@ function layoutFrame(F, R, ctx) {
       let dir;
       const partner = col.pair != null ? cols[col.pair].parts[k]?.c : null;
       const adjacentPair = col.pair != null && rank[i] === 0 && Math.abs(posIdx.get(i)) === 1 && !order.axis.some((a) => lv[a].rows.some((r) => r.top === lv[i].rows[k].top && r.r === lv[i].rows[k].r));
-      if (ubar.has(c.ref)) { dir = Math.sign(posIdx.get(colOfRef.get(ubar.get(c.ref))) - posIdx.get(i)); sharedBar.set(c.ref, ubar.get(c.ref)); }
+      if (mirrorRef.has(i) && g === p.up) {                              // toward the tail it mirrors, one gate bar
+        dir = -sg;
+        const t = F.parts.find((q) => q !== c && isTr(q) && gateOf(q) === g && order.axis.includes(colOfRef.get(q.ref)));
+        if (t) { sharedBar.set(c.ref, t.ref); sharedBar.set(t.ref, c.ref); mirrorBar.add(c.ref); mirrorBar.add(t.ref); }
+      }
+      else if (ubar.has(c.ref)) { dir = Math.sign(posIdx.get(colOfRef.get(ubar.get(c.ref))) - posIdx.get(i)); sharedBar.set(c.ref, ubar.get(c.ref)); }
       else if (g === R.top || g === R.bot) dir = outward(i);
       else if (ctx.ports.has(g) && !ctx.labelNets.has(g) && !nodeCols.has(g)) dir = outward(i);
       else if (partner && gateOf(partner) === g && adjacentPair && (ctx.labelNets.has(g) || !nodeCols.has(g) || nodeCols.get(g).has(i) || nodeCols.get(g).has(col.pair))) { dir = -sg; sharedBar.set(c.ref, partner.ref); }
@@ -473,6 +495,8 @@ function layoutFrame(F, R, ctx) {
     if (col.pair == null || n === R.top || n === R.bot || !isTr(col.parts[0].c) || !order.axis.some((a) => cols[a].parts.some((p) => p.down === n))) continue;
     yNode.set(n, pinP(col.parts[0].c.ref, 'top').y);
   }
+  const midNets = new Set();      // nodes between a top stack and a bottom stack (mid band)
+  for (const i of cols.keys()) cols[i].parts.forEach((p, k) => { const a = lv[i].rows[k], b = lv[i].rows[k + 1]; if (b && a.top && !b.top) midNets.add(p.down); });
   for (const i of cols.keys()) {
     const col = cols[i], rows = lv[i].rows;
     col.parts.forEach((p, k) => {
@@ -480,6 +504,9 @@ function layoutFrame(F, R, ctx) {
       if (n === R.top || n === R.bot || yNode.has(n)) return;
       const a = rows[k], b = rows[k + 1];
       if (b && a.top && !b.top) yNode.set(n, midY);
+      // an output under a top device only, bridged by a chain (Miller Cc-Rz) to a mid-band node: at that
+      // level, the bridge straight (the classic two-stage figure)
+      else if (ctx.textbook !== false && !b && a.top && isTr(p.c) && F.chains.some((ch) => (ch.a === n && midNets.has(ch.b)) || (ch.b === n && midNets.has(ch.a)))) yNode.set(n, midY);
       // the last node of a column (a tail): at the level of the pin, sources joined by one line (Razavi)
       else if (!b && isTr(p.c)) yNode.set(n, pinP(p.c.ref, 'bot').y);
       else yNode.set(n, rowY(a) + DEV_H + 30);
@@ -530,7 +557,7 @@ function layoutFrame(F, R, ctx) {
       if (sharedBar.has(c.ref)) {
         const o = sharedBar.get(c.ref); done.add(o);
         const op = term(g, o, 'gate');
-        const mid = { x: paired ? 0 : (gp.x + op.x) / 2, y: gp.y };
+        const mid = { x: paired && !mirrorBar.has(c.ref) && !mirrorBar.has(o) ? 0 : (gp.x + op.x) / 2, y: gp.y };
         S.path(g, gp, mid, op);
         if (nodeCols.has(g) && !ctx.labelNets.has(g)) {
           // the diode / driving node: a drop from the bar to its spine, beside the driving column
@@ -638,6 +665,7 @@ function layoutFrame(F, R, ctx) {
   };
   // bridges: both ends are column nodes at the same height
   const bridgeEnd = new Set();      // net@x where a bridge leaves a spine: no name written over it
+  const joinEnd = new Map();        // net -> x where a spur joins its spine: the name at the far end
   for (const ch of F.chains) {
     const sa = spine.get(ch.a), sb = spine.get(ch.b);
     if (!sa || !sb || yNode.get(ch.a) !== yNode.get(ch.b)) continue;
@@ -721,6 +749,17 @@ function layoutFrame(F, R, ctx) {
     const r = drawChainH(ch, from, xe, yNode.get(from), s);
     addSpine(from, xe);
     placedChain.add(ch);
+    // the far end on another drawn node of this frame (the Miller Cc-Rz to the output): one wire up or
+    // down to that node's level, its spine extended to it, no second name
+    const far = spine.get(r.net);
+    if (ctx.textbook !== false && far && r.net !== R.top && r.net !== R.bot && r.net !== from && yNode.has(r.net) && Math.abs(yNode.get(r.net) - r.p.y) > 1) {
+      // straight under (over) the node when its spine lies ahead: one bend; else a step beside the chain's end
+      const ahead = [...far].filter((x) => (x - r.p.x) * s > 10).sort((a, b) => Math.abs(a - r.p.x) - Math.abs(b - r.p.x));
+      const xv = ahead.length ? ahead[0] : r.p.x + s * 20, yT = yNode.get(r.net);
+      S.path(r.net, r.p, { x: xv, y: r.p.y }, { x: xv, y: yT });
+      addSpine(r.net, xv); joinEnd.set(r.net, xv);
+      continue;
+    }
     finishEnd(r.net, r.p, s < 0 ? 'left' : 'right');
   }
   // loose chains (no end on a spine or a gate stub): a row below the frame
@@ -751,6 +790,7 @@ function layoutFrame(F, R, ctx) {
     let xe = s > 0 ? pts[pts.length - 1] : pts[0];
     // the outer end carries a bridge (a Miller R-C): the name goes on the inner end
     if (pts.length > 1 && bridgeEnd.has(`${n}@${xe}`)) { s = -s; xe = s > 0 ? pts[pts.length - 1] : pts[0]; }
+    if (joinEnd.has(n) && pts.length > 1) { const xj = joinEnd.get(n); s = Math.abs(pts[pts.length - 1] - xj) >= Math.abs(pts[0] - xj) ? 1 : -1; xe = s > 0 ? pts[pts.length - 1] : pts[0]; }
     const q = { x: xe + s * 40, y };
     S.path(n, { x: xe, y }, q);
     if (isPort) portAt.push({ net: n, p: q, side: s, direction: OUTISH.test(n) ? 'output' : 'input' });
@@ -973,7 +1013,7 @@ export function ladderReading(parsed) {
   }
 }
 
-const RAIL0 = /^(0|gnd|vss|ground(?:_\w+)?)$/i;
+const RAIL0 = /^(0|gnd|vss|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 function importLadder(model, parsed, L) {
   const S = new Sheet();
   const PITCH = L.gsrc && L.gsrc.size ? 400 : 320, yA = 60, GAP = 50;
@@ -1049,7 +1089,19 @@ function importLadder(model, parsed, L) {
 /* ------------------------------------------------------------ entry point */
 const TITLES = { bias: 'Polarisation', cmfb: 'CMFB', startup: 'Démarrage' };
 export function importNetlistManuel(model, parsed, opts = {}) {
-  const r = opts.reading || manuelReading(parsed);
+  if (opts.textbook === false || opts.reading) return drawManuel(model, parsed, opts);
+  // the textbook rules first (mirror reference beside its tail, Miller bridge at the output level, Orchestrator
+  // 26.10); a reading or a drawing they break is drawn with the rules before them
+  const keep = Array.from(model.childNodes).map((n) => n.cloneNode(true));
+  try { return drawManuel(model, parsed, opts); } catch (e) {
+    while (model.firstChild) model.removeChild(model.firstChild);
+    for (const n of keep) model.appendChild(n);
+    try { return drawManuel(model, parsed, { ...opts, textbook: false }); } catch { throw e; }
+  }
+}
+
+function drawManuel(model, parsed, opts) {
+  const r = opts.reading || manuelReading(parsed, { textbook: opts.textbook });
   if (!r) {
     // a Brokaw bandgap (lib/place-brokaw.js), else a ladder between two buses
     const Bk = brokawReading(parsed);
@@ -1068,7 +1120,7 @@ export function importNetlistManuel(model, parsed, opts = {}) {
   const home = new Map();
   for (const f of r.frames) for (const c of f.parts) for (const n of chan(c)) if (!home.has(n)) home.set(n, f.kind);
   for (const f of r.frames) for (const c of f.parts) { const g = gateOf(c); if (g && !home.has(g)) home.set(g, f.kind); }
-  const ctx = { ports: r.ports, labelNets: r.labelNets, home, localTaps: [] };
+  const ctx = { ports: r.ports, labelNets: r.labelNets, home, localTaps: [], textbook: opts.textbook };
   const sheets = r.frames.map((f) => layoutFrame(f, r.rails, ctx));
   // core on top, auxiliary frames side by side below it, in dashed boxes
   const core = sheets.find((s) => s.kind === 'core') || sheets[0];

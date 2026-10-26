@@ -40,6 +40,14 @@ export async function hierPages(doc, map = null, opts = {}) {
     if (links.length) svg = svg.replace(/<\/svg>\s*$/, `<g data-drawio-api="block-links">${links.join('')}</g></svg>`);
     pages.push({ name, id, svg, mapping: out.mapping, cells });
   }
+  // the tabs (Eric, 2026-10-26): document order, the parent = the first earlier page whose block links here
+  pages.forEach((P, i) => {
+    P.order = i;
+    const up = pages.slice(0, i).find((Q) => Object.values(Q.cells).some((c) => c.page === P.name));
+    P.parent = up ? up.name : null;
+    P.depth = up ? up.depth + 1 : 0;
+  });
+  for (const P of pages) P.children = [...new Set(Object.values(P.cells).map((c) => c.page).filter((n) => n && pages.find((Q) => Q.name === n)?.parent === P.name))];
   let flat = null;
   if (map) {
     flat = {};
@@ -50,4 +58,22 @@ export async function hierPages(doc, map = null, opts = {}) {
     }
   }
   return { pages, ...(flat ? { map: flat } : {}) };
+}
+
+/** a self-contained HTML viewer of hierPages(): one tab per page in hierarchy order (indented by depth), the
+ *  breadcrumb of the shown page, a click on a block box opens its page */
+export function hierViewerHtml(hp, title = 'schematic') {
+  const tabs = hp.pages.map((P) => `<button data-tab="${esc(P.name)}" style="margin-left:${P.depth * 12}px">${esc(P.name)}</button>`).join('');
+  const views = hp.pages.map((P) => `<section data-page="${esc(P.name)}" data-parent="${esc(P.parent || '')}" hidden>${P.svg.replace(/^<\?xml[^>]*>/, '')}</section>`).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+body{margin:0;font:13px sans-serif}nav{display:flex;gap:4px;padding:6px;border-bottom:1px solid #ccc;flex-wrap:wrap}
+nav button{border:1px solid #bbb;background:#f6f6f6;padding:3px 10px;cursor:pointer}nav button.on{background:#fff;border-bottom-color:#fff;font-weight:bold}
+#crumb{padding:4px 8px;color:#555}#crumb a{cursor:pointer;color:#0645ad}</style></head><body>
+<nav>${tabs}</nav><div id="crumb"></div><main>${views}</main><script>
+const S=[...document.querySelectorAll('section')],B=[...document.querySelectorAll('nav button')];
+function show(n){S.forEach(s=>s.hidden=s.dataset.page!==n);B.forEach(b=>b.classList.toggle('on',b.dataset.tab===n));
+const path=[];for(let p=n;p;p=S.find(s=>s.dataset.page===p)?.dataset.parent)path.unshift(p);
+const c=document.getElementById('crumb');c.textContent='';path.forEach((p,i)=>{if(i)c.append(' › ');const a=document.createElement('a');a.dataset.go=p;a.textContent=p;c.append(a);});}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-tab],[data-go],a[data-page]');if(!t)return;e.preventDefault();show(t.dataset.tab||t.dataset.go||t.dataset.page);});
+show(S[0]?.dataset.page);</script></body></html>`;
 }

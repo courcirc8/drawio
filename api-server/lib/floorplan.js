@@ -1,7 +1,7 @@
 /** Optional floorplanning: reserve whitespace from net demand, then explore
  * conduction-branch orders using existing analogue motifs. No net is rewritten. */
 import {detectStructures, isPmosLike} from './patterns.js';
-const rail = n => /^(0|gnd|vdd|vcc|vss|avdd|dvdd|power(?:_\w+)?|ground(?:_\w+)?)$/i.test(n);
+const rail = n => /^(0|gnd|vdd|vcc|vss|avdd|dvdd|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i.test(n);
 const visibleNodes = c => c.nodes.slice(0, c.prefix === 'M' ? 3 : c.nodes.length);
 
 export function reserveChannels(components, slots, {pitch = 14, cap = 112} = {}) {
