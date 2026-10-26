@@ -55,6 +55,7 @@ import { withGroundAlias } from './ground-alias.js';
 import { crossingCount } from './crossings.js';
 import { importNetlistManuel, ladderReading } from './place-manuel.js';
 import { manuelReading } from './manuel-reading.js';
+import { brokawReading } from './place-brokaw.js';
 
 export const candidateLabel = (t) => (t.eng === 'sa' || t.eng === 'stages' || t.eng === 'latch' || t.eng === 'ota' || t.eng === 'miller' || t.eng === 'lna' || t.eng === 'pair' || t.eng === 'vco' || t.eng === 'strongarm' || t.eng === 'cs' || t.eng === 'indirect' || t.eng === 'cascode' || t.eng === 'classab' || t.eng === 'bandgap' || t.eng === 'ring' || t.eng === 'ldo' ? t.eng : t.eng === 'v4' ? 'v4:' + t.restMode : t.eng) + (t.extra && t.extra.branchExtend ? '+branches' : '') + (t.sp && t.sp.colW ? `@${t.sp.colW}x${t.sp.rowH}` : '');
 
@@ -268,7 +269,7 @@ function checkPyErrors(doc) {
  *  when every candidate failed. */
 /** engine manuel, or null when its reading is not sure or a check fails */
 export function tryManuel(parsed) {
-  if (!manuelReading(parsed) && !ladderReading(parsed)) return null;
+  if (!manuelReading(parsed) && !brokawReading(parsed) && !ladderReading(parsed)) return null;
   try {
     const doc = newDocument(), m = getPage(doc);
     const placed = importNetlistManuel(m, parsed);      // throws on a geometric LVS failure
