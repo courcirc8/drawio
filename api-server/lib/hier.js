@@ -281,7 +281,7 @@ function drawBlock(S, it) {
   B.forEach((p, i) => { rel[p.name] = { x: (i + 1) / (B.length + 1), y: 1 }; });
   const pins = it.pins.map((p) => ({ name: p.name, ...rel[p.name] }));
   const label = it.kind === 'bank' ? `<b>${it.ref}</b><br><font style="font-size:10px">${it.bankNote}</font>` : `<b>${it.ref}</b><br>${it.comp.block}`;
-  const st = `rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=default;fontSize=12;apiBlock=1;apiBlockPins=${blockPinsStyle(pins)};` + (it.kind === 'bank' ? 'dashed=1;' : '');
+  const st = `rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=default;fontSize=12;apiBlock=1;apiBlockDef=${encodeURIComponent(it.comp.block)};apiBlockPins=${blockPinsStyle(pins)};` + (it.kind === 'bank' ? 'dashed=1;' : '');
   const v = S.vert({ id: it.ref, c: it.comp, style: st, x: 0, y: -h / 2, w, h, pins: rel, value: label, refdes: it.ref });
   for (const p of it.pins) {
     const a = S.term(p.net, v, p.name);
@@ -324,7 +324,7 @@ function drawTriangle(S, it) {
   const W = 120, H = 120;
   const pins = it.pins.map((p) => ({ name: p.name, x: it.tri[p.name].x, y: it.tri[p.name].y }));
   const rel = Object.fromEntries(pins.map((p) => [p.name, { x: p.x, y: p.y }]));
-  const st = `triangle;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=default;fontSize=11;align=left;spacingLeft=14;apiBlock=1;apiSymbol=${it.symbol};apiBlockPins=${blockPinsStyle(pins)};`;
+  const st = `triangle;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=default;fontSize=11;align=left;spacingLeft=14;apiBlock=1;apiSymbol=${it.symbol};apiBlockDef=${encodeURIComponent(it.comp.block)};apiBlockPins=${blockPinsStyle(pins)};`;
   const v = S.vert({ id: it.ref, c: it.comp, style: st, x: 0, y: -H / 2, w: W, h: H, pins: rel, value: `<b>${it.ref}</b><br>${it.comp.block}`, refdes: it.ref });
   for (const p of it.pins) {
     const a = S.term(p.net, v, p.name);
@@ -463,6 +463,26 @@ async function drawPage(parsed, banks, chain = null, symbols = new Map()) {
   return { model: getPage(w.doc), engine: w.label, golden: parsed };
 }
 
+/** D4: set on every block cell (apiBlock) the drawio page link to the page it stands for: the page of its
+ *  definition (or of its bank), or with per = 'instance' the page of its instance path */
+function linkBlocks(doc, per) {
+  const dias = Array.from(doc.getElementsByTagName('diagram'));
+  const idOf = (name) => dias.find((d) => String(d.getAttribute('name')).toUpperCase() === String(name).toUpperCase())?.getAttribute('id');
+  for (const dia of dias) {
+    const page = dia.getAttribute('name');
+    for (const obj of Array.from(dia.getElementsByTagName('object'))) {
+      const cell = Array.from(obj.childNodes).find((n) => n.nodeName === 'mxCell');
+      const st = cell?.getAttribute('style') || '';
+      const def = /(?:^|;)apiBlockDef=([^;]*)/.exec(st);
+      if (!/(?:^|;)apiBlock=1(;|$)/.test(st) || !def) continue;
+      const ref = obj.getAttribute('refdes') || obj.getAttribute('id');
+      const inst = per === 'instance' ? idOf(page === 'top' ? ref : `${page}.${ref}`) : null;
+      const id = inst || idOf(decodeURIComponent(def[1]));
+      if (id) obj.setAttribute('link', `data:page/id,${id}`);
+    }
+  }
+}
+
 /** the net of page P (lowercase) that carries the subcircuit pin `pin`: the pin's own name when the page writes
  *  it, else the page net on the same terminal as the pin in the page's netlist (a pin drawn as a rail symbol,
  *  ground_<dom> drawn as ground, or a pin the page leaves unnamed) */
@@ -525,6 +545,8 @@ export async function importHier(text, opts = {}) {
   for (const c of H.flat.components) map[c.ref] = place(c.ref);
   for (const inst of H.instances) map[inst.path] = place(inst.path);
   for (const b of H.banks) map[b.name] = { page: 'top', cell: b.name };
+  // D4: every block links to its page (drawio `link="data:page/id,<page id>"`: a click opens the block's page)
+  linkBlocks(doc, per);
   // global LVS: the drawing flattened back through the blocks against the flattened netlist
   const flat = [];
   const expand = (pageName, bind, path, ns = path) => {   // ns: prefix of internal nets (a bank keeps flat refs but private nets)
