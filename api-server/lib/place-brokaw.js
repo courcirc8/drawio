@@ -351,18 +351,18 @@ export function importBrokaw(model, parsed, B) {
     }
     oNode = pin[it.pins.find((p) => p.side === 'right').name];
     const xEnd = xTri + 120;
-    let yAmp = yTop + 120 + 60;                 // the triangle and the ground symbols under it
-    // the bias pin: straight down past the ground symbol to its resistor, then X (labelled)
+    const yAmp = yTop + 120 + 50;               // the triangle and the ground symbols under it
+    // the bias pin: straight down out of the frame to its resistor (a bias element of this page, not of the
+    // amplifier: Orchestrator 26.10), then X (labelled)
     if (B.amp.bias) {
-      const a = pin[B.amp.bias.name], yb = yTop + 140;
+      const a = pin[B.amp.bias.name], yb = yAmp + 40;
       S.path(B.NB, a, { x: a.x, y: yb });
       const pe = vString(B.biasR, a.x, yb, 1);
       S.path(B.X, pe, { x: a.x, y: pe.y + 20 }); lab(B.X, { x: a.x, y: pe.y + 20 }, 1);
-      yAmp = Math.max(yAmp, pe.y + 40);
     }
     ampRight = xEnd + 60;
     // the frame hugs the amplifier (not the core's columns beside it)
-    frame("Amplificateur d'erreur", xTri - 40, ampRight, Math.min(yTop - 60, ...it.pins.filter((p) => p.side === 'top').map(() => yTop - 80)), yAmp + 20);
+    frame("Amplificateur d'erreur", xTri - 40, ampRight, Math.min(yTop - 60, ...it.pins.filter((p) => p.side === 'top').map(() => yTop - 80)), yAmp);
   } else {
     // left: the input on c(B) (its wire straight from Q(B)); yV: the amplifier's local supply line
     const mL = tr(ldL, xL, yV - gL.top.y, 1), mR = tr(ldR, xR, yV - trGeo(ldR, -1).top.y, -1);

@@ -49,6 +49,7 @@ export function hierReading(text, opts = {}) {
     const d = flat.subckts[String(name).toUpperCase()];
     if (!d || defs.has(d.name)) return;
     const parsed = parseSpice(`* .subckt ${d.name}\n` + bodyText(flat, d), { blocks: true });
+    parsed.pins = [...d.pins];        // the page's ports (manuel engine: every pin named on its page)
     defs.set(d.name, { name: d.name, pins: d.pins, parsed, symbol: symbolOf(d, parsed, opts.symbols) });
     for (const c of parsed.components) if (c.block) visit(c.block);
   };
@@ -471,6 +472,77 @@ export function importBlockPage(model, parsed, banks = [], symbols = new Map()) 
   return { wires, geo: geoLvs(model), golden: { ...parsed, components: comps, warnings: [] }, layout: { stages: Lay.stages.map((s) => s.ref), levels: Object.fromEntries([...Lay.level].map(([s, l]) => [s.ref, l])) } };
 }
 
+/* ------------------------------------------------------------ testbench */
+/** the classic bench (Eric, 2026-10-26): the DUT block in the centre, pin names on it; each supply source on
+ *  the left, wired over the top to its supply pin; an input source left of its pin; the outputs wired right
+ *  to their loads (to ground) and an output arrow; ground pins to ground. null when the page holds anything
+ *  else (a part between two signal nets, two sources on one net): the block placer then. */
+export function importTestbench(model, parsed, symbols = new Map()) {
+  const items = pageItems(parsed, [], symbols);
+  const blocks = items.filter((i) => i.kind === 'block');
+  if (blocks.length !== 1 || blocks[0].tri) return null;
+  const parts = items.filter((i) => i.kind !== 'block').map((i) => i.comp);
+  const gndOf = (c) => c.nodes.find((n) => RAIL0.test(n));
+  const sig = (c) => c.nodes.find((n) => !RAIL0.test(n));
+  if (parts.some((c) => c.nodes.length !== 2 || !gndOf(c) || !sig(c) || !/^[VIRCL]$/.test(c.prefix))) return null;
+  const src = parts.filter((c) => /^[VI]$/.test(c.prefix)), loads = parts.filter((c) => !src.includes(c));
+  const srcOn = new Map();
+  for (const c of src) { if (srcOn.has(sig(c))) return null; srcOn.set(sig(c), c); }
+  const blk = blocks[0];
+  const it = { ...blk, pins: blk.pins.map((p) => ({ ...p, side: RAIL0.test(p.net) ? 'bottom' : isSupply(p.net) ? 'top' : srcOn.has(p.net) ? 'left' : 'right' })) };
+  if (loads.some((c) => !it.pins.some((p) => p.net === sig(c) && p.side === 'right'))) return null;
+  const S = new Sheet();
+  const supplies = it.pins.filter((p) => p.side === 'top' && srcOn.has(p.net));
+  const inputs = it.pins.filter((p) => p.side === 'left');
+  const x0 = 140 * supplies.length + 160 * inputs.length + 80;
+  const v = blockVertex(S, it, x0, 0);
+  const pinAt = Object.fromEntries(it.pins.map((p) => [p.name, S.term(p.net, v, p.name)]));
+  // the pin names on the symbol
+  for (const p of it.pins) {
+    const a = pinAt[p.name];
+    if (p.side === 'top') S.text(p.name, a.x - 30, a.y + 4, 60, 14, 'center', 9);
+    else if (p.side === 'bottom') S.text(p.name, a.x - 30, a.y - 18, 60, 14, 'center', 9);
+    else if (p.side === 'left') S.text(p.name, a.x + 4, a.y - 7, 60, 14, 'left', 9);
+    else S.text(p.name, a.x - 64, a.y - 7, 60, 14, 'right', 9);
+  }
+  const ground = (c, vv) => endAt(S, gndOf(c), S.term(gndOf(c), vv, vv.other), 'd');
+  // supplies: the source on the far left, its top wired over the block to the pin
+  supplies.forEach((p, k) => {
+    const c = srcOn.get(p.net), a = pinAt[p.name], yBus = a.y - 50 - 20 * k, xs = 60 + 140 * k;
+    const vv = placeTwo(S, c, xs, yBus + 60, p.net, true, 1);
+    const t = S.term(p.net, vv, vv.first);
+    S.path(p.net, t, { x: xs, y: yBus }, { x: a.x, y: yBus }, a);
+    ground(c, vv);
+  });
+  for (const p of it.pins.filter((q) => q.side === 'top' && !srcOn.has(q.net))) endAt(S, p.net, pinAt[p.name], 'u');
+  // inputs: the source left of the block, its top level with the pin
+  inputs.forEach((p, k) => {
+    const c = srcOn.get(p.net), a = pinAt[p.name], xs = x0 - 80 - 160 * (inputs.length - 1 - k);
+    const vv = placeTwo(S, c, xs, a.y + 40, p.net, true, -1);
+    S.path(p.net, S.term(p.net, vv, vv.first), { x: xs, y: a.y }, a);
+    ground(c, vv);
+  });
+  for (const p of it.pins.filter((q) => q.side === 'bottom')) endAt(S, p.net, pinAt[p.name], 'd');
+  // outputs: the wire to the right, each load hanging from it, the arrow at its end
+  for (const p of it.pins.filter((q) => q.side === 'right')) {
+    const a = pinAt[p.name], mine = loads.filter((c) => sig(c) === p.net);
+    let x = a.x + 60;
+    for (const c of mine) {
+      const vv = placeTwo(S, c, x, a.y + 30, p.net, true, 1);
+      S.path(p.net, { x, y: a.y }, S.term(p.net, vv, vv.first));
+      ground(c, vv);
+      x += 110;
+    }
+    const xe = x + (mine.length ? -40 : 0);
+    S.path(p.net, a, { x: xe, y: a.y });
+    const pv = portVert(S, p.net, { x: xe, y: a.y }, 1, true, 'output');
+    S.term(p.net, pv, pv.portPin);
+  }
+  const wires = emit(model, [S], parsed);
+  normalizeOrigin(model);
+  return { wires, geo: geoLvs(model), golden: parsed };
+}
+
 /* ------------------------------------------------------------ the document */
 /** one page drawn from `parsed` into a fresh document: blocks/banks -> block page, else autoPlace */
 async function drawPage(parsed, banks, chain = null, symbols = new Map(), figure = true) {
@@ -580,7 +652,12 @@ export async function importHier(text, opts = {}) {
   const symbols = new Map([...H.defs.values()].map((d) => [d.name.toUpperCase(), d.symbol]));
   const figure = opts.figure === false ? null : await drawFigure(H.top, symbols);
   const banks = figure ? [] : H.banks;
-  finish(TOP, tb?.dut ? 'testbench' : 'top', figure || await drawPage(H.top, banks, null, symbols, false));
+  let bench = null;
+  if (!figure && tb?.dut && !banks.length) {
+    const d0 = newDocument(), m0 = getPage(d0);
+    try { const r = importTestbench(m0, H.top, symbols); if (r && r.geo.ok) bench = { model: m0, engine: 'testbench', golden: r.golden, geo: r.geo }; } catch { /* the block placer */ }
+  }
+  finish(TOP, tb?.dut ? 'testbench' : 'top', figure || bench || await drawPage(H.top, banks, null, symbols, false));
   // banks: their parts with the top's net names, every pin an I/O
   for (const b of banks) finish(b.name, b.kind, await drawPage({ ...H.top, components: b.parts, warnings: [] }, [], b.kind === 'chain' ? b : null), { pins: b.pins });
   // definitions (one drawing each), copied per instance when asked

@@ -69,3 +69,40 @@ test('a top with sources and circuit together: drawn, warned (write the DUT as a
   const r = await importHier(fx('brokaw_hier.cir'));
   assert.ok(r.lvs.warnings?.some((w) => /source.*top/.test(w)), JSON.stringify(r.lvs.warnings));
 });
+
+// the review before Eric (Orchestrator, 2026-10-26): the figures read like the textbook ones
+const vx = (m) => allCells(m).map(cellInfo).filter((c) => c.kind === 'vertex');
+const byRef = (m, ref) => vx(m).find((c) => String(c.refdes || '').toUpperCase() === ref);
+const plain = (v) => String(v || '').replace(/<[^>]+>/g, '').trim();
+
+test('ota page: one out port, XMN0 the diode half of the mirror beside XMNT, ibias a port', async () => {
+  const r = await importHier(fx('brokaw_tb.cir'));
+  const m = getPage(r.doc, 'ota');
+  const ports = vx(m).filter((c) => /apiShape=port/.test(c.styleRaw || '')).map((c) => plain(c.value));
+  assert.equal(ports.filter((n) => n === 'out').length, 1, ports.join(' '));
+  assert.ok(ports.includes('ibias'), ports.join(' '));
+  const n0 = byRef(m, 'XMN0'), nt = byRef(m, 'XMNT');
+  assert.ok(Math.abs(n0.y - nt.y) < 1, 'XMN0 level with XMNT');
+  assert.ok(n0.x < nt.x, 'XMN0 left of XMNT');
+  const frames = vx(m).filter((c) => /Polarisation/.test(plain(c.value)));
+  assert.deepEqual(frames, [], 'no separate Polarisation frame');
+});
+
+test('bandgap page: the bias resistor XRB outside the error-amplifier frame', async () => {
+  const r = await importHier(fx('brokaw_tb.cir'));
+  const m = getPage(r.doc, 'bandgap');
+  // the frame: the dashed box holding the title « Amplificateur d'erreur »
+  const title = vx(m).find((c) => /^Amplificateur/.test(plain(c.value)));
+  const amp = vx(m).find((c) => /dashed=1/.test(c.styleRaw || '') && title && title.x >= c.x && title.x <= c.x + c.w && title.y >= c.y && title.y <= c.y + c.h);
+  const rb = vx(m).filter((c) => /^XRB/.test(String(c.refdes || '').toUpperCase()));
+  assert.ok(amp && rb.length);
+  for (const c of rb) assert.ok(c.y >= amp.y + amp.h || c.x >= amp.x + amp.w || c.x + c.w <= amp.x || c.y + c.h <= amp.y, `${c.refdes} inside the amplifier frame`);
+});
+
+test('the textbook rules give way: a circuit they cannot draw keeps the manuel drawing of before', async () => {
+  const { autoPlace } = await import('../lib/auto.js');
+  // a two-stage resistor-loaded amplifier with a feedback resistor between the stages (bench analoggenie/277 shape)
+  const p = parseSpice('* fb\nR4 net1 VOUT1\nR3 net1 0\nR2 net4 VOUT1\nR1 VDD VOUT1\nR0 VDD net4\nM1 VOUT1 net4 0 0 NMOS\nM0 net4 VIN1 net1 0 NMOS\n.end\n');
+  const w = await autoPlace(p);
+  assert.equal(w.label, 'manuel');
+});

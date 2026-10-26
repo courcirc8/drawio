@@ -703,6 +703,11 @@ app.get('/documents/:id/hier/pages', wrap(async (req, res) => {
   const { entry } = pageOf(req);
   const { hierPages } = await import('./lib/hier-export.js');
   res.json(await hierPages(entry.doc, entry.hierMap || null, { scale: req.query.scale != null ? parseFloat(req.query.scale) : 1 }));
+app.get('/documents/:id/hier/viewer.html', wrap(async (req, res) => {
+  const { entry } = pageOf(req);
+  const { hierPages, hierViewerHtml } = await import('./lib/hier-export.js');
+  res.type('html').send(hierViewerHtml(await hierPages(entry.doc, entry.hierMap || null), req.params.id));
+}));
 }));
 
 // ------------------------------------------------------------- checkpoints

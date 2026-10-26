@@ -98,6 +98,14 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
   pièces.
 - OTA **complet** (deux étages : MP, Cc, Rz dans l'OTA) : la figure Brokaw prend la sortie du triangle comme `vref`,
   sans cadre « Sortie ». Cible : `test/fixtures/hier-brokaw/brokaw_tb.cir`, quatre pages, `test/hier-tb.test.js`.
+- **Banc classique** (`importTestbench`) : le bloc au centre, les noms de broches écrits dessus ; la source
+  d'alimentation à gauche, câblée par le haut jusqu'à la broche ; une source d'entrée à gauche de sa broche ; la
+  sortie câblée vers la droite, les charges pendues à la masse, une flèche de sortie au bout ; les broches de masse à
+  la masse. Repli sur le placeur de blocs si la page contient autre chose (moteur `testbench` sinon `blocks`).
+- **Onglets** : le `.drawio` a une page par niveau, nommée comme la cellule, dans l'ordre de la hiérarchie (drawio les
+  montre en onglets). `GET /documents/:id/hier/pages` donne pour chaque page `order`, `parent`, `depth`, `children`
+  et les liens bloc → page ; `GET /documents/:id/hier/viewer.html` est une visionneuse HTML autonome (onglets
+  indentés, fil d'Ariane, clic sur un bloc). Test : `test/hier-tabs.test.js`.
 
 ## LVS
 

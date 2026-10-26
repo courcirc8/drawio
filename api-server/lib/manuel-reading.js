@@ -26,6 +26,7 @@
 
 export const SUPPLY = /^(a?v(dd|cc)\w*|vpwr|vdda|dvdd|vcca|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 const GND = '0';
+const MIRROR_REF = process.env.MANUEL_MIRROR_REF !== '0';
 export const BIASNAME = /^(v?bias\w*|vb\w*|[np]bias\w*|vc[mnp]\w*|vref\w*|vg\w*)$/i;
 const OUTNAME = /^(v?out\w*|o(ut)?[pn]?)$/i;
 
@@ -80,11 +81,11 @@ function netUse(comps) {
   return use;
 }
 
-export function manuelReading(parsed) {
-  try { return read(parsed); } catch { return null; }
+export function manuelReading(parsed, opts = {}) {
+  try { return read(parsed, opts); } catch { return null; }
 }
 
-function read(parsed) {
+function read(parsed, opts = {}) {
   const comps = parsed.components;
   if (comps.length < 3 || comps.length > 40) return null;
   if (comps.some((c) => !isTr(c) && !TWO.has(c.prefix))) return null;
@@ -94,7 +95,9 @@ function read(parsed) {
   const all = netUse(comps);
   const degree = (n) => (all.get(n)?.chan.length || 0) + (all.get(n)?.gate.length || 0);
   // ports: signal nets with one terminal, or output-named nets
-  const isPort = (n) => !isRail(n, R) && (degree(n) === 1 || OUTNAME.test(n)) && !/^o\d/i.test(n);
+  // the pins of a .subckt page (lib/hier.js: parsed.pins) are ports whatever their degree
+  const pinSet = new Set((parsed.pins || []).map((n) => String(n).toLowerCase()));
+  const isPort = (n) => !isRail(n, R) && (pinSet.has(String(n).toLowerCase()) || ((degree(n) === 1 || OUTNAME.test(n)) && !/^o\d/i.test(n)));
   const groups = cccs(comps, R);
   const nTr = (g) => g.filter(isTr).length;
   const netsOf = (g) => new Set(g.flatMap((c) => [...chan(c), gateOf(c)].filter((n) => n && !isRail(n, R))));
@@ -191,6 +194,9 @@ function read(parsed) {
   for (const g of rest) {
     const nets = chanNets(g);
     const drivesCore = [...nets].some((n) => gateNets.has(n));
+    // the reference diode of a core mirror (a lone diode-connected device on a rail whose gate drives a
+    // core gate, the tail's): drawn as the left half of that mirror, beside it (Orchestrator, 26.10)
+    if (MIRROR_REF && opts.textbook !== false && g.length === 1 && isTr(g[0]) && chan(g[0]).includes(gateOf(g[0])) && chan(g[0]).some((n) => isRail(n, R)) && gateNets.has(gateOf(g[0]))) { frames.core.push(...g); continue; }
     const hasPort = [...nets].some((n) => isPort(n) && !BIASNAME.test(n));
     if (pairIn(g) && drivesCore) { frames.cmfb.push(...g); continue; }
     if (g.every((c) => !isTr(c))) { later.push(g); continue; }

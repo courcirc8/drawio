@@ -269,7 +269,7 @@ function checkPyErrors(doc) {
  *  when every candidate failed. */
 /** engine manuel, or null when its reading is not sure or a check fails */
 export function tryManuel(parsed) {
-  if (!manuelReading(parsed) && !brokawReading(parsed) && !ladderReading(parsed)) return null;
+  if (!manuelReading(parsed) && !manuelReading(parsed, { textbook: false }) && !brokawReading(parsed) && !ladderReading(parsed)) return null;
   try {
     const doc = newDocument(), m = getPage(doc);
     const placed = importNetlistManuel(m, parsed);      // throws on a geometric LVS failure
