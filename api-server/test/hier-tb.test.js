@@ -106,3 +106,36 @@ test('the textbook rules give way: a circuit they cannot draw keeps the manuel d
   const w = await autoPlace(p);
   assert.equal(w.label, 'manuel');
 });
+
+// the holes of the source rule (re-review of #70, Orchestrator 2026-10-26): one test each
+const inDem = (line) => fx('brokaw_tb.cir').replace('.ends demarrage', `${line}\n.ends demarrage`);
+test('source rule: a VSONDE_ probe passes only at value 0', async () => {
+  assert.equal((await importHier(inDem('VSONDE_1 gs ground 0'))).errors, undefined);
+  assert.equal((await importHier(inDem('VSONDE_2 gs ground DC 0'))).errors, undefined);
+  for (const v of ['3.3', 'DC 1.2 SIN(0 1 1k)', '0 AC 1']) {
+    const r = await importHier(inDem(`VSONDE_VDD gs ground ${v}`));
+    assert.ok(r.errors?.some((e) => /source in block demarrage: VSONDE_VDD/.test(e)), v);
+  }
+});
+test('source rule: a behavioural B source is a source', async () => {
+  const r = await importHier(fx('brokaw_tb.cir').replace('.ends bandgap', 'BSUP vb ground V=1.2\n.ends bandgap'));
+  assert.ok(r.errors?.some((e) => /source in block bandgap: BSUP/.test(e)), JSON.stringify(r.errors));
+});
+test('source rule: controlled sources E G F H are sources unless macro=1', async () => {
+  for (const l of ['E1 gs ground vref ground 2', 'G1 gs ground vref ground 1m', 'F1 gs ground VSONDE_1 2\nVSONDE_1 power gs 0', 'H1 gs ground VSONDE_1 1k\nVSONDE_1 power gs 0']) {
+    const ref = l.split(' ')[0];
+    const r = await importHier(inDem(l));
+    assert.ok(r.errors?.some((e) => new RegExp(`source in block demarrage: ${ref}\\b`).test(e)), l);
+  }
+  const macro = fx('brokaw_tb.cir').replace(/\.subckt demarrage([^\n]*)/, '.subckt demarrage$1 macro=1').replace('.ends demarrage', 'E1 gs ground vref ground 2\n.ends demarrage');
+  assert.equal((await importHier(macro)).errors, undefined);
+});
+test('source rule: a .subckt named like a PDK primitive is checked too', async () => {
+  const t = fx('brokaw_tb.cir').replace('.subckt ota', '.subckt rppd 1 2 3\nR1 1 2 1k\nVBAD 1 3 1\n.ends rppd\n.subckt ota');
+  const r = await importHier(t);
+  assert.ok(r.errors?.some((e) => /source in block rppd: VBAD/.test(e)), JSON.stringify(r.errors));
+});
+test('a .subckt line with params: has no params pin', () => {
+  const p = parseSpice('.subckt cell a b params: w=1u l=2u\nR1 a b 1k\n.ends cell\nX1 n1 0 cell\n.end\n');
+  assert.deepEqual(p.subckts.CELL.pins, ['a', 'b']);
+});
