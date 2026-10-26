@@ -18,7 +18,7 @@ const blockPins = (m, ref) => {
 };
 
 test('power_<dom> / ground_<dom> pins: on top and bottom of the block, LVS per page and global green', async () => {
-  const r = await importHier(text);
+  const r = await importHier(text, { symbols: { ota: 'box' } });   // the box (the triangle: hier-symbols.test.js)
   assert.deepEqual(r.lvs.pages, { top: true, ota: true });
   assert.equal(r.lvs.global, true, JSON.stringify(r.lvs.globalReport || {}).slice(0, 400));
   const p = blockPins(getPage(r.doc, 'top'), 'XOTA');

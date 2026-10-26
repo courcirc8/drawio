@@ -22,6 +22,24 @@ import { allCells, cellInfo } from './model.js';
 import { classify, activePins } from './components.js';
 import { pinAbs, rotatedAabb } from './route.js';
 
+// an amplifier triangle pointing right (lib/hier.js, apiSymbol=ota): its body is the triangle, not its box, so
+// the pins on the slanted sides leave through free space
+const TRIANGLE = /(^|;)(shape=)?triangle(;|$)/;
+function crossesTriangle(v, a, b) {
+  const m = 4, P = [{ x: v.x, y: v.y }, { x: v.x + v.w, y: v.y + v.h / 2 }, { x: v.x, y: v.y + v.h }];
+  // strictly inside, at least m from every side
+  const inside = (q) => {
+    for (let i = 0; i < 3; i++) {
+      const A = P[i], B = P[(i + 1) % 3], L = Math.hypot(B.x - A.x, B.y - A.y);
+      if (((B.x - A.x) * (q.y - A.y) - (B.y - A.y) * (q.x - A.x)) / L < m) return false;
+    }
+    return true;
+  };
+  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y)));
+  for (let k = 0; k <= n; k++) if (inside({ x: a.x + (b.x - a.x) * k / n, y: a.y + (b.y - a.y) * k / n })) return true;
+  return false;
+}
+
 const EPS = 0.6;
 
 function edgePath(e, byId) {
@@ -115,6 +133,7 @@ export function geoLvs(model) {
         else if (onSegInterior(p, a, b)) err('over-pin', `wire ${e.id} runs over a pin of ${p.id}`, p);
       }
       for (const v of bodies) {
+        if (TRIANGLE.test(v.styleRaw || '')) { if (crossesTriangle(v, a, b)) err('through-body', `wire ${e.id} crosses ${v.id}`, a); continue; }
         const bb = rotatedAabb(v), m = 4;
         const x0 = bb.x + m, x1 = bb.x + bb.w - m, y0 = bb.y + m, y1 = bb.y + bb.h - m;
         if (x1 <= x0 || y1 <= y0) continue;
