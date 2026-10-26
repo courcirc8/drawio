@@ -402,15 +402,16 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
       catch { throw model.httpError(400, 'symbols: name:symbol,… or a JSON object'); }
     }
     try { r = await importHier(spice, { per: req.query.per, symbols }); } catch (e) { throw model.httpError(e.status || 422, e.message); }
+    const ok = r.lvs.global && Object.values(r.lvs.pages).every(Boolean);
+    const force = req.query.force === '1' || req.query.force === 'true';
+    // Eric's rule (26.10): a source inside a block .subckt fails the import, ?force=1 or not
+    // (exceptions: VSONDE_* probes of value 0, a .subckt marked macro=1); a refused drawing is never stored
+    if (r.errors?.length) return res.status(422).json({ engine: 'hier', error: r.errors.join('; '), errors: r.errors, pages: r.pages, lvs: r.lvs });
+    if (!ok && !force) return res.status(422).json({ engine: 'hier', per: req.query.per === 'instance' ? 'instance' : 'definition', error: 'hierarchical LVS failed', pages: r.pages, map: r.map, lvs: r.lvs, banks: r.banks });
     entry.doc = r.doc;
     entry.importNetlist = { '': spice };
     entry.hierMap = r.map;
-    const ok = r.lvs.global && Object.values(r.lvs.pages).every(Boolean);
-    const force = req.query.force === '1' || req.query.force === 'true';
-    // Eric's rule (26.10): a V/I source inside a block .subckt fails the import, ?force=1 or not
-    // (exceptions: VSONDE_* probes, a .subckt marked macro=1)
-    if (r.errors?.length) return res.status(422).json({ engine: 'hier', error: r.errors.join('; '), errors: r.errors, pages: r.pages, lvs: r.lvs });
-    return res.status(ok || force ? 201 : 422).json({ engine: 'hier', per: req.query.per === 'instance' ? 'instance' : 'definition',
+    return res.status(201).json({ engine: 'hier', per: req.query.per === 'instance' ? 'instance' : 'definition',
       ...(ok ? {} : { error: 'hierarchical LVS failed' }), pages: r.pages, map: r.map, lvs: r.lvs, banks: r.banks });
   }
   // a ground spelled vss / gnd (alone) is drawn as ground: one GND rail (lib/ground-alias.js)

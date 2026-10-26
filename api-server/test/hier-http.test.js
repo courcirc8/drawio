@@ -62,3 +62,13 @@ test('a cell name with XML characters imports (the tb_ page name escaped)', asyn
   assert.equal(r.status, 201, JSON.stringify(j).slice(0, 300));
   assert.equal(j.pages[0].name, 'tb_band"gap&x');
 });
+
+test('a refused import (source rule or LVS) never replaces the document', async () => {
+  const id = await doc();
+  assert.equal((await hier(id, TB)).status, 201);
+  const before = await (await fetch(`${BASE}/documents/${id}`)).text();
+  assert.equal((await hier(id, TB.replace('.ends demarrage', 'VX gs ground 0\n.ends demarrage'))).status, 422);
+  const after = await (await fetch(`${BASE}/documents/${id}`)).text();
+  assert.equal(after, before);
+  assert.doesNotMatch(after, /\bVX\b/);
+});

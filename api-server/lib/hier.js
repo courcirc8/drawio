@@ -578,6 +578,26 @@ async function drawFigure(parsed, symbols) {
   } catch { return null; }
 }
 
+/** the sources written inside a block .subckt (Eric, 26.10: sources belong to the tb_<bloc> testbench): read on
+ *  the raw lines of every definition, so that a source the parser skips (H), a controlled or behavioural source
+ *  (E, G, F, H, B) and a .subckt named like a PDK primitive (no page) are checked too. Exceptions: a .subckt
+ *  marked macro=1, a probe VSONDE_* of value 0 (no AC, no transient). Returns one error per definition. */
+export function blockSourceErrors(flat) {
+  const errs = [];
+  for (const d of Object.values(flat.subckts || {})) {
+    if (d.macro) continue;
+    const src = [];
+    for (const l of d.lines) {
+      const t = l.trim().split(/\s+/), ref = t[0] || '';
+      if (!/^[VIBEGFH]/i.test(ref)) continue;
+      if (/^VSONDE_/i.test(ref) && /^((dc\s+)?0+(\.0*)?)?$/i.test(t.slice(3).join(' '))) continue;
+      src.push(ref);
+    }
+    if (src.length) errs.push(`source in block ${d.name}: ${src.join(' ')} (sources belong to the tb_<bloc> testbench; a macro-model: .subckt … macro=1)`);
+  }
+  return errs;
+}
+
 /** the testbench reading of a top level (Eric, 2026-10-26): its sources, plus ONE block (the DUT) and
  *  passive loads only -> { dut }; sources with any other circuit -> { mixed }; no source -> null */
 export function testbenchReading(top) {
@@ -634,17 +654,15 @@ export async function importHier(text, opts = {}) {
   // the top page: tb_<dut> when it is a testbench (its sources, the DUT one block, loads)
   const tb = testbenchReading(H.top);
   const TOP = tb?.dut ? `tb_${tb.dut}` : 'top';
-  const warnings = [], errors = [];
+  const warnings = [], errors = blockSourceErrors(H.flat);
   const doc = newDocument(TOP);
   const pages = [], drawn = new Map();       // page name -> {ex, golden, pins}
   const finish = (name, kind, d, extra = {}) => {
     const m = name === TOP ? getPage(doc) : addPage(doc, name, d.model);
     // a source on a block page (any page but the testbench): a quality-gate failure, reported
-    // a source inside a block .subckt is an error (Eric, 26.10), but a VSONDE_* probe or a .subckt marked macro=1
-    const src = (d.golden?.components || []).filter((c) => /^[VI]$/.test(c.prefix) && !/^VSONDE_/i.test(c.ref)).map((c) => c.ref);
-    const block = kind === 'subckt' || kind === 'instance';
-    if (src.length && block && !extra.macro) errors.push(`source in block ${name}: ${src.join(' ')} (sources belong to the tb_<bloc> testbench; a macro-model: .subckt … macro=1)`);
-    else if (src.length && kind !== 'testbench' && !block) warnings.push(`source on block page ${name}: ${src.join(' ')} (write the block as a .subckt under a tb_<bloc> testbench)`);
+    // a source on a bank page or a top that mixes sources and circuit: reported (inside a .subckt: blockSourceErrors)
+    const src = (d.golden?.components || []).filter((c) => /^[VIBEGFH]$/.test(c.prefix)).map((c) => c.ref);
+    if (src.length && kind !== 'testbench' && kind !== 'subckt' && kind !== 'instance') warnings.push(`source on block page ${name}: ${src.join(' ')} (write the block as a .subckt under a tb_<bloc> testbench)`);
     if (name === TOP) { const src = d.model; while (m.firstChild) m.removeChild(m.firstChild); for (const n of Array.from(src.childNodes)) m.appendChild(doc.importNode(n, true)); }
     if (opts.onPage) opts.onPage(name, m);   // tests: corrupt a page before its extraction
     const ex = extractNetlist(m), rep = compare(ex, d.golden);

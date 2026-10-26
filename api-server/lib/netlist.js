@@ -57,7 +57,9 @@ export function parseSpice(text, opts = {}) {
     const low = line.toLowerCase();
     if (low.startsWith('.subckt')) {
       const t = line.split(/\s+/);
-      const pins = t.slice(2).filter((x) => !x.includes('='));
+      // pins up to `params:` (the parameters of the .subckt line), never a name=value
+      const pi = t.findIndex((x, i) => i >= 2 && /^params:/i.test(x));
+      const pins = t.slice(2, pi < 0 ? t.length : pi).filter((x) => !x.includes('='));
       cur = { name: t[1], key: (t[1] || '').toUpperCase(), pins, lines: [], macro: t.slice(2).some((x) => /^macro=(1|true)$/i.test(x)) };
       if (cur.name) subckts[cur.key] = cur; else warnings.push('malformed .subckt skipped: ' + line);
       first = false;

@@ -277,13 +277,49 @@ export function importBrokaw(model, parsed, B) {
 
   /* ---- core: vref bus, divider, Q pair, R1 / R2 */
   const yRef = 120;
-  const xDiv = 200, xA = 380, xB = 560;           // small (A) left, big (8A) right
+  // a complete amplifier block (its output on X) goes BETWEEN the columns: no wire across a column
+  const between = !!(B.amp && !B.out);
+  const xDiv = 200, xA = 380, xB = between ? 820 : 560;           // small (A) left, big (8A) right
   const QA = B.core.small, QB = B.core.big;
   const rcA = QA === B.core.a ? B.core.rcA : B.core.rcB, rcB = QA === B.core.a ? B.core.rcB : B.core.rcA;
   const pA = vString(rev(rcA), xA, yRef, -1), pB = vString(rev(rcB), xB, yRef, 1);
   const yC = Math.max(pA.y, pB.y);
-  let xL = 800, xR = 1000, xT = (xL + xR) / 2, yV = yRef, inL, inR, ldL, ldR, gL, yCA, yCB;
-  if (B.amp) {
+  let xL = 800, xR = 1000, xT = (xL + xR) / 2, yV = yRef, inL, inR, ldL, ldR, gL, yCA, yCB, mid = null;
+  if (between) {
+    // the triangle between the columns (Orchestrator 26.10): column A straight into its upper input, column B under
+    // it into the lower one (inputs swapped, − on top, when column B is the '+'); the output wired up to the vref
+    // bus, the bias resistor a loop from the output down to the ibias pin
+    let it = B.amp.it;
+    const [u, l] = it.pins.filter((p) => p.side === 'left').sort((a, b) => it.tri[a.name].y - it.tri[b.name].y);
+    if (u.net !== B.CA) it = { ...it, tri: { ...it.tri, [u.name]: { ...it.tri[u.name], y: it.tri[l.name].y }, [l.name]: { ...it.tri[l.name], y: it.tri[u.name].y } } };
+    const xTri = xA + 100, yTop = yC;
+    const tv = B.vertex.tri(S, it, xTri, yTop);
+    const pin = {};
+    for (const p of it.pins) { pin[p.name] = S.term(p.net, tv, p.name); B.vertex.pinText(S, it, p, pin[p.name]); }
+    let up, lo, out, ib = null;
+    for (const p of it.pins) {
+      const a = pin[p.name];
+      if (p.net === B.CA) up = a;
+      else if (p.net === B.CB) lo = a;
+      else if (p.side === 'right') out = a;
+      else if (p.net === B.VDD) vdd(B.VDD, a);
+      else if (p.net === GND) gnd(GND, a);
+      else if (B.amp.bias && p.name === B.amp.bias.name) ib = a;
+    }
+    const xo = xTri + 160, xRb = xTri + 200;
+    S.path(B.X, out, { x: xo, y: out.y });
+    S.path(B.X, { x: xo, y: out.y }, { x: xo, y: yRef });
+    let yR = yTop + 140;
+    if (ib) {
+      S.path(B.X, { x: xo, y: out.y }, { x: xRb, y: out.y });
+      const pe = vString(rev(B.biasR), xRb, out.y, 1);
+      yR = Math.max(yR, pe.y + 20);
+      S.path(B.NB, ib, { x: ib.x, y: yR }, { x: xRb, y: yR }, pe);
+    }
+    yCA = up.y; yCB = yR + 30;
+    S.path(B.CA, { x: xA, y: yCA }, up);
+    mid = { lo, xRise: xTri - 20, xo };
+  } else if (B.amp) {
     // the amplifier triangle: the collector taps level with its upper ('+') and lower ('−') inputs, 40 apart
     const plus = B.amp.it.pins.filter((p) => p.side === 'left').sort((a, b) => B.amp.it.tri[a.name].y - B.amp.it.tri[b.name].y)[0];
     yCA = plus.net === B.CA ? yC + 40 : yC + 80; yCB = plus.net === B.CB ? yC + 40 : yC + 80;
@@ -299,6 +335,7 @@ export function importBrokaw(model, parsed, B) {
   const gA = trGeo(QA, 1), yQ = Math.max(yCA, yCB) + 40;   // Q tops below the two taps
   const qa = tr(QA, xA, yQ - gA.top.y, 1), qb = tr(QB, xB, yQ - trGeo(QB, -1).top.y, -1);
   S.path(B.CA, pA, qa.top); S.path(B.CB, pB, qb.top);
+  if (mid) S.path(B.CB, { x: xB, y: yCB }, { x: mid.xRise, y: yCB }, { x: mid.xRise, y: mid.lo.y }, mid.lo);
   // emitter areas: A and nA beside the bipolars (the ratio sets the PTAT voltage)
   const ma = mult(QA), mb = mult(QB), ratio = +(mb / ma).toPrecision(3);
   S.text(`<b>A</b> (×${ma})`, xA - 98, qa.bot.y + 2, 90, 18, 'right', 12);
@@ -319,8 +356,24 @@ export function importBrokaw(model, parsed, B) {
   const yG = pR2.y + 20;
   gnd(GND, pR2);
   // the vref bus, named at its left end (or wired there from the start-up block)
-  S.path(B.X, { x: xDiv, y: yRef }, { x: xA, y: yRef }); S.path(B.X, { x: xA, y: yRef }, { x: xB, y: yRef });   // split at RC(A)'s pin
-  if (!(B.start && B.start.block)) { lab(B.X, { x: xDiv - 40, y: yRef }, -1); S.path(B.X, { x: xDiv - 40, y: yRef }, { x: xDiv, y: yRef }); }
+  S.path(B.X, { x: xDiv, y: yRef }, { x: xA, y: yRef });
+  if (mid) { S.path(B.X, { x: xA, y: yRef }, { x: mid.xo, y: yRef }); S.path(B.X, { x: mid.xo, y: yRef }, { x: xB, y: yRef }); }
+  else S.path(B.X, { x: xA, y: yRef }, { x: xB, y: yRef });   // split at RC(A)'s pin
+  if (mid) {
+    // the reference out at the bus's right end: its loads hanging, the output arrow
+    let x = xB + 40;
+    S.path(B.X, { x: xB, y: yRef }, { x, y: yRef });
+    for (const c of B.loads) {
+      S.path(B.X, { x, y: yRef }, { x: x + 40, y: yRef }); x += 40;
+      S.path(B.X, { x, y: yRef }, { x, y: yRef + 30 });
+      const v = placeTwo(S, c, x, yRef + 30, B.X, true, 1);
+      S.term(B.X, v, v.first); gnd(GND, S.term(GND, v, v.other));
+    }
+    S.path(B.X, { x, y: yRef }, { x: x + 40, y: yRef });
+    const pv = portVert(S, B.X, { x: x + 40, y: yRef }, 1, true, 'output'); S.term(B.X, pv, pv.portPin);
+    if (!(B.start && B.start.block)) { lab(B.X, { x: xDiv - 40, y: yRef }, -1); S.path(B.X, { x: xDiv - 40, y: yRef }, { x: xDiv, y: yRef }); }
+  }
+  else if (!(B.start && B.start.block)) { lab(B.X, { x: xDiv - 40, y: yRef }, -1); S.path(B.X, { x: xDiv - 40, y: yRef }, { x: xDiv, y: yRef }); }
   else { S.path(B.X, { x: xB, y: yRef }, { x: xB + 40, y: yRef }); lab(B.X, { x: xB + 40, y: yRef }, 1); }   // named at its right end
   // divider: X -> vb (labelled) -> ground
   if (B.divUp) {
@@ -332,11 +385,12 @@ export function importBrokaw(model, parsed, B) {
     }
   }
   const coreBottom = Math.max(S.bbox().y1, yG);
-  frame('Cœur', xDiv - 130, xB + 100, 40, coreBottom + 30);
+  if (!mid) frame('Cœur', xDiv - 130, xB + 100, 40, coreBottom + 30);   // between: one figure, no frames
 
   /* ---- error amplifier: mirror on top, pair, tail; the bias beside */
   let oNode, ampRight;
-  if (B.amp) {
+  if (mid) ampRight = xB;
+  else if (B.amp) {
     // the triangle beside the core, its inputs wired straight from the collector taps
     const it = B.amp.it, xTri = xB + 200, yTop = Math.min(yCA, yCB) - 40;
     const tv = B.vertex.tri(S, it, xTri, yTop);
@@ -418,7 +472,7 @@ export function importBrokaw(model, parsed, B) {
   const ampBottom = S.bbox().y1;
 
   /* ---- output: the output device on the amplifier output, compensation, loads, the vref port */
-  if (!B.out) {
+  if (!B.out && !mid) {
     // complete amplifier: its output IS the reference, the port at the apex (loads below it)
     const y = oNode.y, xP = ampRight + 40 + (B.loads.length ? 40 : 0);
     S.path(B.X, oNode, { x: xP, y });
@@ -482,6 +536,9 @@ export function importBrokaw(model, parsed, B) {
     const x0 = xDiv - 130 - 80 - w, v = B.vertex.box(S, it, x0, yRef - h / (nR + 1));
     for (const p of it.pins) {
       const a = S.term(p.net, v, p.name);
+      // the pin name inside the box (Orchestrator 26.10)
+      if (p.side === 'right') S.text(p.name, a.x - 64, a.y - 9, 60, 18, 'right', 10);
+      else S.text(p.name, a.x - 30, p.side === 'top' ? a.y + 4 : a.y - 18, 60, 14, 'center', 9);
       if (p.side === 'right') S.path(B.X, a, { x: xDiv, y: a.y });
       else if (p.side === 'top') vdd(B.VDD, a);
       else gnd(GND, a);

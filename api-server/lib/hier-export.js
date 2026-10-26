@@ -37,6 +37,10 @@ export async function hierPages(doc, map = null, opts = {}) {
       if (target) { cells[c.id].page = target; links.push(`<a xlink:href="${esc(target)}.svg" data-page="${esc(target)}"><rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="transparent" stroke="none"><title>${esc(target)}</title></rect></a>`); }
     }
     let svg = out.buffer.toString('utf8');
+    // the export is sized 100 % of its container with no viewBox: a small page (a testbench) then sits in the corner
+    // of a wide empty frame; give the root its drawing size and a viewBox so it is cropped and scales down
+    svg = svg.replace(/<svg\b([^>]*?)style="[^"]*?min-width:\s*([\d.]+)px;\s*min-height:\s*([\d.]+)px;?"/, (s, a, w, h) =>
+      `<svg${a}width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display: block; max-width: 100%; height: auto;"`);
     if (links.length) svg = svg.replace(/<\/svg>\s*$/, `<g data-drawio-api="block-links">${links.join('')}</g></svg>`);
     pages.push({ name, id, svg, mapping: out.mapping, cells });
   }
