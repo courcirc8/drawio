@@ -31,6 +31,7 @@ import { getShape } from './stencils.js';
 import { manuelReading, chan, gateOf, isP, BIASNAME } from './manuel-reading.js';
 import { preserveElectricalData } from './electrical-data.js';
 import { geoLvs } from './geo-lvs.js';
+import { brokawReading, importBrokaw } from './place-brokaw.js';
 
 const ROW = 170, DEV_H = 110, MID = 100, RAIL_GAP = 40;
 const JUNCTION = 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;';
@@ -1050,6 +1051,13 @@ const TITLES = { bias: 'Polarisation', cmfb: 'CMFB', startup: 'Démarrage' };
 export function importNetlistManuel(model, parsed, opts = {}) {
   const r = opts.reading || manuelReading(parsed);
   if (!r) {
+    // a Brokaw bandgap (lib/place-brokaw.js), else a ladder between two buses
+    const Bk = brokawReading(parsed);
+    if (Bk) {
+      const { geo, wires } = importBrokaw(model, parsed, Bk);
+      if (!geo.ok && !opts.noGeo) { const e = new Error('manuel: geometric LVS failed: ' + geo.errors.slice(0, 3).map((x) => x.msg).join('; ')); e.geo = geo; throw e; }
+      return { geo, engine: 'manuel', components: parsed.components.map((c) => c.ref), wires, frames: ['startup', 'core', 'amplifier', 'output'] };
+    }
     const L = ladderReading(parsed);
     if (!L) { const e = new Error('manuel: reading not sure'); e.status = 422; throw e; }
     const { geo, wires } = importLadder(model, parsed, L);

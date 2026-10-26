@@ -391,23 +391,6 @@ async function drawPage(parsed, banks, chain = null) {
   return { model: getPage(w.doc), engine: w.label, golden: parsed };
 }
 
-/** net map of a drawn page: extracted net -> golden net, read through the
- *  terminals of the parts (multi-pin parts first, then two-pin parts whose
- *  pins may be swapped, from a net already known) */
-function netMap(ex, golden) {
-  const go = new Map(golden.components.map((c) => [c.ref.toUpperCase(), c]));
-  const map = new Map();
-  const pairs = ex.components.map((c) => [c, go.get(c.ref.toUpperCase())]).filter(([, g]) => g);
-  for (const [c, g] of pairs) if (!/^[RCL]$/.test(c.prefix)) c.nodes.forEach((n, i) => { if (g.nodes[i] != null && !map.has(n)) map.set(n, g.nodes[i]); });
-  for (let pass = 0; pass < 4; pass++) for (const [c, g] of pairs) {
-    if (!/^[RCL]$/.test(c.prefix)) continue;
-    const [a, b] = c.nodes, [x, y] = g.nodes;
-    if (map.get(a) === y || map.get(b) === x) { if (!map.has(a)) map.set(a, y); if (!map.has(b)) map.set(b, x); }
-    else if (map.has(a) || map.has(b) || pass === 3) { if (!map.has(a)) map.set(a, x); if (!map.has(b)) map.set(b, y); }
-  }
-  return map;
-}
-
 /**
  * Hierarchical drawing of `text`: { doc, pages: [{name, kind, engine, lvs, geo}],
  * map: { flatRef: {page, cell} }, lvs: { pages: {name: match}, global } }.
@@ -421,8 +404,9 @@ export async function importHier(text, opts = {}) {
   const finish = (name, kind, d, extra = {}) => {
     const m = name === 'top' ? getPage(doc) : addPage(doc, name, d.model);
     if (name === 'top') { const src = d.model; while (m.firstChild) m.removeChild(m.firstChild); for (const n of Array.from(src.childNodes)) m.appendChild(doc.importNode(n, true)); }
+    if (opts.onPage) opts.onPage(name, m);   // tests: corrupt a page before its extraction
     const ex = extractNetlist(m), rep = compare(ex, d.golden);
-    drawn.set(name, { ex, golden: d.golden, map: netMap(ex, d.golden), ...extra });
+    drawn.set(name, { ex, ...extra });
     pages.push({ name, kind, engine: d.engine, lvs: rep.match, ...(rep.match ? {} : { report: rep }), ...(d.geo ? { geo: d.geo.ok } : {}) });
   };
   // top
@@ -456,19 +440,25 @@ export async function importHier(text, opts = {}) {
   for (const b of H.banks) map[b.name] = { page: 'top', cell: b.name };
   // global LVS: the drawing flattened back through the blocks against the flattened netlist
   const flat = [];
-  const expand = (pageName, bind, path) => {
+  const expand = (pageName, bind, path, ns = path) => {   // ns: prefix of internal nets (a bank keeps flat refs but private nets)
     const P = drawn.get(pageName);
+    const seen = new Set(P.ex.components.flatMap((c) => c.nodes));
     for (const c of P.ex.components) {
-      // a net absent from the drawing (a hidden bulk) keeps its netlist name
-      const g = (n) => P.map.get(n) ?? n;
-      const net = (n) => { const gn = g(n); return bind && bind.has(gn) ? bind.get(gn) : path && gn !== '0' ? `${path}.${gn}` : gn; };
+      // the page's OWN extracted nets (never renamed by the reference: a cut net
+      // stays cut); a page pin (its I/O label) is bound to the net of the
+      // block's terminal, a drawn internal net gets the page's prefix; a hidden
+      // net (a bulk, never drawn) is a name of the netlist: the instance path
+      const net = (n) => {
+        const k = String(n).toLowerCase(), pre = seen.has(n) ? ns : path;
+        return bind && bind.has(k) ? bind.get(k) : pre && n !== '0' ? `${pre}.${n}` : n;
+      };
       const ref = path ? `${path}.${c.ref}` : c.ref;
       const sub = c.prefix === 'X' && (drawn.has(c.ref) && H.banks.some((b) => b.name === c.ref) ? c.ref : null);
-      if (sub) { expand(sub, new Map(drawn.get(sub).pins.map((pn, i) => [pn, net(c.nodes[i])])), path); continue; }
+      if (sub) { expand(sub, new Map(drawn.get(sub).pins.map((pn, i) => [String(pn).toLowerCase(), net(c.nodes[i])])), path, (path ? path + '.' : '') + sub); continue; }
       const inst = H.instances.find((i) => i.path.toUpperCase() === ref.toUpperCase());
       if (c.prefix === 'X' && inst) {
         const pg = pageOfInst.get(inst.path), pins = drawn.get(pg).pins || [];
-        expand(pg, new Map(pins.map((pn, i) => [pn, net(c.nodes[i])])), inst.path);
+        expand(pg, new Map(pins.map((pn, i) => [String(pn).toLowerCase(), net(c.nodes[i])])), inst.path);
         continue;
       }
       flat.push({ ...c, ref, nodes: c.nodes.map(net), ...(c.fullNodes ? { fullNodes: c.fullNodes.map(net) } : {}) });

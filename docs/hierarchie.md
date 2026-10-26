@@ -54,8 +54,11 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
 ## LVS
 
 - Par page : le dessin contre sa netlist (corps du `.subckt`, composants de la banque, top avec les blocs).
-- **Global** : le dessin aplati à travers les blocs (chaque bloc remplacé par l'extraction de sa page, nets traduits
-  par les broches, noms internes préfixés par le chemin) contre la netlist aplatie par le parseur. Les directives de
+- **Global** : le dessin aplati à travers les blocs contre la netlist aplatie par le parseur. Chaque bloc est remplacé
+  par l'extraction de sa page avec **ses propres nets** : une broche de page (étiquette d'E/S) est reliée au net de la
+  borne du bloc, un net dessiné interne est préfixé par le chemin d'instance (ou le nom de la banque), un net caché
+  (bulk) garde son nom de netlist. Aucun nom de la référence n'est recopié sur le dessin : un fil coupé sur une page
+  reste coupé dans l'aplati (`test/hier-global.test.js`, 6 corruptions). Les directives de
   simulation (`.nodeset`) sont signalées dans `lvs.warnings`, pas en échec.
 
 ## Primitives IHP SG13G2
