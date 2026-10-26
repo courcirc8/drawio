@@ -1,0 +1,16 @@
+* Source: netlist bank, openpdk/2AMLogic_klayout-tools__casc_amp.spice__top (github.com/2AMLogic/klayout-tools, MIT)
+V1 vdd 0 DC {vdd}
+V2 in 0 DC 0 AC 1
+C1 in gate 1p
+L1 out gate 1n
+I1 vdd nbc DC {ibias}
+M1 nbc nbc 0 0 NMOS
+I2 pbs 0 DC {ibias}
+M2 pbs pbs vdd vdd PMOS
+I3 pbc 0 DC {ibias}
+M3 pbc pbc vdd vdd PMOS
+M4 n1 gate 0 0 NMOS
+M5 out nbc n1 0 NMOS
+M6 out pbc n2 vdd PMOS
+M7 n2 pbs vdd vdd PMOS
+.end

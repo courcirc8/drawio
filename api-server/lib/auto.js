@@ -295,7 +295,8 @@ export async function autoPlace(parsed) {
     const f = (r) => { try { return Object.values(qualityGate(getPage(r.doc), parsed).checks).filter((c) => !c.ok).length; } catch { return 99; } };
     const [fm, fw] = [f(man), f(won)];
     const trials = { ...(won.trials || {}), manuel: { ...man.trials.manuel, gateFails: fm } };
-    return fm < fw ? { ...man, trials, manuelVs: { manuel: fm, [won.label]: fw } } : { ...won, trials, manuelVs: { manuel: fm, [won.label]: fw } };
+    // the ldo template stays even when manuel fails fewer checks: Eric approved it (Orchestrator, 2026-10-26)
+    return fm < fw && won.label !== 'ldo' ? { ...man, trials, manuelVs: { manuel: fm, [won.label]: fw } } : { ...won, trials, manuelVs: { manuel: fm, [won.label]: fw } };
   }
   return autoPlaceMain(parsed, aliased);
 }

@@ -1,0 +1,10 @@
+* Source: netlist bank, analoggenie/954 (AnalogGenie textbook transcriptions, MIT)
+M1 IOUT1 net14 VDD VDD PMOS
+M0 net14 net14 VDD VDD PMOS
+M7 net15 VB1 0 0 NMOS
+M6 net9 VB1 0 0 NMOS
+M5 net9 VIN2 net15 0 NMOS
+M4 net9 VIN1 net15 0 NMOS
+M3 IOUT1 VIN2 net15 0 NMOS
+M2 net14 VIN1 net9 0 NMOS
+.end

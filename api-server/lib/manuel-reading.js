@@ -129,6 +129,64 @@ function read(parsed) {
       grew = true;
     }
   }
+  // start-up kick (cascoded OTA of the TIA proj5, 2026-10-26): core transistors with a channel end on a rail
+  // whose gate net is driven only by resistors and capacitors between that net and the rails, one resistor
+  // and one capacitor at least (a power-on RC: a plain divider, a source or a lone capacitor is a bias), are
+  // drawn apart, in a « Démarrage » frame, with that RC
+  frames.startup = [];
+  const rcOnly = (n) => { const u = all.get(n); return !!u && u.chan.some((c) => c.prefix === 'C') && u.chan.some((c) => c.prefix === 'R') && u.chan.every((c) => (c.prefix === 'R' || c.prefix === 'C') && chan(c).every((m) => m === n || isRail(m, R))); };
+  const kickGates = new Set();
+  for (const c of [...frames.core]) {
+    const g = gateOf(c);
+    if (!g || isRail(g, R) || !chan(c).some((n) => isRail(n, R)) || !rcOnly(g)) continue;
+    frames.core.splice(frames.core.indexOf(c), 1); frames.startup.push(c); kickGates.add(g);
+  }
+  // a replica bias branch inside the core's channel group (the cascode bias of a telescopic stage): a series
+  // path from a rail to a core node, its inner nodes joined by that path only, holding a diode whose node only
+  // feeds gates of other core parts; every transistor's gate on its own diode node or on a net that is not a
+  // core channel node (a bias line). Drawn in the bias frame; the node it hangs on becomes a label. A diode
+  // node driving an input pair (a bandgap core branch into its amplifier) is not a bias line, nor the
+  // reference of a mirror hanging on the same node X, nor a path through half of an input pair.
+  const pairGates = new Set(), pairParts = new Set();
+  for (const a of comps.filter(isTr)) for (const b of comps.filter(isTr)) {
+    if (a !== b && sizeKey(a) === sizeKey(b) && a.nodes[2] === b.nodes[2] && !isRail(a.nodes[2], R) && gateOf(a) !== gateOf(b)) { pairGates.add(gateOf(a)); pairParts.add(a); }
+  }
+  for (let moved = true; moved;) {
+    moved = false;
+    const cu = netUse(frames.core);
+    for (const d of frames.core.filter((c) => isTr(c) && chan(c).includes(gateOf(c)))) {
+      const vd = gateOf(d);
+      if (pairGates.has(vd)) continue;
+      const path = [d], ends = [];
+      for (const n0 of chan(d)) {
+        let n = n0, prev = d;
+        while (!isRail(n, R) && cu.get(n).chan.length === 2) {
+          const nx = cu.get(n).chan.find((c) => c !== prev);
+          if (path.includes(nx)) break;
+          path.push(nx); prev = nx; n = chan(nx).find((m) => m !== n);
+        }
+        ends.push(n);
+      }
+      const railEnds = ends.filter((n) => isRail(n, R));
+      if (railEnds.length !== 1 || path.length > 4) continue;
+      const X = ends.find((n) => !isRail(n, R));
+      if ((cu.get(X)?.chan.length || 0) < 3) continue;
+      const inP = new Set(path);
+      if (path.some((c) => pairParts.has(c))) continue;         // half of an input pair is never a replica
+      if (!cu.get(vd).chan.every((c) => inP.has(c)) || !cu.get(vd).gate.some((c) => !inP.has(c))) continue;
+      // a mirror reference (the gate users' channel on the same node X) stays with its mirror
+      if (cu.get(vd).gate.some((c) => !inP.has(c) && chan(c).includes(X))) continue;
+      const pathNets = new Set(path.flatMap((c) => chan(c)));
+      const coreChan = new Set(frames.core.filter((c) => !inP.has(c)).flatMap((c) => chan(c)));
+      // a gate shared with a core part outside the path is a signal (analoggenie/954: VIN1 on M2 and M4)
+      const sharedGate = (n) => frames.core.some((c) => !inP.has(c) && gateOf(c) === n);
+      if (!path.filter(isTr).every((c) => gateOf(c) === vd || chan(c).includes(gateOf(c)) || (!coreChan.has(gateOf(c)) && !pathNets.has(gateOf(c)) && !inputs.includes(gateOf(c)) && (BIASNAME.test(gateOf(c)) || !sharedGate(gateOf(c)))))) continue;
+      for (const c of path) frames.core.splice(frames.core.indexOf(c), 1);
+      frames.bias.push(...path);
+      moved = true;
+      break;
+    }
+  }
   const later = [];          // passive groups driving the gate of one part: joined to that part's frame
   for (const g of rest) {
     const nets = chanNets(g);
@@ -150,6 +208,8 @@ function read(parsed) {
   }
   for (const g of later) {
     const nets = chanNets(g);
+    // the power-on RC: a group on the kick nets only (a rail-only group, a supply or a decoupling, has none)
+    if (nets.size > 0 && [...nets].every((n) => kickGates.has(n))) { frames.startup.push(...g); continue; }
     // a pure bias generator (a divider between the rails whose taps only drive
     // gates) goes to the bias frame; a network that also touches a signal net
     // (sensing resistors on the outputs, a reference input) joins the frame
@@ -263,16 +323,17 @@ function readFrame(kind, parts, R, allComps) {
   const bridges = parts.filter((c) => !inCol.has(c.ref));
   if (bridges.some((c) => isTr(c))) return null;          // a transistor outside every branch
   // bridge chains: two-terminal parts between non-rail nets; group series chains
-  const chains = bridgeChains(bridges, use, R);
+  // a chain stops on a net that leaves the frame (a label or port there), not only on a frame-local junction
+  const chains = bridgeChains(bridges, use, R, netUse(allComps));
   if (!chains) return null;
   pairColumns(cols, parts, R);
   return { kind, parts, cols, chains };
 }
 
 /** series chains of bridges between two "end" nets (intermediate nets of degree 2) */
-function bridgeChains(bridges, use, R) {
+function bridgeChains(bridges, use, R, allUse = use) {
   const left = new Set(bridges.map((c) => c.ref));
-  const deg = (n) => (use.get(n)?.chan.length || 0) + (use.get(n)?.gate.length || 0);
+  const deg = (n) => (allUse.get(n)?.chan.length || 0) + (allUse.get(n)?.gate.length || 0);
   const chains = [];
   const byRef = new Map(bridges.map((c) => [c.ref, c]));
   for (const c of bridges) {
@@ -347,7 +408,9 @@ function pairColumns(cols, parts, R) {
   for (const c of cols) {
     if (c.pair != null) continue;
     const ns = c.parts.flatMap((p) => [p.up, p.down, gateOf(p.c)]).filter((n) => n && !isRail(n, R));
-    c.selfSym = cols.some((d) => d.pair != null) && ns.every((n) => !sigma.has(n) || sigma.get(n) === n) && ns.some((n) => cols.some((d) => d.pair != null && (d.bot === n || d.top === n)));   // tail below an N pair or above a P pair
+    // a node that drives the gates of both columns of a pair (the power-on RC of a kick pair) sits on the axis too
+    const drivesPair = (n) => cols.some((d) => d.pair != null && d.parts.some((p) => gateOf(p.c) === n) && cols[d.pair].parts.some((p) => gateOf(p.c) === n));
+    c.selfSym = cols.some((d) => d.pair != null) && ns.every((n) => !sigma.has(n) || sigma.get(n) === n) && ns.some((n) => cols.some((d) => d.pair != null && (d.bot === n || d.top === n)) || (c.parts.every((p) => !isTr(p.c)) && drivesPair(n)));   // tail below an N pair or above a P pair
   }
   for (const c of cols) c.sigma = sigma;
 }

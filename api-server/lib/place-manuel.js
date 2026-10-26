@@ -399,7 +399,8 @@ function layoutFrame(F, R, ctx) {
         const j = [...nodeCols.get(g)][0];
         const d = posIdx.get(j) - posIdx.get(i);
         dir = d === 0 ? (sg || -1) : Math.sign(d);
-      } else dir = sg ? -sg : -1;
+      } else if (sg && partner && gateOf(partner) !== g && satelliteNets.has(gateOf(partner))) dir = sg;   // mirror of a partner whose gate goes outward (CMFB pair: sense node / reference)
+      else dir = sg ? -sg : -1;
       gateDir.set(c.ref, dir);
     });
   }
@@ -559,6 +560,8 @@ function layoutFrame(F, R, ctx) {
         let xr;
         if (j === i) xr = gp.x + dir * 20;                       // diode: local loop
         else xr = xs[j] + Math.sign(gp.x - xs[j]) * 110;         // riser beside the driving column, past its labels
+        // never behind the gate pin (through the body); off a passive column, right at the gate (its labels stay clear)
+        if (j !== i && (Math.sign(xr - gp.x) === -dir || cols[j].parts.every((p) => !isTr(p.c)))) xr = gp.x + dir * 20;
         S.path(g, gp, { x: xr, y: gp.y }, { x: xr, y: yn }); addSpine(g, xr);
         if (j === i) S.mark({ x: xr, y: gp.y });
         continue;
@@ -606,12 +609,12 @@ function layoutFrame(F, R, ctx) {
     }
     return { net, p: prev };
   };
-  let outDir = 1;
+  let outDir = 1, upright = false;
   const finishEnd = (net, p, along) => {   // the far end of a chain: rail symbol, port or label
     if (net === R.bot) { const q = { x: p.x, y: p.y + (along === 'up' ? 0 : 20) }; if (along === 'up') { /* drawn upward to ground: unusual */ } S.path(net, p, q); ctx.localTaps.push({ sheet: S, net, p: q }); return; }
     if (net === R.top) { const q = { x: p.x, y: p.y - 20 }; S.path(net, p, q); ctx.localTaps.push({ sheet: S, net, p: q }); return; }
     const sideH = along === 'left' ? -1 : 1;
-    if (along === 'up' && net !== R.top) {
+    if (along === 'up' && net !== R.top && !upright) {
       // the top of a climbing ladder: the name goes outward, never over the band above
       const q = { x: p.x + outDir * 16, y: p.y };
       const q0 = { x: p.x, y: p.y - 12 };
@@ -634,6 +637,7 @@ function layoutFrame(F, R, ctx) {
     else labelAt.push({ net, p: q, side: sideH });
   };
   // bridges: both ends are column nodes at the same height
+  const bridgeEnd = new Set();      // net@x where a bridge leaves a spine: no name written over it
   for (const ch of F.chains) {
     const sa = spine.get(ch.a), sb = spine.get(ch.b);
     if (!sa || !sb || yNode.get(ch.a) !== yNode.get(ch.b)) continue;
@@ -647,12 +651,20 @@ function layoutFrame(F, R, ctx) {
     const r = drawChainH(ch, ch.a, start, y, dir);
     // the chain's first pin joins spine a, its last pin spine b
     addSpine(ch.a, start); addSpine(ch.b, r.p.x);
+    bridgeEnd.add(`${ch.a}@${start}`); bridgeEnd.add(`${ch.b}@${r.p.x}`);
     placedChain.add(ch);
   }
   // satellites: ladders off a gate stub
   for (const [g, at] of satAt) {
-    const mine = F.chains.filter((ch) => !placedChain.has(ch) && (ch.a === g || ch.b === g));
+    const mine0 = F.chains.filter((ch) => !placedChain.has(ch) && (ch.a === g || ch.b === g));
     const far = (ch) => (ch.a === g ? ch.b : ch.a);
+    // parallel parts (an R || C sensing branch): one rung, the partner drawn beside it
+    const twin = new Map();
+    const mine = [];
+    for (const ch of mine0) {
+      const mate = ch.parts.length === 1 && mine.find((m) => m.parts.length === 1 && !twin.has(m) && far(m) === far(ch));
+      if (mate) twin.set(mate, ch); else mine.push(ch);
+    }
     mine.sort((a, b) => (far(a) === R.bot ? -1 : 0) - (far(b) === R.bot ? -1 : 0));
     const slots = ['down', 'up', 'out'];
     if (mine.length > 3) throw new Error(`manuel: gate network on ${g} too large`);
@@ -665,19 +677,35 @@ function layoutFrame(F, R, ctx) {
     const pick = (ch) => {
       const f = far(ch);
       const pref = f === R.bot ? ['down', 'out', 'up'] : f === R.top ? ['up', 'out', 'down'] : ['up', 'out', 'down'];
-      return pref.find((s) => !used[s] && (!at.bar || s === 'down'));
+      return pref.find((s) => !used[s] && (!at.bar || s === 'down') && !(s === 'out' && twin.has(ch)));
     };
     for (const ch of mine) {
       const s = pick(ch);
       if (!s) throw new Error(`manuel: no slot on ${g}`);
       used[s] = true;
       let r;
-      if (s === 'down') r = drawChainV(ch, g, at.x, at.y, 1, dir);
-      else if (s === 'up') r = drawChainV(ch, g, at.x, at.y, -1, dir);
-      else r = drawChainH(ch, g, at.x, at.y, dir);
+      const mate = twin.get(ch);
+      if (mate && s === 'out') throw new Error(`manuel: parallel rung on ${g} sideways`);
+      let main = ch, side = mate;
+      if (mate && lenOf(mate.parts[0]) > lenOf(ch.parts[0])) [main, side] = [mate, ch];
+      if (s === 'down') r = drawChainV(main, g, at.x, at.y, 1, dir);
+      else if (s === 'up') r = drawChainV(main, g, at.x, at.y, -1, dir);
+      else r = drawChainH(main, g, at.x, at.y, dir);
       placedChain.add(ch);
+      if (mate) {
+        // the partner, one step outward, joined to the rung's two ends
+        const x2 = at.x + dir * 120, sd = s === 'down' ? 1 : -1;   // past the rung's labels
+        const q = drawChainV(side, g, x2, at.y + sd * (Math.abs(r.p.y - at.y) - lenOf(side.parts[0]) - 30) / 2, sd, dir);
+        S.path(g, { x: at.x, y: at.y }, { x: x2, y: at.y }, { x: x2, y: at.y + sd * (Math.abs(r.p.y - at.y) - lenOf(side.parts[0]) - 30) / 2 });
+        S.path(q.net, q.p, { x: x2, y: r.p.y }, r.p);
+        placedChain.add(mate);
+      }
       outDir = dir;
+      // the top name straight on along the rung (no avoidable bend), for an R || C twin rung or a label end;
+      // a port there may sit over another part's pin (casc_amp, analoggenie/230: review of #67)
+      upright = !!mate || !(ctx.ports.has(r.net) && !ctx.labelNets.has(r.net) && ctx.home.get(r.net) === F.kind);
       finishEnd(r.net, r.p, s === 'out' ? (dir < 0 ? 'left' : 'right') : s);
+      upright = false;
     }
     void slots;
   }
@@ -720,7 +748,9 @@ function layoutFrame(F, R, ctx) {
     const cx = [...(nodeCols.get(n) || [])].map((j) => xs[j]);
     let s = paired ? Math.sign(cx.reduce((a, b) => a + b, 0)) || 1 : 1;
     if (pts.length > 1 && !paired) s = pts[0] < cx[0] ? -1 : 1;
-    const xe = s > 0 ? pts[pts.length - 1] : pts[0];
+    let xe = s > 0 ? pts[pts.length - 1] : pts[0];
+    // the outer end carries a bridge (a Miller R-C): the name goes on the inner end
+    if (pts.length > 1 && bridgeEnd.has(`${n}@${xe}`)) { s = -s; xe = s > 0 ? pts[pts.length - 1] : pts[0]; }
     const q = { x: xe + s * 40, y };
     S.path(n, { x: xe, y }, q);
     if (isPort) portAt.push({ net: n, p: q, side: s, direction: OUTISH.test(n) ? 'output' : 'input' });
@@ -1017,7 +1047,7 @@ function importLadder(model, parsed, L) {
 }
 
 /* ------------------------------------------------------------ entry point */
-const TITLES = { bias: 'Polarisation', cmfb: 'CMFB' };
+const TITLES = { bias: 'Polarisation', cmfb: 'CMFB', startup: 'Démarrage' };
 export function importNetlistManuel(model, parsed, opts = {}) {
   const r = opts.reading || manuelReading(parsed);
   if (!r) {

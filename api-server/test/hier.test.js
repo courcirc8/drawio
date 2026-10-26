@@ -83,5 +83,6 @@ test('TIA (proj5, cycle 5): resistor strings grouped as chains, lone keepers on 
   assert.ok(allGreen(r), JSON.stringify(r.lvs).slice(0, 2000));
   assert.deepEqual(r.map.XRF1u7, { page: 'chain_XRF1', cell: 'XRF1u7' });
   assert.deepEqual(r.map.XKP, { page: 'top', cell: 'XKP' });
+  for (const n of ['ota1', 'ota2', 'ota3']) assert.equal(r.pages.find((p) => p.name === n)?.engine, 'manuel', n);   // test/cascode-ota.test.js
   assert.ok(r.lvs.warnings && r.lvs.warnings.length, 'the .nodeset directive is reported');
 });

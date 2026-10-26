@@ -34,6 +34,9 @@ test('ldo: auto draws it with the template, LVS-clean', async () => {
   const p = parseSpice(LDO);
   const r = await autoPlace(p);
   assert.equal(r.label, 'ldo');
+  // the manual drawing is weighed and reported, but never replaces the approved
+  // template, even when it fails fewer checks (Orchestrator, 2026-10-26)
+  assert.ok(r.manuelVs && r.manuelVs.manuel < r.manuelVs.ldo, JSON.stringify(r.manuelVs));
   assert.ok(compare(extractNetlist(getPage(r.doc)), p).match);
 });
 
