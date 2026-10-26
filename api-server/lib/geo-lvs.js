@@ -24,8 +24,8 @@ import { pinAbs, rotatedAabb } from './route.js';
 
 // an amplifier triangle pointing right (lib/hier.js, apiSymbol=ota): its body is the triangle, not its box, so
 // the pins on the slanted sides leave through free space
-const TRIANGLE = /(^|;)(shape=)?triangle(;|$)/;
-function crossesTriangle(v, a, b) {
+export const TRIANGLE = /(^|;)(shape=)?triangle(;|$)/;
+export function crossesTriangle(v, a, b) {
   const m = 4, P = [{ x: v.x, y: v.y }, { x: v.x + v.w, y: v.y + v.h / 2 }, { x: v.x, y: v.y + v.h }];
   // strictly inside, at least m from every side
   const inside = (q) => {

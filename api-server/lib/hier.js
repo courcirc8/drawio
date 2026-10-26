@@ -22,6 +22,7 @@ import { newDocument, getPage, addPage, normalizeOrigin } from './model.js';
 import { compare } from './lvs.js';
 import { geoLvs } from './geo-lvs.js';
 import { annotation as annotationOf } from './place-manuel.js';
+import { brokawReading, importBrokaw } from './place-brokaw.js';
 
 const RAILNAME = /^(0|vdd\w*|vss\w*|avdd\w*|dvdd\w*|vcc\w*|vee\w*|gnd\w*|power(?:_\w+)?|ground(?:_\w+)?)$/i;
 
@@ -187,7 +188,7 @@ function pinSide(name) {
 
 /** the items of a page with blocks: X instances (stages), banks, flat parts.
  *  Returns [{kind, ref, comp, nets, pins?}] */
-function pageItems(parsed, banks, symbols = new Map()) {
+export function pageItems(parsed, banks, symbols = new Map()) {
   const inBank = new Set(banks.flatMap((b) => b.parts.map((c) => c.ref)));
   const items = [];
   for (const c of parsed.components) {
@@ -270,7 +271,8 @@ function endAt(S, n, p, d) {
   const pv = portVert(S, n, q, d === 'l' ? -1 : 1, false);
   S.term(n, pv, pv.portPin);
 }
-function drawBlock(S, it) {
+/** the box of a block (pins on its four sides by p.side), top-left corner at (x, y) */
+export function blockVertex(S, it, x = 0, y = null) {
   const by = (side) => it.pins.filter((p) => p.side === side);
   const L = by('left'), R = by('right'), T = by('top'), B = by('bottom');
   const h = (Math.max(L.length, R.length, 1) + 1) * 40, w = 60 * (Math.max(T.length, B.length, 2) + 1);
@@ -282,7 +284,10 @@ function drawBlock(S, it) {
   const pins = it.pins.map((p) => ({ name: p.name, ...rel[p.name] }));
   const label = it.kind === 'bank' ? `<b>${it.ref}</b><br><font style="font-size:10px">${it.bankNote}</font>` : `<b>${it.ref}</b><br>${it.comp.block}`;
   const st = `rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=default;fontSize=12;apiBlock=1;apiBlockDef=${encodeURIComponent(it.comp.block)};apiBlockPins=${blockPinsStyle(pins)};` + (it.kind === 'bank' ? 'dashed=1;' : '');
-  const v = S.vert({ id: it.ref, c: it.comp, style: st, x: 0, y: -h / 2, w, h, pins: rel, value: label, refdes: it.ref });
+  return S.vert({ id: it.ref, c: it.comp, style: st, x, y: y == null ? -h / 2 : y, w, h, pins: rel, value: label, refdes: it.ref });
+}
+function drawBlock(S, it) {
+  const v = blockVertex(S, it);
   for (const p of it.pins) {
     const a = S.term(p.net, v, p.name);
     endAt(S, p.net, a, { left: 'l', right: 'r', top: 'u', bottom: 'd' }[p.side]);
@@ -320,19 +325,26 @@ function triangleOf(it, symbol) {
   down.forEach((n, i) => { const x = XS[down.length][i]; rel[n] = { x, y: 1 - x / 2 }; side[n] = 'bottom'; });
   return { symbol, rel, side };
 }
-function drawTriangle(S, it) {
+/** the amplifier triangle of a block (it.tri), top-left corner at (x, y); `pinText(S, it, p, a)` writes the
+ *  '+' / '−' signs and the names of the side pins other than rails (ibias, vcmref) inside it */
+export function triangleVertex(S, it, x = 0, y = -60) {
   const W = 120, H = 120;
   const pins = it.pins.map((p) => ({ name: p.name, x: it.tri[p.name].x, y: it.tri[p.name].y }));
   const rel = Object.fromEntries(pins.map((p) => [p.name, { x: p.x, y: p.y }]));
   const st = `triangle;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=default;fontSize=11;align=left;spacingLeft=14;apiBlock=1;apiSymbol=${it.symbol};apiBlockDef=${encodeURIComponent(it.comp.block)};apiBlockPins=${blockPinsStyle(pins)};`;
-  const v = S.vert({ id: it.ref, c: it.comp, style: st, x: 0, y: -H / 2, w: W, h: H, pins: rel, value: `<b>${it.ref}</b><br>${it.comp.block}`, refdes: it.ref });
+  return S.vert({ id: it.ref, c: it.comp, style: st, x, y, w: W, h: H, pins: rel, value: `<b>${it.ref}</b><br>${it.comp.block}`, refdes: it.ref });
+}
+export function trianglePinText(S, it, p, a) {
+  const t = it.tri[p.name];
+  if (t.sign) S.text(t.sign, a.x + 3, a.y - 9, 14, 18, 'left', 13);
+  else if ((p.side === 'top' || p.side === 'bottom') && !isRail(p.name)) S.text(p.name, a.x - 25, p.side === 'top' ? a.y + 4 : a.y - 18, 50, 14, 'center', 9);
+}
+function drawTriangle(S, it) {
+  const v = triangleVertex(S, it);
   for (const p of it.pins) {
     const a = S.term(p.net, v, p.name);
     endAt(S, p.net, a, { left: 'l', right: 'r', top: 'u', bottom: 'd' }[p.side]);
-    const t = it.tri[p.name];
-    if (t.sign) S.text(t.sign, a.x + 3, a.y - 9, 14, 18, 'left', 13);
-    // a side pin other than a rail (ibias, vcmref): its name inside, over (under) the pin
-    else if ((p.side === 'top' || p.side === 'bottom') && !isRail(p.name)) S.text(p.name, a.x - 25, p.side === 'top' ? a.y + 4 : a.y - 18, 50, 14, 'center', 9);
+    trianglePinText(S, it, p, a);
   }
 }
 function drawPart(S, it) {
@@ -463,6 +475,21 @@ async function drawPage(parsed, banks, chain = null, symbols = new Map()) {
   return { model: getPage(w.doc), engine: w.label, golden: parsed };
 }
 
+/** D3: the TOP page drawn like a flat figure when one reads it with its amplifier block taken as an
+ *  amplifier (the Brokaw bandgap of place-brokaw.js); null otherwise. The figure draws the resistor
+ *  strings itself: no bank page then. */
+function drawTopFigure(parsed, symbols) {
+  const blocks = pageItems(parsed, [], symbols).filter((i) => i.kind === 'block');
+  if (!blocks.some((i) => i.tri)) return null;
+  const B = brokawReading(parsed, { blocks });
+  if (!B || !B.amp) return null;
+  const doc = newDocument(), m = getPage(doc);
+  try {
+    const r = importBrokaw(m, parsed, { ...B, vertex: { box: blockVertex, tri: triangleVertex, pinText: trianglePinText } });
+    return { model: m, engine: 'brokaw', golden: parsed, geo: r.geo };
+  } catch { return null; }
+}
+
 /** D4: set on every block cell (apiBlock) the drawio page link to the page it stands for: the page of its
  *  definition (or of its bank), or with per = 'instance' the page of its instance path */
 function linkBlocks(doc, per) {
@@ -517,9 +544,11 @@ export async function importHier(text, opts = {}) {
   };
   // top
   const symbols = new Map([...H.defs.values()].map((d) => [d.name.toUpperCase(), d.symbol]));
-  finish('top', 'top', await drawPage(H.top, H.banks, null, symbols));
+  const figure = opts.figure === false ? null : drawTopFigure(H.top, symbols);
+  const banks = figure ? [] : H.banks;
+  finish('top', 'top', figure || await drawPage(H.top, banks, null, symbols));
   // banks: their parts with the top's net names, every pin an I/O
-  for (const b of H.banks) finish(b.name, b.kind, await drawPage({ ...H.top, components: b.parts, warnings: [] }, [], b.kind === 'chain' ? b : null), { pins: b.pins });
+  for (const b of banks) finish(b.name, b.kind, await drawPage({ ...H.top, components: b.parts, warnings: [] }, [], b.kind === 'chain' ? b : null), { pins: b.pins });
   // definitions (one drawing each), copied per instance when asked
   const defPage = new Map();
   for (const d of H.defs.values()) defPage.set(d.name, await drawPage(d.parsed, [], null, symbols));
@@ -536,7 +565,7 @@ export async function importHier(text, opts = {}) {
   // map: every flattened ref -> (page, cell)
   const map = {};
   const instPaths = [...pageOfInst.keys()].sort((a, b) => b.length - a.length);
-  const bankOf = new Map(H.banks.flatMap((b) => b.parts.map((c) => [c.ref, b.name])));
+  const bankOf = new Map(banks.flatMap((b) => b.parts.map((c) => [c.ref, b.name])));
   const place = (ref) => {
     const p = instPaths.find((q) => ref.toUpperCase().startsWith(q.toUpperCase() + '.'));
     if (p) return { page: pageOfInst.get(p), cell: ref.slice(p.length + 1) };
@@ -544,7 +573,7 @@ export async function importHier(text, opts = {}) {
   };
   for (const c of H.flat.components) map[c.ref] = place(c.ref);
   for (const inst of H.instances) map[inst.path] = place(inst.path);
-  for (const b of H.banks) map[b.name] = { page: 'top', cell: b.name };
+  for (const b of banks) map[b.name] = { page: 'top', cell: b.name };
   // D4: every block links to its page (drawio `link="data:page/id,<page id>"`: a click opens the block's page)
   linkBlocks(doc, per);
   // global LVS: the drawing flattened back through the blocks against the flattened netlist
@@ -562,7 +591,7 @@ export async function importHier(text, opts = {}) {
         return bind && bind.has(k) ? bind.get(k) : pre && n !== '0' ? `${pre}.${n}` : n;
       };
       const ref = path ? `${path}.${c.ref}` : c.ref;
-      const sub = c.prefix === 'X' && (drawn.has(c.ref) && H.banks.some((b) => b.name === c.ref) ? c.ref : null);
+      const sub = c.prefix === 'X' && (drawn.has(c.ref) && banks.some((b) => b.name === c.ref) ? c.ref : null);
       if (sub) { expand(sub, new Map(drawn.get(sub).pins.map((pn, i) => [String(pn).toLowerCase(), net(c.nodes[i])])), path, (path ? path + '.' : '') + sub); continue; }
       const inst = H.instances.find((i) => i.path.toUpperCase() === ref.toUpperCase());
       if (c.prefix === 'X' && inst) {
@@ -578,5 +607,5 @@ export async function importHier(text, opts = {}) {
   const directive = (w) => /^directive not representable/.test(typeof w === 'string' ? w : w.message || w.code || '');
   const global = compare({ components: flat, issues: [] }, { ...H.flat, warnings: (H.flat.warnings || []).filter((w) => !directive(w)) });
   const warnings = (H.flat.warnings || []).filter(directive);
-  return { doc, pages, map, lvs: { pages: Object.fromEntries(pages.map((p) => [p.name, p.lvs])), global: global.match, ...(global.match ? {} : { globalReport: global }), ...(warnings.length ? { warnings } : {}) }, banks: H.banks.map((b) => ({ name: b.name, kind: b.kind, pins: b.pins, parts: b.parts.map((c) => c.ref) })) };
+  return { doc, pages, map, lvs: { pages: Object.fromEntries(pages.map((p) => [p.name, p.lvs])), global: global.match, ...(global.match ? {} : { globalReport: global }), ...(warnings.length ? { warnings } : {}) }, banks: banks.map((b) => ({ name: b.name, kind: b.kind, pins: b.pins, parts: b.parts.map((c) => c.ref) })) };
 }

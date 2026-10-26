@@ -66,6 +66,17 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
   le côté bas puis haut, au plus 3 par côté. Choix explicite d'abord (`symbols`, commentaire `*.symbol ota` dans le
   `.subckt`), sinon le rôle : une paire d'entrée sur deux broches, une diode de miroir, une ou deux sorties. Des
   broches qui n'entrent pas (trois entrées…) gardent la boîte. Le LVS géométrique juge le triangle, pas sa boîte.
+- **Figure du top** (D3) : si le top est une figure plate connue, l'ampli (triangle) tenant le rôle de
+  l'amplificateur, cette figure remplace le placeur de blocs. Cas du bandgap de Brokaw (`lib/place-brokaw.js`,
+  `brokawReading(parsed, { blocks })`) : un triangle dont les deux entrées sont les collecteurs, une seule sortie,
+  au plus une broche de polarisation alimentée par une résistance depuis X. La boîte de démarrage n'a que les rails
+  et X. Le dessin a des **fils réels** :
+  - les collecteurs vont au `+` et au `−` à hauteur des broches ;
+  - la sortie va à la grille de MP ;
+  - RB va sous `ibias` ;
+  - la boîte de démarrage est reliée au bus vref.
+  Les chaînes de résistances restent sur le top, sans page `chain_*`. `opts.figure = false` garde le placeur de
+  blocs. Moteur de la page : `brokaw`.
 - **Liens** (D4) : chaque bloc porte `link="data:page/id,<page>"` vers la page de sa définition (ou de son chemin
   d'instance avec `per=instance`, ou de sa banque) : un clic dans draw.io ouvre le bloc.
 
@@ -92,7 +103,8 @@ modèle et W/L en µm.
 définition et par instance ; ordre des broches d'un bloc (une liaison permutée échoue) ; TIA `sim/op.cir` (6 banques
 en échelle, top ≤ 30) ; TIA proj5 cycle 5 (chaînes, transistors seuls au top, LVS global). `hier-rails.test.js`
 (D1), `hier-symbols.test.js` (D2 ; acceptation : Brokaw découpé comme dans le plan,
-`fixtures/hier-brokaw/brokaw_hier.cir`), `hier-pages.test.js` (D4, D5).
+`fixtures/hier-brokaw/brokaw_hier.cir`), `hier-pages.test.js` (D4, D5), `hier-top.test.js` (D3 ; acceptation : porte qualité 0 échec, LVS géo, par page
+et global verts, colonnes Q1/Q2, OTA à côté, boîte de démarrage).
 
 ## Limites connues
 

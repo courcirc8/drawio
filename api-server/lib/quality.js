@@ -13,9 +13,10 @@
  *   ports      every port on the horizontal of the pin it drives, outside,
  *              straight wire (lib/align-ports.js)
  *   labels     no label (estimated text box) on a label, a foreign part or a wire
- *   wireOnBody no wire along / through a part's body over > 6 px
+ *   wireOnBody no wire along / through a part's body over > 6 px (an amplifier
+ *              triangle: its polygon, as the geometric LVS)
  *   netlist    the parts form ONE group joined by non-rail nets (else the
- *              reading is absurd)
+ *              reading is absurd); a part on rails only (bench supply) is left out
  *   mirrorRef  no current mirror without a reference current (a netlist error)
  *   uWires     no detour: a wire longer than the Manhattan distance of its
  *              ends by more than 1.5 median part sizes (long U loops)
@@ -27,6 +28,7 @@ import { classify, activePins } from './components.js';
 import { pinAbs, polylineOf } from './route.js';
 import { detectStructures } from './patterns.js';
 import { avoidableBends } from './straighten.js';
+import { TRIANGLE, crossesTriangle } from './geo-lvs.js';
 import { misalignedPorts } from './align-ports.js';
 import { mirrorsWithoutReference } from './netcheck.js';
 
@@ -128,6 +130,8 @@ export function qualityGate(model, parsed) {
     if (e.style.map.get('drawioApiCrossX') === '1') continue;
     const p = polylineOf(e, byId); if (!p) continue;
     for (const b of bodies) {
+      // an amplifier triangle (hierarchical block): its polygon, not its box (the rail stubs leave its slanted sides)
+      if (TRIANGLE.test(b.styleRaw || '')) { if (p.slice(1).some((q, k) => crossesTriangle(b, p[k], q))) { onBody.push(`${e.id} / ${b.refdes || b.id}`); break; } continue; }
       const x0 = b.x + 3, x1 = b.x + b.w - 3, y0 = b.y + 3, y1 = b.y + b.h - 3, lead = leadOf(byId.get(b.id) || b);
       const len = p.slice(1).reduce((s2, q, k) => { const a = p[k];
         if (Math.abs(a.x - q.x) < 0.5) {
@@ -146,7 +150,8 @@ export function qualityGate(model, parsed) {
   // an ABSURD netlist (a reading gone wrong): parts in two or more groups that
   // no non-rail net joins
   const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_\w+)?|ground(?:_\w+)?)$/i;
-  const comps = parsed.components.filter((c) => c.nodes?.length);
+  // a part on rails only (the bench supply) joins no group and splits none
+  const comps = parsed.components.filter((c) => c.nodes?.some((n) => !RAILN.test(n)));
   const uf = new Map(comps.map((c) => [c.ref, c.ref])), fd = (k) => { while (uf.get(k) !== k) k = uf.get(k); return k; };
   const byNet = new Map();
   for (const c of comps) for (const n of c.nodes) if (!RAILN.test(n)) { if (byNet.has(n)) uf.set(fd(c.ref), fd(byNet.get(n))); else byNet.set(n, c.ref); }
