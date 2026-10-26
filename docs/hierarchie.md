@@ -30,6 +30,8 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
   en SVG ; `cells` = boîte de chaque composant et bloc en unités du SVG (`{x, y, w, h, ref, block?, page?}`) ; `map`
   = la `map` du dernier import `?hier=1`, chaque référence aplatie avec sa page et sa boîte. C'est ce qu'il faut à
   `calques.py` pour poser les valeurs page par page. Chaque bloc porte une zone cliquable `<a xlink:href="<page>.svg">`.
+  Le SVG a la taille de son dessin (`width`, `height`, `viewBox`, `max-width: 100%`) : une petite page n'est plus
+  posée dans un coin d'un cadre vide.
 
 ## Pages
 

@@ -167,7 +167,8 @@ function placeTr(S, c, cx, y, dir) {
   // a P device: top = source (index 2); an N device: top = drain (index 0)
   v.pinOf = { top: isP(c) ? names[2] : names[0], bot: isP(c) ? names[0] : names[2], gate: names[1] };
   v.netOf = { top, bot, gate: gateOf(c) };
-  const tx = dir > 0 ? cx - 98 : cx + 8;
+  // beside the symbol, never over it (a bipolar's circle spans both sides of its pins: Orchestrator 26.10)
+  const tx = c.prefix === 'Q' ? (dir > 0 ? Math.min(cx - 98, x - 94) : Math.max(cx + 8, x + s.w + 4)) : dir > 0 ? cx - 98 : cx + 8;
   S.text(`<b>${c.ref}</b><br><font style="font-size:10px">${annotation(c)}</font>`, tx, y + s.h / 2 - 17, 90, 34, dir > 0 ? 'right' : 'left', 12);
   return v;
 }

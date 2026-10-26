@@ -28,6 +28,21 @@ test('Brokaw bench: 4 drawio pages named like the cells, in hierarchy order, wit
   } finally { await closeBrowser(); }
 });
 
+test('Brokaw bench: each page SVG is cropped to its drawing (sized, viewBox), not stretched over the viewer', { skip: findChrome() ? false : 'no Chromium' }, async () => {
+  try {
+    const hp = await hierPages((await importHier(text)).doc);
+    for (const P of hp.pages) {
+      const root = P.svg.match(/<svg\b[^>]*>/)[0];
+      const m = root.match(/width="([\d.]+)" height="([\d.]+)" viewBox="0 0 ([\d.]+) ([\d.]+)"/);
+      assert.ok(m && m[1] === m[3] && m[2] === m[4], `${P.name}: ${root}`);
+      assert.doesNotMatch(root, /[\s;"]width:\s*100%/, P.name);
+    }
+    // the bench is small: far narrower than the bandgap page
+    const w = (n) => +hp.pages.find((P) => P.name === n).svg.match(/width="([\d.]+)"/)[1];
+    assert.ok(w('tb_bandgap') < w('bandgap') / 2, `${w('tb_bandgap')} vs ${w('bandgap')}`);
+  } finally { await closeBrowser(); }
+});
+
 test('Brokaw bench: the testbench page is the classic bench, wired, its pins named on the block', async () => {
   const r = await importHier(text);
   const P = r.pages.find((p) => p.name === 'tb_bandgap');

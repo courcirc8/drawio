@@ -88,15 +88,36 @@ test('ota page: one out port, XMN0 the diode half of the mirror beside XMNT, ibi
   assert.deepEqual(frames, [], 'no separate Polarisation frame');
 });
 
-test('bandgap page: the bias resistor XRB outside the error-amplifier frame', async () => {
+test('bandgap page: the bias resistor XRB clear of the error amplifier, looped from its output', async () => {
   const r = await importHier(fx('brokaw_tb.cir'));
   const m = getPage(r.doc, 'bandgap');
-  // the frame: the dashed box holding the title « Amplificateur d'erreur »
-  const title = vx(m).find((c) => /^Amplificateur/.test(plain(c.value)));
-  const amp = vx(m).find((c) => /dashed=1/.test(c.styleRaw || '') && title && title.x >= c.x && title.x <= c.x + c.w && title.y >= c.y && title.y <= c.y + c.h);
+  // the OTA sits between the Q1 / Q2 columns (no frame there): XRB is drawn right of the triangle, off its body
+  const ota = vx(m).find((c) => /^triangle;/.test(c.styleRaw || ''));
   const rb = vx(m).filter((c) => /^XRB/.test(String(c.refdes || '').toUpperCase()));
-  assert.ok(amp && rb.length);
-  for (const c of rb) assert.ok(c.y >= amp.y + amp.h || c.x >= amp.x + amp.w || c.x + c.w <= amp.x || c.y + c.h <= amp.y, `${c.refdes} inside the amplifier frame`);
+  assert.ok(ota && rb.length);
+  for (const c of rb) assert.ok(c.x >= ota.x + ota.w, `${c.refdes} not right of the amplifier`);
+});
+
+test('bandgap page: the OTA between the Q1 / Q2 columns, labels off the circles, start-up pins named, output wired', async () => {
+  const r = await importHier(fx('brokaw_tb.cir'));
+  const m = getPage(r.doc, 'bandgap');
+  const ref = (n) => vx(m).find((c) => String(c.refdes || '').toUpperCase() === n);
+  const q1 = ref('XQ1'), q2 = ref('XQ2'), ota = ref('XOTA'), dem = ref('XDEM');
+  // between the columns: no input wire crosses the XRC1 / XRC2 strings
+  assert.ok(q1.x + q1.w / 2 < ota.x && ota.x + ota.w < q2.x + q2.w / 2, 'the OTA between the columns');
+  // the names of the bipolars sit outside their circles
+  for (const q of [q1, q2]) {
+    const t = vx(m).find((c) => /^text;/.test(c.styleRaw || '') && plain(c.value).startsWith(q.refdes));
+    assert.ok(t && (t.x + t.w <= q.x || t.x >= q.x + q.w), `${q.refdes} label inside its symbol`);
+  }
+  // the start-up box names its pins
+  const inDem = (c) => c.x >= dem.x && c.x + c.w <= dem.x + dem.w && c.y >= dem.y && c.y + c.h <= dem.y + dem.h;
+  const names = vx(m).filter((c) => /^text;/.test(c.styleRaw || '') && inDem(c)).map((c) => plain(c.value));
+  for (const n of ['power', 'vref', 'ground']) assert.ok(names.includes(n), `${n} missing in XDEM: ${names}`);
+  // vref reaches the output by wire: no vref name label, one output arrow
+  const ports = vx(m).filter((c) => /apiShape=port/.test(c.styleRaw || '') && !/singleArrow/.test(c.styleRaw)).map((c) => plain(c.value));
+  assert.ok(!ports.includes('vref'), ports.join(' '));
+  assert.equal(vx(m).filter((c) => /singleArrow/.test(c.styleRaw || '') && plain(c.value) === 'vref').length, 1);
 });
 
 test('the textbook rules give way: a circuit they cannot draw keeps the manuel drawing of before', async () => {

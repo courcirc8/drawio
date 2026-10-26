@@ -50,7 +50,7 @@ test('per-page SVG + geometry: every flattened ref placed on its page, blocks cl
     }
     // the boxes are in the SVG's units: inside its painted extent, and distinct
     const ota = out.pages.find((p) => p.name === 'ota');
-    const W = Number(/min-width: (\d+)px/.exec(ota.svg)[1]), H = Number(/min-height: (\d+)px/.exec(ota.svg)[1]);
+    const [, W, H] = /<svg\b[^>]*\bwidth="([\d.]+)" height="([\d.]+)"/.exec(ota.svg).map(Number);
     for (const c of Object.values(ota.cells)) assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.w <= W + 1 && c.y + c.h <= H + 1, JSON.stringify(c));
     assert.notDeepEqual(out.map['XOTA.M1'], out.map['XOTA.M2']);
     // the block on the top page: a link to ota.svg over the triangle

@@ -63,6 +63,11 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
   `A (×m)` / `nA (×m)`, R1 / R2 sous les émetteurs), « Amplificateur d'erreur » (miroir en haut, paire, queue sur
   l'axe), « Sortie » (port vref, alimentation de banc à part). Formes acceptées : primitives SPICE ou primitives
   IHP en `X` à résistances fractionnées. Test : `test/brokaw.test.js`.
+  Page d'un bandgap hiérarchique dont l'OTA est un bloc sans transistor de sortie (26.10) : le triangle est posé
+  **entre** les colonnes Q1 et Q2 (entrée − droite depuis la colonne Q1, entrée + amenée par le bas depuis la colonne
+  Q2, aucun fil ne croise une colonne), sa sortie est câblée au bus vref, la résistance de polarisation de l'OTA
+  boucle de sa sortie vers `ibias`, le port vref est au bout du bus et la boîte de démarrage nomme ses broches. Les
+  noms des bipolaires sont hors du cercle. `vb` reste une étiquette : le diviseur est à gauche de la colonne Q1.
 - Valeurs en notation ingénieur (`100 kΩ`, `497 fF`), W/L en µm, modèle pour les bipolaires.
 
 ## Critère « sûr »
