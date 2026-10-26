@@ -89,10 +89,11 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
 - Niveaux : page de **banc de test** `tb_<bloc>` (ses sources, le DUT en un seul bloc, les charges) → page du DUT
   (`bandgap`) → pages de sous-blocs modérés (`ota`, `demarrage`). Une page du haut qui n'a que des sources, un bloc
   et des charges R/C/L s'appelle `tb_<bloc>` (`kind: 'testbench'`).
-- **Jamais de source sur une page de bloc** : une source V/I sur une autre page que le banc est un avertissement
-  `source on block page …` de `?hier=1` et un échec du contrôle `sources` de la porte qualité
-  (`qualityGate(model, parsed, { block: true })`). Une page du haut qui mêle sources et circuit est dessinée mais
-  signalée : écrire le DUT en `.subckt`.
+- **Jamais de source dans un bloc** (bloquant, revue de #70) : une source V/I dans un `.subckt` fait échouer
+  `?hier=1` en 422 (`errors: ["source in block …"]`), même avec `?force=1`. Exceptions : une sonde `VSONDE_*`, un
+  `.subckt … macro=1` (macro-modèle). Le contrôle `sources` de la porte qualité (`qualityGate(model, parsed,
+  { block: true })`) dit la même chose page par page. Une source sur une page de banque, ou une page du haut qui mêle
+  sources et circuit, reste un avertissement : écrire le DUT en `.subckt`.
 - Pas de page pour une **primitive du PDK** (`rhigh`, `rppd`, `npn13G2`, `cap_cmim`, `sg13_*`…), même si le deck la
   définit en `.subckt` ; une chaîne de résistances ou une banque reste sur sa page mère sous `GROUP_PAGE_MIN` (12)
   pièces.
@@ -105,7 +106,8 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
 - **Onglets** : le `.drawio` a une page par niveau, nommée comme la cellule, dans l'ordre de la hiérarchie (drawio les
   montre en onglets). `GET /documents/:id/hier/pages` donne pour chaque page `order`, `parent`, `depth`, `children`
   et les liens bloc → page ; `GET /documents/:id/hier/viewer.html` est une visionneuse HTML autonome (onglets
-  indentés, fil d'Ariane, clic sur un bloc). Test : `test/hier-tabs.test.js`.
+  indentés, fil d'Ariane, clic sur un bloc ; noms de pages en nœuds texte, en-tête CSP). Tests : `test/hier-tabs.test.js`,
+  `test/hier-http.test.js`.
 
 ## LVS
 

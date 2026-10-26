@@ -50,7 +50,7 @@ export function hierReading(text, opts = {}) {
     if (!d || defs.has(d.name)) return;
     const parsed = parseSpice(`* .subckt ${d.name}\n` + bodyText(flat, d), { blocks: true });
     parsed.pins = [...d.pins];        // the page's ports (manuel engine: every pin named on its page)
-    defs.set(d.name, { name: d.name, pins: d.pins, parsed, symbol: symbolOf(d, parsed, opts.symbols) });
+    defs.set(d.name, { name: d.name, pins: d.pins, parsed, symbol: symbolOf(d, parsed, opts.symbols), macro: !!d.macro });
     for (const c of parsed.components) if (c.block) visit(c.block);
   };
   for (const c of top.components) if (c.block) visit(c.block);
@@ -634,14 +634,17 @@ export async function importHier(text, opts = {}) {
   // the top page: tb_<dut> when it is a testbench (its sources, the DUT one block, loads)
   const tb = testbenchReading(H.top);
   const TOP = tb?.dut ? `tb_${tb.dut}` : 'top';
-  const warnings = [];
+  const warnings = [], errors = [];
   const doc = newDocument(TOP);
   const pages = [], drawn = new Map();       // page name -> {ex, golden, pins}
   const finish = (name, kind, d, extra = {}) => {
     const m = name === TOP ? getPage(doc) : addPage(doc, name, d.model);
     // a source on a block page (any page but the testbench): a quality-gate failure, reported
-    const src = (d.golden?.components || []).filter((c) => /^[VI]$/.test(c.prefix)).map((c) => c.ref);
-    if (src.length && kind !== 'testbench') warnings.push(`source on block page ${name}: ${src.join(' ')} (write the block as a .subckt under a tb_<bloc> testbench)`);
+    // a source inside a block .subckt is an error (Eric, 26.10), but a VSONDE_* probe or a .subckt marked macro=1
+    const src = (d.golden?.components || []).filter((c) => /^[VI]$/.test(c.prefix) && !/^VSONDE_/i.test(c.ref)).map((c) => c.ref);
+    const block = kind === 'subckt' || kind === 'instance';
+    if (src.length && block && !extra.macro) errors.push(`source in block ${name}: ${src.join(' ')} (sources belong to the tb_<bloc> testbench; a macro-model: .subckt … macro=1)`);
+    else if (src.length && kind !== 'testbench' && !block) warnings.push(`source on block page ${name}: ${src.join(' ')} (write the block as a .subckt under a tb_<bloc> testbench)`);
     if (name === TOP) { const src = d.model; while (m.firstChild) m.removeChild(m.firstChild); for (const n of Array.from(src.childNodes)) m.appendChild(doc.importNode(n, true)); }
     if (opts.onPage) opts.onPage(name, m);   // tests: corrupt a page before its extraction
     const ex = extractNetlist(m), rep = compare(ex, d.golden);
@@ -666,11 +669,11 @@ export async function importHier(text, opts = {}) {
   const pageOfInst = new Map();              // instance path -> page name
   if (per === 'instance') {
     for (const inst of H.instances) {
-      finish(inst.path, 'instance', defPage.get(H.defs.get(inst.def)?.name ?? inst.def) || defPage.get([...H.defs.keys()].find((k) => k.toUpperCase() === String(inst.def).toUpperCase())), { pins: H.defs.get(inst.def)?.pins });
+      finish(inst.path, 'instance', defPage.get(H.defs.get(inst.def)?.name ?? inst.def) || defPage.get([...H.defs.keys()].find((k) => k.toUpperCase() === String(inst.def).toUpperCase())), { pins: H.defs.get(inst.def)?.pins, macro: H.defs.get(inst.def)?.macro });
       pageOfInst.set(inst.path, inst.path);
     }
   } else {
-    for (const d of H.defs.values()) finish(d.name, 'subckt', defPage.get(d.name), { pins: d.pins });
+    for (const d of H.defs.values()) finish(d.name, 'subckt', defPage.get(d.name), { pins: d.pins, macro: d.macro });
     for (const inst of H.instances) pageOfInst.set(inst.path, [...H.defs.keys()].find((k) => k.toUpperCase() === String(inst.def).toUpperCase()));
   }
   // map: every flattened ref -> (page, cell)
@@ -718,5 +721,5 @@ export async function importHier(text, opts = {}) {
   const directive = (w) => /^directive not representable/.test(typeof w === 'string' ? w : w.message || w.code || '');
   const global = compare({ components: flat, issues: [] }, { ...H.flat, warnings: (H.flat.warnings || []).filter((w) => !directive(w)) });
   warnings.push(...(H.flat.warnings || []).filter(directive));
-  return { doc, pages, map, lvs: { pages: Object.fromEntries(pages.map((p) => [p.name, p.lvs])), global: global.match, ...(global.match ? {} : { globalReport: global }), ...(warnings.length ? { warnings } : {}) }, banks: banks.map((b) => ({ name: b.name, kind: b.kind, pins: b.pins, parts: b.parts.map((c) => c.ref) })) };
+  return { doc, pages, map, lvs: { pages: Object.fromEntries(pages.map((p) => [p.name, p.lvs])), global: global.match, ...(global.match ? {} : { globalReport: global }), ...(warnings.length ? { warnings } : {}) }, ...(errors.length ? { errors } : {}), banks: banks.map((b) => ({ name: b.name, kind: b.kind, pins: b.pins, parts: b.parts.map((c) => c.ref) })) };
 }

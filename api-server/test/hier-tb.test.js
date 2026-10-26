@@ -47,7 +47,7 @@ test('the bandgap page is the Brokaw figure: the complete OTA a triangle, its ou
 test('a source on a block page fails the quality gate (block pages only)', async () => {
   const text = fx('brokaw_tb.cir').replace('.ends demarrage', 'VX gs ground 0\n.ends demarrage');
   const r = await importHier(text);
-  assert.ok(r.lvs.warnings?.some((w) => /source.*demarrage/.test(w)), JSON.stringify(r.lvs.warnings));
+  assert.ok(r.errors?.some((w) => /source in block demarrage: VX/.test(w)), JSON.stringify(r.errors));   // blocking (review of #70)
   const m = getPage(r.doc, 'demarrage');
   const q = qualityGate(m, { components: [{ ref: 'VX', prefix: 'V', nodes: ['gs', 'ground'] }] }, { block: true });
   assert.equal(q.checks.sources?.ok, false);
