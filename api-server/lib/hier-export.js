@@ -73,7 +73,7 @@ nav button{border:1px solid #bbb;background:#f6f6f6;padding:3px 10px;cursor:poin
 const S=[...document.querySelectorAll('section')],B=[...document.querySelectorAll('nav button')];
 function show(n){S.forEach(s=>s.hidden=s.dataset.page!==n);B.forEach(b=>b.classList.toggle('on',b.dataset.tab===n));
 const path=[];for(let p=n;p;p=S.find(s=>s.dataset.page===p)?.dataset.parent)path.unshift(p);
-document.getElementById('crumb').innerHTML=path.map(p=>'<a data-go="'+p+'">'+p+'</a>').join(' › ');}
+const c=document.getElementById('crumb');c.textContent='';path.forEach((p,i)=>{if(i)c.append(' › ');const a=document.createElement('a');a.dataset.go=p;a.textContent=p;c.append(a);});}
 document.addEventListener('click',e=>{const t=e.target.closest('[data-tab],[data-go],a[data-page]');if(!t)return;e.preventDefault();show(t.dataset.tab||t.dataset.go||t.dataset.page);});
 show(S[0]?.dataset.page);</script></body></html>`;
 }

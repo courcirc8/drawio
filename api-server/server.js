@@ -706,6 +706,7 @@ app.get('/documents/:id/hier/pages', wrap(async (req, res) => {
 app.get('/documents/:id/hier/viewer.html', wrap(async (req, res) => {
   const { entry } = pageOf(req);
   const { hierPages, hierViewerHtml } = await import('./lib/hier-export.js');
+  res.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:");
   res.type('html').send(hierViewerHtml(await hierPages(entry.doc, entry.hierMap || null), req.params.id));
 }));
 }));

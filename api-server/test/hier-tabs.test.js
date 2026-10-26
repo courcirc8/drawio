@@ -45,3 +45,9 @@ test('Brokaw bench: the testbench page is the classic bench, wired, its pins nam
   const texts = cells.map((c) => String(c.value || ''));
   for (const n of ['power', 'ground', 'vref']) assert.ok(texts.includes(n), `pin name ${n} on the block`);
 });
+
+test('viewer: the breadcrumb is built with DOM nodes, never innerHTML (page names come from the netlist)', () => {
+  const html = hierViewerHtml({ pages: [{ name: 'a"><img src=x onerror=alert(1)>', svg: '<svg/>', parent: null, depth: 0 }] });
+  assert.doesNotMatch(html, /innerHTML/);
+  assert.doesNotMatch(html, /<img src=x/);
+});
