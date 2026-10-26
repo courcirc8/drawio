@@ -34,14 +34,19 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
 - **OTA cascodé télescopique** (OTA du TIA proj5, 26.10, `test/cascode-ota.test.js`) :
   - **Répliques de polarisation** : une branche en série avec une diode, un seul bout sur un rail et l'autre sur un
     nœud de colonne du cœur, va dans « Polarisation ». Cela vaut pour MBN + RBN vers `tail` ou MPD/MQ1, à condition
-    que ses grilles soient sa diode, un net de polarisation ou une entrée.
+    que ses grilles soient sa diode, un net de polarisation ou une entrée. Exclus : un nœud de diode qui attaque une
+    paire d'entrée (branche de cœur d'un bandgap vers son ampli, analoggenie/1504) et la référence d'un miroir dont
+    la sortie est sur le même nœud d'attache.
   - **Démarrage** : un transistor du cœur dont la grille n'est commandée que par un RC vers les rails (au moins une
-    capacité ; un diviseur R ou une source est une polarisation) va dans
-    le cadre « Démarrage », avec ces passifs. C'est le cas du kick XKA/XKB par RPOR/CPOR.
+    résistance et une capacité ; un diviseur R, une source ou des capacités seules sont une polarisation) va dans
+    le cadre « Démarrage », avec ces passifs. C'est le cas du kick XKA/XKB par RPOR/CPOR. Un groupe passif entre
+    rails seulement (alimentation, source de banc, découplage) n'y va jamais.
   - Les chaînes passives entre cadres s'arrêtent sur un net partagé avec un autre cadre ; le degré du net est compté
     sur tout le circuit.
   - **Branche R ∥ C** de détection (RCMA ∥ CCMA) : un seul échelon, avec le partenaire dessiné à côté et relié aux
-    deux bouts. Le nom du bout haut est posé dans l'axe de l'échelon, sans coude.
+    deux bouts. Le nom du bout haut est posé dans l'axe de l'échelon, sans coude. Ailleurs, seulement pour une
+    étiquette : un port posé ainsi peut tomber sur une broche (casc_amp, analoggenie/230).
+  - Non-régression sur le corpus : `test/manuel-corpus-regress.test.js` (netlists MIT du bank).
   - **Paire du CMFB** en miroir : la grille de référence (`vcmref`) sort du côté extérieur, comme celle de sa
     partenaire.
 - **Échelle entre deux bus** (banque de capacités / résistances commutées) : quand la lecture en colonnes échoue,

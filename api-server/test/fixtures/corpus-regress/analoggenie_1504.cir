@@ -1,0 +1,28 @@
+* Source: netlist bank, analoggenie/1504 (AnalogGenie textbook transcriptions, MIT)
+Q1 net9 net9 0 0 NPN
+Q0 net8 net8 0 0 NPN
+MM4 net28 net5 net12 net22 PMOS
+MM3 net29 net8 net12 net22 PMOS
+MM0 net12 VB1 VDD VDD PMOS
+MM6 net16 VB2 net25 VDD PMOS
+MM5 VOUT1 VB2 net24 VDD PMOS
+MM2 net25 net16 VDD VDD PMOS
+MM1 net24 net16 VDD VDD PMOS
+MM10 net29 net1001 0 0 NMOS
+MM9 net28 net1001 0 0 NMOS
+MM8 net16 net1003 net29 0 NMOS
+MM7 VOUT1 net1003 net28 0 NMOS
+MM15 net1003 net1003 net1001 0 NMOS
+MM13 net1001 net1001 0 0 NMOS
+MM14 net1003 net1006 VDD VDD PMOS
+MM5_2 net014 net014 0 0 NMOS
+MM4_2 net15 net014 0 0 NMOS
+MM2_2 net1006 VB3 net15 0 NMOS
+MM0_2 VB3 VB3 0 0 NMOS
+MM6_2 net014 net1006 VDD VDD PMOS
+MM3_2 net1006 net1006 VDD VDD PMOS
+MM1_2 VB3 net1006 VDD VDD PMOS
+R2 VOUT1 net8
+R1 VOUT1 net5
+R0 net5 net9
+.end

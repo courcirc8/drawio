@@ -700,7 +700,9 @@ function layoutFrame(F, R, ctx) {
         placedChain.add(mate);
       }
       outDir = dir;
-      upright = true;                   // the top name straight on along the rung: no avoidable bend
+      // the top name straight on along the rung (no avoidable bend), for an R || C twin rung or a label end;
+      // a port there may sit over another part's pin (casc_amp, analoggenie/230: review of #67)
+      upright = !!mate || !(ctx.ports.has(r.net) && !ctx.labelNets.has(r.net) && ctx.home.get(r.net) === F.kind);
       finishEnd(r.net, r.p, s === 'out' ? (dir < 0 ? 'left' : 'right') : s);
       upright = false;
     }
