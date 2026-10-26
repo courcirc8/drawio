@@ -31,6 +31,24 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
 - Un rail et un symbole par cadre ; points de jonction seulement aux T.
 - Polarisation et CMFB : cadres « Polarisation » / « CMFB » sous le cœur. Les nets de **polarisation**
   (`vb*`, `vbias*`, `vc[mnp]*`, `vref*`, `vg*`) sont reliés par **étiquettes** ; les nets de **signal** restent des fils.
+- **OTA cascodé télescopique** (OTA du TIA proj5, 26.10, `test/cascode-ota.test.js`) :
+  - **Répliques de polarisation** : une branche en série avec une diode, un seul bout sur un rail et l'autre sur un
+    nœud de colonne du cœur, va dans « Polarisation ». Cela vaut pour MBN + RBN vers `tail` ou MPD/MQ1, à condition
+    que ses grilles soient sa diode, un net de polarisation ou une entrée. Exclus : un nœud de diode qui attaque une
+    paire d'entrée (branche de cœur d'un bandgap vers son ampli, analoggenie/1504) et la référence d'un miroir dont
+    la sortie est sur le même nœud d'attache.
+  - **Démarrage** : un transistor du cœur dont la grille n'est commandée que par un RC vers les rails (au moins une
+    résistance et une capacité ; un diviseur R, une source ou des capacités seules sont une polarisation) va dans
+    le cadre « Démarrage », avec ces passifs. C'est le cas du kick XKA/XKB par RPOR/CPOR. Un groupe passif entre
+    rails seulement (alimentation, source de banc, découplage) n'y va jamais.
+  - Les chaînes passives entre cadres s'arrêtent sur un net partagé avec un autre cadre ; le degré du net est compté
+    sur tout le circuit.
+  - **Branche R ∥ C** de détection (RCMA ∥ CCMA) : un seul échelon, avec le partenaire dessiné à côté et relié aux
+    deux bouts. Le nom du bout haut est posé dans l'axe de l'échelon, sans coude. Ailleurs, seulement pour une
+    étiquette : un port posé ainsi peut tomber sur une broche (casc_amp, analoggenie/230).
+  - Non-régression sur le corpus : `test/manuel-corpus-regress.test.js` (netlists MIT du bank).
+  - **Paire du CMFB** en miroir : la grille de référence (`vcmref`) sort du côté extérieur, comme celle de sa
+    partenaire.
 - **Échelle entre deux bus** (banque de capacités / résistances commutées) : quand la lecture en colonnes échoue,
   `ladderReading` cherche deux bus A et B reliés par des tranches en série (une capacité, un interrupteur…) ; les
   autres composants sont des éperons d'un nœud de tranche vers un net commun (étiquette, ex. `vg`) ou un port ; les
@@ -68,6 +86,8 @@ une commande (net propre ou net de polarisation) ; un seul éperon par nœud.
 2. Un gabarit (approuvé par Eric) lit aussi le circuit → les candidats habituels tournent ; `manuel` n'est retenu que
    s'il échoue à **moins** de contrôles de la porte qualité que le dessin élu (égalité : le dessin élu). Ainsi
    `bench:templates` ne peut pas reculer.
+   Exception : le gabarit `ldo` (approuvé par Eric) reste élu même si `manuel` échoue à moins de contrôles
+   (Orchestrateur, 26.10) ; l'écart est rapporté dans `manuelVs`.
 3. `AUTO_MANUEL=0` coupe le moteur.
 
 Les fils de rail et les boucles de diode portent `drawioApiTemplate=1`, comme les fils de `lib/rails.js` : ils sont

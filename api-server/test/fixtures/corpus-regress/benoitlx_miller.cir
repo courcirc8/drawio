@@ -1,0 +1,17 @@
+* Source: netlist bank, openpdk/benoitlx_analog-asic-design__testbench.spice__top (github.com/benoitlx/analog-asic-design, MIT)
+V1 Vdd 0 DC 1.8 AC 1
+V2 Vn 0 DC 0.905 AC 0.1
+V3 Vp 0 DC 0.895 AC -0.1
+I1 Vdd net1 10u
+C1 Vout 0 1p
+M1 x1.net2 Vn x1.net1 x1.net1 NMOS
+M2 x1.net3 Vp x1.net1 x1.net1 NMOS
+M3 x1.net2 x1.net2 Vdd Vdd PMOS
+M4 x1.net3 x1.net2 Vdd Vdd PMOS
+M5 x1.net1 net1 0 0 NMOS
+M6 Vout net1 0 0 NMOS
+M7 net1 net1 0 0 NMOS
+M8 Vout x1.net3 Vdd Vdd PMOS
+C2 Vout x1.net3 1p
+L1 diff_in v(Vp) 1n
+.end
