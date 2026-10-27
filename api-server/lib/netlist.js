@@ -140,6 +140,12 @@ export function parseSpice(text, opts = {}) {
         components.push({ ref, prefix: prim.prefix, nodes, fullNodes: prim.prefix === 'Q' ? full.slice(0, 4) : full, value: [name, ...shown].join(' '), model: name, pdk: name, params, ...(extra.length ? { body: extra } : {}) });
         return;
       }
+      // undefined subckt: a fully differential op-amp (opamp_fd / ota_fd: in+ in- out+ out-, SPICE_MAP.X variant)
+      if (nodes0.length === 4 && /^(opamp|ota)_?fd$/i.test(name || '')) {
+        const n = nodes0.map(mapNet);
+        components.push({ ref, prefix: 'X', nodes: n, fullNodes: [...n], value: name, model: 'OPAMP_FD' });
+        return;
+      }
       // undefined subckt: op-amp heuristic, else unsupported
       const opampLike = (nodes0.length === 3 || nodes0.length === 5) &&
         (/opamp|op_amp|universalopamp|^lt[0-9]|^ad[0-9]|^tl0|^lm[0-9]|^ne5|^op[0-9]|^ua7|^lf3|^mcp6|^opa[0-9]|^ada[0-9]/i.test(name || '') || nodes0.length === 3);

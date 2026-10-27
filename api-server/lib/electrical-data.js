@@ -12,7 +12,8 @@ export function preserveElectricalData(model, parsed) {
     // declared hidden terminals (MOS bulk) + OPTIONAL ones present in this
     // netlist (BJT substrate "Q c b e s model"): every fullNodes index that
     // the visible pins do not carry
-    const declared = c.block ? [] : (SPICE_MAP[c.prefix]?.dropNodes || []);   // a subcircuit block draws every pin
+    // a subcircuit block draws every pin; so does a part with no extra SPICE node (opamp_fd: in+ in- out+ out-)
+    const declared = c.block || (c.fullNodes?.length || 0) <= c.nodes.length ? [] : (SPICE_MAP[c.prefix]?.dropNodes || []);
     const optional = !declared.length && (c.fullNodes?.length || 0) > c.nodes.length
       ? Array.from({ length: c.fullNodes.length - c.nodes.length }, (_, k) => c.nodes.length + k) : [];
     const hidden = [...declared, ...optional].map(index => {
