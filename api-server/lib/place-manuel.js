@@ -1145,4 +1145,14 @@ function drawManuel(model, parsed, opts) {
 }
 
 // drawing kit shared with lib/hier.js (top page of a hierarchical netlist)
-export { Sheet, emit, placeTwo, placeTr, portVert, tapGnd, tapVdd };
+/** any device unrotated, its top-left corner at (x, y): v.pinAbs, v.names (pin per drawn node, in c.nodes order)
+ *  and v.rel (pin positions relative to the box); a controlled source on a block page (E, G) */
+function placeDevice(S, c, x, y) {
+  const sh = shapeOf(c), s = getShape(sh), pins = relPins(sh);
+  const v = S.vert({ id: c.ref, c, shape: sh, style: devStyle(sh, false), x, y, w: s.w, h: s.h, pins, value: c.value || '', refdes: c.ref });
+  v.names = pinNames(c); v.rel = pins; v.w = s.w; v.h = s.h;
+  const ann = annotation(c);
+  S.text(`<b>${c.ref}</b>${ann ? '<br>' + ann : ''}`, x + s.w + 6, y - 4, 80, 34, 'left', 10);
+  return v;
+}
+export { Sheet, emit, placeTwo, placeTr, placeDevice, portVert, tapGnd, tapVdd };

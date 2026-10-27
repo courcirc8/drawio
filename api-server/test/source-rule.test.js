@@ -81,3 +81,49 @@ test('B2: a tb_ exempts only a bench body (sources, block instances, R/C/L loads
   assert.ok(blockSourceCheck(core).errors.some((e) => /source in block tb_core: VINT/.test(e)), 'a block renamed tb_core');
   assert.ok((await importHier(core)).errors?.length);
 });
+
+// re-review of #72 (Orchestrator, 2026-10-26, REVUE-72.md « Re-revue 72e57369 »): the next batch
+test('a bench with a VCVS supply: the classic bench, E wired from its control source, LVS green', async () => {
+  const { getPage, allCells, cellInfo } = await import('../lib/model.js');
+  const r = await importHier(TB.replace('VDD vdd 0 3.3\n', 'VREF r 0 1.65\nEDD vdd 0 r 0 2\n'));
+  assert.equal(r.errors, undefined, JSON.stringify(r.errors));
+  assert.equal(r.pages[0].name, 'tb_bandgap');
+  assert.equal(r.pages[0].engine, 'testbench');
+  assert.ok(Object.values(r.lvs.pages).every(Boolean) && r.lvs.global, JSON.stringify(r.lvs));
+  const cells = allCells(getPage(r.doc, 'tb_bandgap')).map(cellInfo);
+  assert.ok(cells.some((c) => c.refdes === 'EDD') && cells.some((c) => c.refdes === 'VREF'));
+  // nc+ by a wire, not a name label
+  const labels = cells.filter((c) => /apiShape=port/.test(c.styleRaw || '')).map((c) => String(c.value).replace(/<[^>]+>/g, '').trim());
+  assert.ok(!labels.includes('r'), labels.join(' '));
+});
+
+test('a VCCS G in a bench and a VCVS on a block page: drawn (no "part with 4 pins" refusal), LVS green', async () => {
+  const g = await importHier(TB.replace('CL vref 0 1e-11\n', 'CL vref 0 1e-11\nGI vref 0 r 0 1m\nVR r 0 1\n'));
+  assert.ok(Object.values(g.lvs.pages).every(Boolean) && g.lvs.global, JSON.stringify(g.lvs.pages));
+  const e = await importHier(TB.replace('VDD vdd 0 3.3\n', 'VDD vdd 0 3.3\nVR r 0 1\nEX vdd2 0 r 0 2\nRX vdd2 0 1k\n'));
+  assert.ok(Object.values(e.lvs.pages).every(Boolean) && e.lvs.global, JSON.stringify(e.lvs.pages));
+});
+
+test('block .subckt definitions written inside the tb_ .subckt: read nested, the bench passes', async () => {
+  const defs = TB.slice(TB.indexOf('.subckt ota'), TB.indexOf(BENCH));
+  const t = TB.replace(defs, '').replace(BENCH, `.subckt tb_bandgap\n${defs}${BENCH}.ends tb_bandgap\nXTB tb_bandgap\n`);
+  const r = await importHier(t);
+  assert.equal(r.errors, undefined, JSON.stringify(r.errors));
+  assert.deepEqual(r.pages.map((p) => `${p.name}:${p.kind}`), ['tb_bandgap:testbench', 'bandgap:subckt', 'ota:subckt', 'demarrage:subckt']);
+  assert.ok(Object.values(r.lvs.pages).every(Boolean) && r.lvs.global);
+  // the parser: the outer definition resumes after the inner .ends
+  const { parseSpice } = await import('../lib/netlist.js');
+  const p = parseSpice('.subckt a x y\nR1 x m 1k\n.subckt b u v\nR2 u v 1k\n.ends b\nXB m y b\n.ends a\nXA 1 0 a\n.end\n');
+  assert.deepEqual(p.subckts.A.lines.map((l) => l.trim()), ['R1 x m 1k', 'XB m y b']);
+  assert.deepEqual(p.subckts.B.lines.map((l) => l.trim()), ['R2 u v 1k']);
+});
+
+test('a C or L with ic= in a block: a warning, not in the bench', () => {
+  const c = blockSourceCheck(inDem('CBIG gs ground 1 ic=3.3'));
+  assert.ok(c.warnings.some((w) => /initial condition in block demarrage: CBIG/.test(w)), JSON.stringify(c.warnings));
+  assert.ok(!blockSourceCheck(TB.replace('CL vref 0 1e-11', 'CL vref 0 1e-11 ic=1.2')).warnings.some((w) => /initial condition/.test(w)));
+  // written with spaces (review of #73): still an initial condition
+  const s = blockSourceCheck(inDem('CBIG gs ground 1 ic = 1.2'));
+  assert.ok(s.warnings.some((w) => /initial condition in block demarrage: CBIG/.test(w)), JSON.stringify(s.warnings));
+  assert.ok(!blockSourceCheck(inDem('CBIG gs ground 1 ; ic = 1.2')).warnings.some((w) => /initial condition/.test(w)));
+});

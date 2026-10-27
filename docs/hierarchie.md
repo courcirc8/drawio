@@ -107,7 +107,14 @@ Réponse 201 (422 si un LVS échoue, sauf `force=1`) :
   - une `.subckt` qu'aucune instance n'atteint depuis le haut (bibliothèque) : avertissement seulement. Les
     instances sont lues comme le parseur les lit (la définition est le dernier mot sans `=`, même après `m=1`), et
     toute définition que le parseur développe compte comme utilisée.
-  Une `.subckt` définie deux fois est signalée (la dernière est dessinée). Un import refusé (règle des sources ou LVS) ne remplace jamais le document. Le contrôle `sources` de la porte qualité (`qualityGate(model, parsed,
+  Une `.subckt` définie deux fois est signalée (la dernière est dessinée). Une `.subckt` définie à l'intérieur
+  d'une autre (par exemple les blocs dans le `.subckt tb_*`) est lue comme une définition à part, et la définition
+  englobante reprend après son `.ends`. Un C ou un L avec `ic=` dans un bloc donne un avertissement (une capacité
+  chargée alimente le circuit en transitoire avec `uic`) ; dans le banc, il est permis.
+- **Sources commandées** : une source E (VCVS) `E n+ 0 nc+ nc-` qui alimente ou attaque le DUT est dessinée dans le
+  banc comme une source V, avec la source V / I qui commande `nc+` câblée à sa gauche ; `nc-` va à la masse. Une
+  source G (VCCS, symbole OTA) ou une E ailleurs sur une page de blocs est dessinée avec chaque broche sur son côté
+  (page de blocs générique, LVS vert). Un import refusé (règle des sources ou LVS) ne remplace jamais le document. Le contrôle `sources` de la porte qualité (`qualityGate(model, parsed,
   { block: true })`) dit la même chose page par page. Une source sur une page de banque, ou une page du haut qui mêle
   sources et circuit, reste un avertissement : écrire le DUT en `.subckt`.
 - Pas de page pour une **primitive du PDK** (`rhigh`, `rppd`, `npn13G2`, `cap_cmim`, `sg13_*`…), même si le deck la

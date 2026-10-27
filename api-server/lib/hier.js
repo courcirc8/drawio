@@ -16,7 +16,7 @@
  * flattened back through the blocks, against the flattened netlist.
  */
 import { parseSpice, extractNetlist } from './netlist.js';
-import { Sheet, emit, placeTwo, placeTr, portVert, tapGnd, tapVdd } from './place-manuel.js';
+import { Sheet, emit, placeTwo, placeTr, placeDevice, portVert, tapGnd, tapVdd } from './place-manuel.js';
 import { blockPinsStyle } from './components.js';
 import { newDocument, getPage, addPage, normalizeOrigin } from './model.js';
 import { compare } from './lvs.js';
@@ -376,6 +376,17 @@ function drawPart(S, it) {
   }
 }
 
+/** a controlled source E (VCVS: n+ n- nc+ nc-) or G (VCCS, drawn as its OTA symbol) on a block page: every pin
+ *  ends on the side it sits on (review of #72: a bench with a VCVS was refused) */
+function drawCtrl(S, it) {
+  const c = it.comp, v = placeDevice(S, c, 0, 0);
+  v.names.forEach((name, i) => {
+    const n = c.nodes[i], r = v.rel[name];
+    if (n == null || !r) return;
+    endAt(S, n, S.term(n, v, name), r.x <= 0.2 ? 'l' : r.x >= 0.8 ? 'r' : r.y <= 0.2 ? 'u' : 'd');
+  });
+}
+
 /** a lone transistor: channel vertical, every terminal labelled */
 function drawTr(S, it) {
   const c = it.comp;
@@ -424,6 +435,7 @@ export function importBlockPage(model, parsed, banks = [], symbols = new Map()) 
     const S = new Sheet();
     if (it.kind === 'part' && it.comp.nodes.length === 2) drawPart(S, it);
     else if (it.kind === 'part' && /^[MQJ]$/.test(it.comp.prefix) && it.comp.nodes.length === 3) drawTr(S, it);
+    else if (it.kind === 'part' && /^[EG]$/.test(it.comp.prefix)) drawCtrl(S, it);
     else if (it.kind === 'part') throw new Error(`hier: part ${it.ref} with ${it.comp.nodes.length} pins on a block page`);
     else if (it.tri) drawTriangle(S, it);
     else drawBlock(S, it);
@@ -484,17 +496,28 @@ export function importTestbench(model, parsed, symbols = new Map()) {
   const parts = items.filter((i) => i.kind !== 'block').map((i) => i.comp);
   const gndOf = (c) => c.nodes.find((n) => RAIL0.test(n));
   const sig = (c) => c.nodes.find((n) => !RAIL0.test(n));
-  if (parts.some((c) => c.nodes.length !== 2 || !gndOf(c) || !sig(c) || !/^[VIRCL]$/.test(c.prefix))) return null;
-  const src = parts.filter((c) => /^[VI]$/.test(c.prefix)), loads = parts.filter((c) => !src.includes(c));
+  const blk = blocks[0], blkNets = new Set(blk.pins.map((p) => p.net));
+  // a VCVS E n+ 0 nc+ nc- feeding the block (a supply or an input, review of #72); the V / I source driving its
+  // control net, on no block pin, is drawn beside it
+  const vcvs = (c) => c.prefix === 'E' && c.nodes.length === 4 && RAIL0.test(c.nodes[1]) && !RAIL0.test(c.nodes[0]);
+  const ctrlNets = new Set(parts.filter(vcvs).map((c) => c.nodes[2]));
+  const two = (c) => c.nodes.length === 2 && gndOf(c) && sig(c);
+  const aux = parts.filter((c) => /^[VI]$/.test(c.prefix) && two(c) && ctrlNets.has(sig(c)) && !blkNets.has(sig(c)));
+  if (parts.some((c) => !aux.includes(c) && !vcvs(c) && !(two(c) && /^[VIRCL]$/.test(c.prefix)))) return null;
+  const auxOn = new Map(aux.map((c) => [sig(c), c]));
+  const src = parts.filter((c) => (/^[VI]$/.test(c.prefix) || vcvs(c)) && !aux.includes(c)), loads = parts.filter((c) => !src.includes(c) && !aux.includes(c));
   const srcOn = new Map();
   for (const c of src) { if (srcOn.has(sig(c))) return null; srcOn.set(sig(c), c); }
-  const blk = blocks[0];
   const it = { ...blk, pins: blk.pins.map((p) => ({ ...p, side: RAIL0.test(p.net) ? 'bottom' : isSupply(p.net) ? 'top' : srcOn.has(p.net) ? 'left' : 'right' })) };
   if (loads.some((c) => !it.pins.some((p) => p.net === sig(c) && p.side === 'right'))) return null;
   const S = new Sheet();
   const supplies = it.pins.filter((p) => p.side === 'top' && srcOn.has(p.net));
   const inputs = it.pins.filter((p) => p.side === 'left');
-  const x0 = 140 * supplies.length + 160 * inputs.length + 80;
+  // room for a VCVS: its control source on its left
+  const extra = (p) => (vcvs(srcOn.get(p.net)) ? 120 : 0);
+  const xsSup = []; let xa = 60;
+  for (const p of supplies) { xa += extra(p); xsSup.push(xa); xa += 140; }
+  const x0 = xa + inputs.reduce((t, p) => t + 160 + extra(p), 0) + 80 - 60;
   const v = blockVertex(S, it, x0, 0);
   const pinAt = Object.fromEntries(it.pins.map((p) => [p.name, S.term(p.net, v, p.name)]));
   // the pin names on the symbol
@@ -506,21 +529,37 @@ export function importTestbench(model, parsed, symbols = new Map()) {
     else S.text(p.name, a.x - 64, a.y - 7, 60, 14, 'right', 9);
   }
   const ground = (c, vv) => endAt(S, gndOf(c), S.term(gndOf(c), vv, vv.other), 'd');
+  // a VCVS: nc- on its right (ground or a label), nc+ wired from its control source on its left (or a label);
+  // its name below, clear of the control wires
+  const control = (c, vv, xs) => {
+    const [, , np, nm] = c.nodes, w = S.term(np, vv, 'W'), e = S.term(nm, vv, 'E');
+    endAt(S, nm, e, 'r');
+    const a = auxOn.get(np);
+    if (a) {
+      const va = placeTwo(S, a, xs - 100, w.y, np, true, -1);
+      S.path(np, S.term(np, va, va.first), w);
+      ground(a, va);
+    } else endAt(S, np, w, 'l');
+    const t = S.texts[S.texts.length - (a ? 2 : 1)];
+    if (t) { t.x = xs + 16; t.y = vv.pinAbs[vv.other].y + 2; t.align = 'left'; }
+  };
   // supplies: the source on the far left, its top wired over the block to the pin
   supplies.forEach((p, k) => {
-    const c = srcOn.get(p.net), a = pinAt[p.name], yBus = a.y - 50 - 20 * k, xs = 60 + 140 * k;
+    const c = srcOn.get(p.net), a = pinAt[p.name], yBus = a.y - 50 - 20 * k, xs = xsSup[k];
     const vv = placeTwo(S, c, xs, yBus + 60, p.net, true, 1);
     const t = S.term(p.net, vv, vv.first);
     S.path(p.net, t, { x: xs, y: yBus }, { x: a.x, y: yBus }, a);
     ground(c, vv);
+    if (vcvs(c)) control(c, vv, xs);
   });
   for (const p of it.pins.filter((q) => q.side === 'top' && !srcOn.has(q.net))) endAt(S, p.net, pinAt[p.name], 'u');
   // inputs: the source left of the block, its top level with the pin
   inputs.forEach((p, k) => {
-    const c = srcOn.get(p.net), a = pinAt[p.name], xs = x0 - 80 - 160 * (inputs.length - 1 - k);
-    const vv = placeTwo(S, c, xs, a.y + 40, p.net, true, -1);
+    const c = srcOn.get(p.net), a = pinAt[p.name], xs = x0 - 80 - inputs.slice(k + 1).reduce((t, q) => t + 160 + extra(q), 0);
+    const vv = placeTwo(S, c, xs, a.y + 40, p.net, true, vcvs(c) ? 1 : -1);
     S.path(p.net, S.term(p.net, vv, vv.first), { x: xs, y: a.y }, a);
     ground(c, vv);
+    if (vcvs(c)) control(c, vv, xs);
   });
   for (const p of it.pins.filter((q) => q.side === 'bottom')) endAt(S, p.net, pinAt[p.name], 'd');
   // outputs: the wire to the right, each load hanging from it, the arrow at its end
@@ -588,6 +627,7 @@ async function drawFigure(parsed, symbols) {
  *    no definition instantiates (a tb_x below a block stays a block) and whose body reads as a bench: sources,
  *    block instances and R / C / L loads, no device (a tb_ holding transistors is a block with sources);
  *  - a definition no instance reaches from the top: not drawn, a warning only.
+ *  A C or L with ic= in a block: a warning (a charged 1 F capacitor is a supply in a transient with uic).
  *  The instances are read as the parser reads them (the definition: the last token without '='), and every
  *  definition the parser expands counts as used.
  *  Returns { errors, warnings, macro, benchText }: one error per definition; benchText = the text with a single
@@ -611,7 +651,7 @@ export function blockSourceCheck(text, H = hierReading(text)) {
     if (!line || line.startsWith('*')) continue;
     const t = line.split(/\s+/), low = t[0].toLowerCase();
     if (low === '.subckt') {
-      const d = { name: t[1] || '', key: (t[1] || '').toUpperCase(), macro: t.slice(2).some((x) => /^macro=(1|true)$/i.test(x)), sources: [], xspice: [], insts: [], pins: t.slice(2).filter((x) => !x.includes('=') && !/^params:/i.test(x)), start: i };
+      const d = { name: t[1] || '', key: (t[1] || '').toUpperCase(), macro: t.slice(2).some((x) => /^macro=(1|true)$/i.test(x)), sources: [], xspice: [], ics: [], insts: [], pins: t.slice(2).filter((x) => !x.includes('=') && !/^params:/i.test(x)), start: i };
       defs.push(d); stack.push(d); continue;
     }
     if (low.startsWith('.ends')) { const d = stack.pop(); if (d) d.end = i; continue; }
@@ -626,6 +666,7 @@ export function blockSourceCheck(text, H = hierReading(text)) {
       continue;
     }
     if (!at) { top.other = true; continue; }
+    if (/^[CL]/i.test(ref) && /\sic\s*=/i.test(line)) at.ics.push(ref);   // ic=1.2 or ic = 1.2
     if (/^A/i.test(ref)) { at.xspice.push([ref, String(t[t.length - 1]).toUpperCase()]); continue; }
     if (!/^[VIBEGFH]/i.test(ref)) continue;
     const v = t.slice(3);
@@ -654,6 +695,7 @@ export function blockSourceCheck(text, H = hierReading(text)) {
   const macro = [];
   for (const d of eff.values()) {
     if (d.macro) { macro.push(d.name); if (d.sources.length) warnings.push(`macro-model ${d.name}: sources not checked (${d.sources.join(' ')})`); continue; }
+    if (d.ics.length && !bench.has(d.key) && reached.has(d.key)) warnings.push(`initial condition in block ${d.name}: ${d.ics.join(' ')} (ic= acts as a supply in a transient with uic; keep it in the testbench)`);
     if (!d.sources.length || bench.has(d.key)) continue;
     if (d.name.includes('=')) { errors.push(`source in block ${d.name}: ${d.sources.join(' ')} (a .subckt name holding '=' cannot be instantiated: rename it)`); continue; }
     if (!reached.has(d.key)) { warnings.push(`unused .subckt ${d.name} holds a source (${d.sources.join(' ')}): not instantiated, not drawn`); continue; }
@@ -668,7 +710,7 @@ export function blockSourceCheck(text, H = hierReading(text)) {
 /** the testbench reading of a top level (Eric, 2026-10-26): its sources, plus ONE block (the DUT) and
  *  passive loads only -> { dut }; sources with any other circuit -> { mixed }; no source -> null */
 export function testbenchReading(top) {
-  const src = top.components.filter((c) => /^[VI]$/.test(c.prefix));
+  const src = top.components.filter((c) => /^[VIBEGFH]$/.test(c.prefix));
   if (!src.length) return null;
   const rest = top.components.filter((c) => !src.includes(c));
   const blocks = rest.filter((c) => c.block);

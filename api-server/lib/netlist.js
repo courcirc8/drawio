@@ -52,6 +52,7 @@ export function parseSpice(text, opts = {}) {
   // ---- pass 1: lift .subckt blocks out of the main body
   const body = [];
   let cur = null;
+  const open = [];       // a .subckt defined inside another: its own definition, the outer one resumes at its .ends
   for (const raw of lines) {
     const line = raw.trim();
     const low = line.toLowerCase();
@@ -60,12 +61,13 @@ export function parseSpice(text, opts = {}) {
       // pins up to `params:` (the parameters of the .subckt line), never a name=value
       const pi = t.findIndex((x, i) => i >= 2 && /^params:/i.test(x));
       const pins = t.slice(2, pi < 0 ? t.length : pi).filter((x) => !x.includes('='));
+      if (cur) open.push(cur);
       cur = { name: t[1], key: (t[1] || '').toUpperCase(), pins, lines: [], macro: t.slice(2).some((x) => /^macro=(1|true)$/i.test(x)) };
       if (cur.name) subckts[cur.key] = cur; else warnings.push('malformed .subckt skipped: ' + line);
       first = false;
       continue;
     }
-    if (low.startsWith('.ends')) { cur = null; continue; }
+    if (low.startsWith('.ends')) { cur = open.pop() || null; continue; }
     if (cur != null) cur.lines.push(raw); else body.push(raw);
   }
   // Directives with NO electrical content for a drawing (analyses, model
