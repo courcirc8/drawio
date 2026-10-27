@@ -1736,7 +1736,10 @@ function importNetlist2Impl(model, parsed, opts = {}) {
     let ci = info.get(c.ref);
     if (ci == null && SPICE_MAP[c.prefix] != null && slots.has(c.ref)) {
       const map = SPICE_MAP[c.prefix];
-      ci = { shapeKey: map.shape, po: map.pinOrder };
+      // a model variant with its own terminals (X opamp_fd -> OTA 2, components.js)
+      const v = map.variants?.[String(c.model || '').toUpperCase()];
+      const shapeKey = v && (!PIN_ORDER_OVERRIDES[v] || PIN_ORDER_OVERRIDES[v].length === c.nodes.length) ? v : map.shape;
+      ci = { shapeKey, po: PIN_ORDER_OVERRIDES[shapeKey] || map.pinOrder };
       info.set(c.ref, ci);
     }
     if (ci == null || floating.has(c.ref) || chainRefs.has(c.ref) || axisRefs.has(c.ref)) continue;

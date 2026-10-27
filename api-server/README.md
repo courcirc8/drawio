@@ -60,7 +60,9 @@ curl -X POST :8770/documents/doc1/lvs -H 'Content-Type: text/plain' --data-binar
 
 SPICE support: `R C L D V I Q M J E F G B S` elements, `X` instances of
 `.subckt` blocks (flattened: `X1.M1`, internal nets `X1.n`) or of an undefined
-op-amp-like subckt (drawn as an op-amp, supplies as hidden terminals), `K`
+op-amp-like subckt (drawn as an op-amp, supplies as hidden terminals) or of a
+fully differential op-amp `X<ref> in+ in- out+ out- opamp_fd` (or `ota_fd`:
+exactly these 4 pins, out+ in phase with in+, no supply pins; drawn as OTA 2), `K`
 couplings (recorded), `+` continuations, `*` comments; analysis/model
 directives are kept silently, value-changing ones (`.param`, `.step`, `.func`,
 `.ic`) stay warnings so strict LVS keeps rejecting them. `0`/`GND`/`GROUND` =

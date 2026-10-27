@@ -44,7 +44,16 @@ export const SPICE_MAP = {
   // ideal op-amp with two private hidden-only nets so both forms extract
   // back to exactly 5 SPICE nodes. Shares the OTA stencil with G: classify()
   // tells them apart by the refdes prefix (see reverseAll below).
-  X: { shape: 'mxgraph.electrical.abstract.ota_1', pinOrder: ['in+', 'in-', 'out'], dropNodes: [2, 3], label: 'op-amp (subckt)' },
+  // A FULLY DIFFERENTIAL op-amp (2026-10-27, analog-design TIA): an undefined .subckt named
+  // opamp_fd (or ota_fd) with 4 pins in+ in- out+ out- (out+ in phase with in+), no supply
+  // pins, drawn as the catalogue OTA 2 (VARIANT_MAPPINGS below gives its 4-pin mapping).
+  X: { shape: 'mxgraph.electrical.abstract.ota_1', pinOrder: ['in+', 'in-', 'out'], dropNodes: [2, 3], label: 'op-amp (subckt)',
+       variants: { OPAMP_FD: 'mxgraph.electrical.abstract.ota_2' } },
+};
+
+/** a variant whose terminals differ from its prefix's mapping: classify() and extraction use this one */
+export const VARIANT_MAPPINGS = {
+  'mxgraph.electrical.abstract.ota_2': { shape: 'mxgraph.electrical.abstract.ota_2', pinOrder: ['in+', 'in-', 'out+', 'out-'], label: 'fully differential op-amp (subckt)' },
 };
 
 /**
@@ -54,6 +63,7 @@ export const SPICE_MAP = {
  * prefix mapping.
  */
 export const PIN_ORDER_OVERRIDES = {
+  'mxgraph.electrical.abstract.ota_2': ['in+', 'in-', 'out+', 'out-'],
   'mxgraph.electrical.transistors.pmos': ['SE', 'W', 'NE'],      // D=SE(bottom), G=W, S=NE(top)
   'mxgraph.electrical.transistors.pmos_bulk': ['SE', 'W', 'NE'],
   // le stencil PNP est dessiné ÉMETTEUR EN HAUT (flèche au pin NE) — même
@@ -201,7 +211,7 @@ export function classify(cellInfo) {
     const byId = String(identityOf(cellInfo) || '').charAt(0).toUpperCase();
     if (shared.has(byId)) prefix = byId;
   }
-  const mapping = prefix != null ? SPICE_MAP[prefix] : null;
+  const mapping = prefix != null ? (VARIANT_MAPPINGS[key] || SPICE_MAP[prefix]) : null;
   return { role: 'component', prefix, mapping, shape };
 }
 
