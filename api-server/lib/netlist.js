@@ -141,7 +141,9 @@ export function parseSpice(text, opts = {}) {
         return;
       }
       // undefined subckt: a fully differential op-amp (opamp_fd / ota_fd: in+ in- out+ out-, SPICE_MAP.X variant)
-      if (nodes0.length === 4 && /^(opamp|ota)_?fd$/i.test(name || '')) {
+      if (/^(opamp|ota)_?fd$/i.test(name || '')) {
+        // exactly 4 pins: a supply written on the line (5) or a missing output (3) is refused, not guessed
+        if (nodes0.length !== 4) { warnings.push(`unsupported element skipped (${name} needs exactly 4 pins in+ in- out+ out-, no supply pins; got ${nodes0.length}): ` + line); return; }
         const n = nodes0.map(mapNet);
         components.push({ ref, prefix: 'X', nodes: n, fullNodes: [...n], value: name, model: 'OPAMP_FD' });
         return;

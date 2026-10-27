@@ -48,7 +48,8 @@ function importNetlistImpl(model, parsed) {
     let shapeKey = map.shape;
     if (map.variants != null && c.model != null) {
       for (const [k, v] of Object.entries(map.variants)) {
-        if (c.model.toUpperCase().includes(k)) shapeKey = v;
+        // a variant with its own terminals (X opamp_fd -> OTA 2) only when the part has that many pins
+        if (c.model.toUpperCase().includes(k) && (!PIN_ORDER_OVERRIDES[v] || PIN_ORDER_OVERRIDES[v].length === c.nodes.length)) shapeKey = v;
       }
     }
     const shape = getShape(shapeKey);

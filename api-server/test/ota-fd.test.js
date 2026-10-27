@@ -67,3 +67,24 @@ test('the single-ended opamp keeps ota_1 and its 5 nodes', async () => {
   assert.equal(compare(extracted, parsed).match, true);
   assert.equal(extracted.components.find((c) => c.ref === 'XU1').fullNodes.length, 5);
 });
+
+test('opamp_fd with 5 or 3 pins is refused with a warning, never a crash (review of #74, m-1)', async () => {
+  const p = parseSpice('XA1 inp inn outp outn vdd opamp_fd\nXA2 inp inn out ota_fd\n.end');
+  assert.equal(p.components.length, 0);
+  assert.equal(p.warnings.length, 2);
+  assert.match(p.warnings[0], /exactly 4 pins.*got 5/);
+  assert.match(p.warnings[1], /exactly 4 pins.*got 3/);
+  for (const engine of ['v1', 'v2']) {
+    const { parsed } = await roundTrip('XA1 inp inn outp outn vdd opamp_fd\nR1 inp outn 10k\nR2 inn outp 10k\nV1 vdd 0 1\n.end', engine);
+    assert.equal(parsed.warnings.length, 1);
+  }
+});
+
+test('a 5-pin op-amp whose name merely contains opamp_fd keeps the single-ended symbol', async () => {
+  for (const engine of ['v1', 'v2']) {
+    const { parsed, extracted, model } = await roundTrip('XU1 inp inn vp vm out my_opamp_fd2\nR1 out inn 10k\nR2 inp 0 1k\nV1 vp 0 1\nV2 vm 0 -1\n.end', engine);
+    assert.equal(compare(extracted, parsed).match, true);
+    const xu1 = allCells(model).map(cellInfo).find((c) => c.refdes === 'XU1' || c.id === 'XU1');
+    assert.equal(xu1.style.map.get('shape'), 'mxgraph.electrical.abstract.ota_1');
+  }
+});
