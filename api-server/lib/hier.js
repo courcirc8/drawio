@@ -666,7 +666,7 @@ export function blockSourceCheck(text, H = hierReading(text)) {
       continue;
     }
     if (!at) { top.other = true; continue; }
-    if (/^[CL]/i.test(ref) && t.some((x) => /^ic=/i.test(x))) at.ics.push(ref);
+    if (/^[CL]/i.test(ref) && /\sic\s*=/i.test(line)) at.ics.push(ref);   // ic=1.2 or ic = 1.2
     if (/^A/i.test(ref)) { at.xspice.push([ref, String(t[t.length - 1]).toUpperCase()]); continue; }
     if (!/^[VIBEGFH]/i.test(ref)) continue;
     const v = t.slice(3);

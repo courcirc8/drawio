@@ -122,4 +122,8 @@ test('a C or L with ic= in a block: a warning, not in the bench', () => {
   const c = blockSourceCheck(inDem('CBIG gs ground 1 ic=3.3'));
   assert.ok(c.warnings.some((w) => /initial condition in block demarrage: CBIG/.test(w)), JSON.stringify(c.warnings));
   assert.ok(!blockSourceCheck(TB.replace('CL vref 0 1e-11', 'CL vref 0 1e-11 ic=1.2')).warnings.some((w) => /initial condition/.test(w)));
+  // written with spaces (review of #73): still an initial condition
+  const s = blockSourceCheck(inDem('CBIG gs ground 1 ic = 1.2'));
+  assert.ok(s.warnings.some((w) => /initial condition in block demarrage: CBIG/.test(w)), JSON.stringify(s.warnings));
+  assert.ok(!blockSourceCheck(inDem('CBIG gs ground 1 ; ic = 1.2')).warnings.some((w) => /initial condition/.test(w)));
 });
