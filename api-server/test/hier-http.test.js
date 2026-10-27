@@ -72,3 +72,12 @@ test('a refused import (source rule or LVS) never replaces the document', async 
   assert.equal(after, before);
   assert.doesNotMatch(after, /\bVX\b/);
 });
+
+test('a testbench written as .subckt tb_bandgap imports (201); the macro-models are listed in the response', async () => {
+  const BENCH = 'VDD vdd 0 3.3\nXBG vref vdd 0 bandgap\nCL vref 0 1e-11\n';
+  const r = await hier(await doc(), TB.replace(BENCH, `.subckt tb_bandgap\n${BENCH}.ends tb_bandgap\nXTB tb_bandgap\n`));
+  assert.equal(r.status, 201, JSON.stringify((await r.json()).errors));
+  const m = await hier(await doc(), TB.replace(/\.subckt demarrage([^\n]*)/, '.subckt demarrage$1 macro=1'));
+  assert.equal(m.status, 201);
+  assert.deepEqual((await m.json()).macroModels, ['demarrage']);
+});
