@@ -80,6 +80,13 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
   Q2, aucun fil ne croise une colonne), sa sortie est câblée au bus vref, la résistance de polarisation de l'OTA
   boucle de sa sortie vers `ibias`, le port vref est au bout du bus et la boîte de démarrage nomme ses broches. Les
   noms des bipolaires sont hors du cercle. `vb` reste une étiquette : le diviseur est à gauche de la colonne Q1.
+- **Comparateur StrongARM** (demande de l'Orchestrateur, 07.11) : les colonnes générales mêlaient les deux paires
+  croisées et le dessin échouait à son propre LVS géométrique. `strongarmCore` reconnaît le cœur nu (lecture
+  `strongarmReading` de `lib/place-strongarm.js`, sans inverseurs de sortie, avec queue, précharges par paires) et
+  le dessine comme les manuels dans un cadre « strongarm » : P croisés en haut (précharges de sortie à l'extérieur,
+  précharges des nœuds internes plus loin), N croisés au-dessous, paire d'entrée, queue sur l'axe ; le X des grilles
+  croisées par deux verticales et deux horizontales décalées, ports de sortie vers l'extérieur, `clk` en étiquette.
+  Avec des inverseurs de sortie, la lecture générale reste. Test : `test/strongarm-manuel.test.js`.
 - Valeurs en notation ingénieur (`100 kΩ`, `497 fF`), W/L en µm, modèle pour les bipolaires.
 
 ## Doigts en parallèle (m=N)
