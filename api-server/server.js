@@ -32,6 +32,7 @@ import * as critic from './lib/critic.js';
 import * as exportAsc from './lib/export-asc.js';
 import { rewire } from './lib/rewire.js';
 import { withGroundAlias } from './lib/ground-alias.js';
+import { mergeFingers } from './lib/fingers.js';
 
 const argPort = process.argv.indexOf('--port');
 const PORT = argPort > -1 ? parseInt(process.argv[argPort + 1], 10)
@@ -381,6 +382,8 @@ app.post('/documents/:id/route', wrap(async (req, res) => {
 }));
 
 // ------------------------------------------------------------- EDA
+// the drawn device -> the fingers it stands for (parallel devices merged into m=N), when there are any
+const fingersOf = (parsed) => (Object.keys(parsed.merged || {}).length ? { fingers: parsed.merged } : {});
 app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   const entry = documents.getDoc(req.params.id);
   const m = model.getPage(entry.doc, req.query.page);
@@ -415,7 +418,8 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
       ...(ok ? {} : { error: 'hierarchical LVS failed' }), pages: r.pages, map: r.map, lvs: r.lvs, banks: r.banks, ...(r.macroModels ? { macroModels: r.macroModels } : {}) });
   }
   // a ground spelled vss / gnd (alone) is drawn as ground: one GND rail (lib/ground-alias.js)
-  const parsed = withGroundAlias(netlist.parseSpice(spice));
+  // parallel fingers of a layout extraction merged into m=N before any drawing (lib/fingers.js)
+  const parsed = mergeFingers(withGroundAlias(netlist.parseSpice(spice)));
   // kept with the document: the simulation annotations (lib/sim-annotate.js)
   // find nodes through the netlist that was drawn
   (entry.importNetlist ||= {})[req.query.page || ''] = spice;
@@ -487,7 +491,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     const report = lvs.compare(extracted, parsed);
     const decision = lvs.gate(report, { force });
     if (!decision.ok) return res.status(decision.status).json({ error: decision.error, report });
-    return res.status(decision.status).json({ ...placed, routed: placed.wires.length, lvs: report });
+    return res.status(decision.status).json({ ...placed, routed: placed.wires.length, lvs: report, ...fingersOf(parsed) });
   } else if (engine === 'manuel') {
     // lib/place-manuel.js: textbook drawing by rules (columns, mirror pairs,
     // bias/CMFB frames, label nets), only when its reading is sure; wires are
@@ -526,7 +530,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   const report = lvs.compare(extracted, parsed);
   const decision = lvs.gate(report, { force });
   if (!decision.ok) return res.status(decision.status).json({ error: decision.error, report });
-  const payload = { ...placed, routed: routed.ids.length, lvs: report };
+  const payload = { ...placed, routed: routed.ids.length, lvs: report, ...fingersOf(parsed) };
   if (decision.warnings) payload.warnings = decision.warnings;
   if (annReport) payload.annotations = annReport;
   res.status(decision.status).json(payload);

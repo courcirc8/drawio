@@ -82,6 +82,17 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
   noms des bipolaires sont hors du cercle. `vb` reste une étiquette : le diviseur est à gauche de la colonne Q1.
 - Valeurs en notation ingénieur (`100 kΩ`, `497 fF`), W/L en µm, modèle pour les bipolaires.
 
+## Doigts en parallèle (m=N)
+
+Une netlist extraite d'un layout a un dispositif par doigt (DIFFCC 18, TIABIAS2 30) : la lecture n'est pas sûre.
+Avant tout dessin (`netlist/import`, tous moteurs) et des deux côtés du LVS, les dispositifs identiques en
+parallèle n'en font qu'un, de multiplicateur `m=N` (somme des m), sous la première référence (ordre naturel),
+avec drain et source comme la plupart des doigts (source sur le bulk d'abord). Clé de fusion, la même que le
+schéma de layout3d (local_AI #468 + 965efff) : MOS (modèle, {drain, source} non ordonnés, grille, bulk, w, l, nf,
+ng, m) ; C (modèle, nœuds dans l'ordre, w, l, valeur) ; R (modèle, nœuds non ordonnés, w, l, valeur). La réponse
+de l'import donne `fingers` = {dispositif dessiné : ses doigts}. Code : `api-server/lib/fingers.js` ; test :
+`test/fingers.test.js`.
+
 ## Critère « sûr »
 
 `manuelReading` rend `null`, ou le moteur lève une erreur, et `auto` se replie sur les autres moteurs (inchangés), si :
