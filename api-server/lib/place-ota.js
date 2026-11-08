@@ -175,7 +175,13 @@ export async function imposeOta(model, O, parsed) {
     // the bias device left of the tail, far enough for its reference column to
     // pass left of the first input's port (its gate at gate(iA), port 40 + 64 px out)
     if (O.bias) {
-      const bb = ctr(O.bias), want = Math.min(gate(O.tail).x - Math.max(1.6 * W, 110), O.ref ? gate(O.iA).x - 150 - (gate(O.bias).x - drain(O.bias).x) : Infinity);   // no reference: no column to leave room for
+      // no reference and nothing else on the bias net but the tail and MOS capacitors (Eric's ota5t: ibias a
+      // port): no column to leave room for, the bias right beside the tail. Anything else on that net keeps
+      // the room its wiring needs (refractory, analoggenie/3063 crossed bodies when it closed in, 08.11)
+      const B0 = parsed.components.find((c) => c.ref === O.bias), nb = G(B0);
+      const lone = !O.ref && parsed.components.every((c) => !c.nodes.includes(nb) || c.ref === O.bias || c.ref === O.tail
+        || (isMos(c) && G(c) === nb && D(c) === S(c) && D(c) !== G(c)));
+      const bb = ctr(O.bias), want = Math.min(gate(O.tail).x - Math.max(1.6 * W, 110), lone ? Infinity : gate(O.iA).x - 150 - (gate(O.bias).x - drain(O.bias).x));
       move(O.bias, want - gate(O.bias).x, a.y + s * ROW - bb.y);
     }
     // the reference straight over (under, PMOS input) the bias drain
