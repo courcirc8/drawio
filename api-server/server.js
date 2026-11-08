@@ -485,6 +485,8 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     if (seedDoc && seedDoc.annotations) {
       annReport = annotate.applyAnnotations(model.getPage(entry.doc), seedDoc, { scale: annScale });
     }
+    // W/L under every name on this path too (review r3, B1): text only, after the route
+    annotateSizes(model.getPage(entry.doc), parsed);
     const lvsReport = lvs.compare(netlist.extractNetlist(model.getPage(entry.doc)), parsed);
     if (!lvsReport.match) throw model.httpError(422, 'final optimized document failed strict LVS');
     const optOut = {};
