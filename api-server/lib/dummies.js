@@ -8,10 +8,14 @@
  *   - between the pages the link is by NAME only: a dummy terminal on a net of page 1 (the protected device's
  *     drain, a signal node) gets a net label with that exact net name; no wire crosses pages.
  *
- * A dummy is a MOS marked `dummy=1` on its line (the layout3d format, agreed 08.11: `XM7 vss vss vss vss
- * sg13_lv_nmos w=1u l=0.13u dummy=1`), and nothing else (review r4: a device held off with its drain on a
- * signal, layout3d's XM25 on vtail, loads that node: it stays on page 1, as does any d=g=s device or MOS
- * capacitor without the mark).
+ * A dummy is (Eric 08.11: "the dummies must not be in the main schematic")
+ *   - a MOS marked `dummy=1` on its line (the layout3d format, agreed 08.11: `XM7 vss vss vss vss sg13_lv_nmos
+ *     w=1u l=0.13u dummy=1`), or
+ *   - a MOS whose drain, gate and source are one net, or
+ *   - a MOS that is always off: its gate tied to its own off rail (NMOS gate on a negative supply / ground,
+ *     PMOS gate on a positive supply), even with its drain on a signal (layout3d's XM25 on vtail, XM154 on von):
+ *     that terminal gets, on page 2, a net label of the signal's name, not a wire.
+ * A MOS capacitor (gate on a signal, drain and source on a rail) is not a dummy: it stays on page 1.
  * The device a dummy protects: the non-dummy MOS that shares a channel net with it, else the non-dummy MOS of
  * the same model and size (the array it ends), else none ("factices").
  *
@@ -32,6 +36,7 @@ import { annotation, Sheet, emit as emitSheets, placeTr, placeTwo, portVert, tap
 
 export const DUMMY_PAGE = 'factices';
 const isMos = (c) => c.prefix === 'M' && (c.nodes || []).length >= 3;
+const isP = (c) => /pmos|pfet|pch/i.test(String(c.model || c.value || ''));
 export const PARASITIC_TITLE = 'Parasites estimés (LVS ignore)';
 const parasitic = (c) => c.prefix === 'C' && (String(c.params?.lvs_ignore ?? '') === '1' || /(^|\s)lvs_ignore\s*=\s*1(\s|$)/i.test(String(c.value || '')));
 const flagged = (c) => String(c.params?.dummy ?? '') === '1' || /(^|\s)dummy\s*=\s*1(\s|$)/i.test(String(c.value || ''));
@@ -43,7 +48,10 @@ export function splitDummies(parsed) {
   const dummies = [];
   for (const c of parsed.components) {
     if (!isMos(c)) continue;
-    if (flagged(c)) dummies.push({ c, why: 'dummy=1' });
+    const [d, g, s] = c.nodes;
+    const why = flagged(c) ? 'dummy=1' : d === g && g === s ? 'bornes sur un seul net'
+      : (isP(c) ? pos(g) : neg(g)) ? 'grille au rail (toujours bloqué)' : null;
+    if (why) dummies.push({ c, why });
   }
   const pars = parsed.components.filter(parasitic);
   const dSet = new Set([...dummies.map((x) => x.c.ref), ...pars.map((c) => c.ref)]);
@@ -367,6 +375,30 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0), opts 
         if (!bad) cands.push({ len: a + b + (opts.port && !port ? 1000 : 0), port, side: q.x, o, p, k, e, r, pin, bent: !!q0, align: q.x ? (q.x < 0 ? 'right' : 'left') : 'center' });
       }
     }
+    // a .subckt pin with no room for its arrow at a pin or a dot (Eric's ota5t: vout runs drain to drain, both
+    // pins point into that one wire): a T on the net's own vertical wire, a contact dot, the arrow on a
+    // horizontal stub; the wire is split at the dot (two wires, same net)
+    if (opts.port && !cands.some((c) => c.port)) {
+      for (const e of cells.filter((x) => x.kind === 'edge' && gids.has(groups.get(x.id)))) {
+        const pl = polylineOf(e, byId) || [];
+        for (let i = 1; i < pl.length; i++) {
+          const [u, v] = [pl[i - 1], pl[i]];
+          if (Math.abs(u.x - v.x) >= 1 || Math.abs(u.y - v.y) < 60) continue;
+          const y0 = Math.min(u.y, v.y) + 20, y1 = Math.max(u.y, v.y) - 20, ym = Math.round((u.y + v.y) / 2);
+          const ys = [ym]; for (let t = 10; ym - t >= y0 || ym + t <= y1; t += 10) { if (ym - t >= y0) ys.push(ym - t); if (ym + t <= y1) ys.push(ym + t); }
+          for (const y of ys) for (const sg of [1, -1]) for (const b of [30, 45, 60]) {
+            const p = { x: u.x, y }, k = { x: u.x + sg * b, y };
+            const r = { x: sg < 0 ? k.x - pb.w : k.x, y: y - pb.h / 2, w: pb.w, h: pb.h }, rr = { x: r.x - 3, y: r.y - 3, w: r.w + 6, h: r.h + 6 };
+            const along = []; for (let t = 6; t <= b; t += 2) along.push({ x: p.x + sg * t, y });
+            const dot = (q) => ({ x: q.x - 0.5, y: q.y - 0.5, w: 1, h: 1 });
+            if (boxes.some((bx) => hit(rr, bx) || along.some((q) => hit(dot(q), bx)))) continue;
+            if (segs.some(([a2, b2]) => hit(rr, segBox(a2, b2, 0.5)) || along.some((q) => hit(dot(q), segBox(a2, b2, 0.5))))) continue;
+            cands.push({ len: 500 + b + Math.abs(y - ym) / 10, port: true, side: sg, tap: { e, i, pl }, o: null, p, k, e: k, r,
+              pin: sg < 0 ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 }, bent: false, align: sg < 0 ? 'right' : 'left' });
+          }
+        }
+      }
+    }
     if (!cands.length) {
       // no free place for a label: the name goes on one of the net's wires (it names the net, lib/netlist.js)
       // the wire whose middle (where drawio prints the name) is farthest from a dot or a pin: a name printed on
@@ -393,12 +425,27 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0), opts 
     let style = PORT_TEXT(c.align), tpin = c.pin;
     // drawio turns the anchors with direction=west: the pin named in the unturned frame (lib/place-manuel.js)
     if (c.port) { const ps = portStyleFor(net, c.side); style = ps.style; if (ps.west) tpin = { x: 1 - c.pin.x, y: c.pin.y }; }
+    if (c.tap) { c.o = tapWire(m, c.tap, c.p); boxes.push({ id: c.o.id, x: c.p.x - 4, y: c.p.y - 4, w: 8, h: 8 }); }
     const lbl = addVertex(m, { id: freshId(m, c.port ? 'P_' : 'NL_'), style, x: c.r.x, y: c.r.y, w: c.r.w, h: c.r.h, value: net });
     addWire(m, { source: c.o.id, target: lbl.getAttribute('id'), sourcePin: c.o.pin, targetPin: tpin, style: STUB, ...(c.bent ? { points: [c.k] } : {}) });
     boxes.push({ id: lbl.getAttribute('id'), ...c.r }); segs.push([c.p, c.k], [c.k, c.e]);
     out.push({ net, at: c.o.id, clear: !c.forced, on: c.port ? 'port' : 'label' });
   }
   return out;
+}
+
+/** split edge `e` at point `p` of its segment `i` (polyline `pl`) with a contact dot -> the dot as a stub origin */
+function tapWire(m, { e, i, pl }, p) {
+  const J = addVertex(m, { id: freshId(m, 'JT_'), style: 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;', x: p.x - 4, y: p.y - 4, w: 8, h: 8, value: '' });
+  const jid = J.getAttribute('id'), mid = { x: 0.5, y: 0.5 };
+  const bare = String(e.styleRaw || '').split(';').filter((kv) => kv && !/^(exit|entry)(X|Y|Dx|Dy|Perimeter|Name)=/.test(kv)).join(';') + ';';
+  const pinOf = (pre) => { const x = e.style.map.get(pre + 'X'), y = e.style.map.get(pre + 'Y'); if (x == null || y == null) return undefined;
+    const n = e.style.map.get(pre + 'Name'); return { x: +x, y: +y, ...(n != null ? { name: n } : {}) }; };
+  const sp = pinOf('exit'), tp = pinOf('entry');
+  deleteCell(m, e.id);
+  addWire(m, { source: e.source, target: jid, sourcePin: sp, targetPin: mid, style: bare, points: pl.slice(1, i) });
+  addWire(m, { source: jid, target: e.target, sourcePin: mid, targetPin: tp, style: bare, points: pl.slice(i, -1) });
+  return { id: jid, pin: mid, own: jid, p };
 }
 
 /** a name page 1 could not print at all (no pin, no dot of that net to hang it on), said, never silent. For a

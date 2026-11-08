@@ -50,12 +50,32 @@ test('engine=auto: every pin of a layout3d cell is named on page 1', async () =>
   }
   assert.match(String(cells.find((x) => x.value === 'ibias').style), /portDirection=input/, 'the bias current enters');
   assert.deepEqual((body.pinLabels || []).filter((l) => l.on !== 'port').map((l) => l.net), []);
-  // review r4 (2): XM25 (held off, drain on vtail) and XM154 (held off, drain on von) are not dummies: on page 1,
-  // each on its partner's row, outside: XM25 beside the tail XM90 (the side away from the bias), XM154 beside the
-  // mirror diode XM155, away from XM156
-  const row = (u, v) => Math.abs((u.y + u.h / 2) - (v.y + v.h / 2)) < 1;
-  assert.ok(at('XM25') && at('XM154'), 'XM25 / XM154 missing from page 1');
-  assert.ok(row(at('XM25'), t) && at('XM25').x > t.x + t.w, 'XM25 not right of the tail, on its row');
-  assert.ok(row(at('XM154'), at('XM155')) && at('XM154').x + at('XM154').w < at('XM155').x, 'XM154 not left of XM155, on its row');
-  assert.equal(body.dummies.count, 132, 'only the dummy=1 devices (XM1 ×48, XM67 ×54, XM139 ×30) on page 2');
+  // Eric 08.11 (corrects review r4 (2)): XM25 (always off, drain on vtail) and XM154 (always off, drain on von) are
+  // dummies: page 2, with the dummy=1 ones (XM1 ×48, XM67 ×54, XM139 ×30, XM25 ×2, XM154 ×2)
+  assert.ok(!at('XM25') && !at('XM154'), 'XM25 / XM154 on page 1');
+  assert.equal(body.dummies.count, 136);
+});
+
+// Eric 08.11: "no pins added, just name the net": the PORTS drawn are exactly the .subckt's pins (supplies drawn as
+// their symbols); an internal net (vtail, von: not pins here) gets a plain net label, on both pages
+const PINS = fs.readFileSync(new URL('./fixtures/layout3d/ota5t_cell_pins.sp', import.meta.url), 'utf8');
+test('engine=auto: the ports drawn are the .subckt pins, an internal net only a name (both pages)', async () => {
+  const id = (await (await fetch(BASE + '/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).id;
+  const r = await fetch(`${BASE}/documents/${id}/netlist/import?engine=auto`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: PINS });
+  const body = await r.json();
+  assert.equal(r.status, 201, JSON.stringify(body).slice(0, 300));
+  const pins = PINS.match(/^\.subckt\s+\S+\s+(.*)$/m)[1].trim().split(/\s+/).filter((n) => !/^(power|ground)_/.test(n));
+  const arrows = (cs) => cs.filter((c) => /apiShape=port/.test(String(c.style)) && /shape=(single|double)Arrow/.test(String(c.style))).map((c) => c.value);
+  const p1 = await (await fetch(`${BASE}/documents/${id}/cells`)).json();
+  assert.deepEqual(arrows(p1).sort(), [...pins].sort(), 'page 1: one port per .subckt pin, no other');
+  for (const n of ['vtail', 'von']) {
+    const c = p1.filter((x) => x.value === n);
+    assert.equal(c.length, 1, `${n} named once on page 1`);
+    assert.doesNotMatch(String(c[0].style), /Arrow/, `${n} is a net label, not a port arrow`);
+  }
+  const p2 = await (await fetch(`${BASE}/documents/${id}/cells?page=factices`)).json();
+  assert.deepEqual(arrows(p2), [], 'page 2: no port arrow');
+  for (const r2 of ['XM25', 'XM154']) assert.ok(p2.some((c) => c.refdes === r2), `${r2} on page 2`);
+  for (const n of ['vtail', 'von']) assert.ok(p2.some((c) => c.kind === 'vertex' && c.value === n && !/Arrow/.test(String(c.style))), `${n}: a label on page 2`);
+  assert.equal(body.dummies.count, 136);
 });

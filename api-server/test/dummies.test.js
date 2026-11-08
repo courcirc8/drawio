@@ -40,21 +40,20 @@ const newDoc = async () => (await (await fetch(BASE + '/documents', { method: 'P
 const imp = (id, text, engine) => fetch(`${BASE}/documents/${id}/netlist/import?engine=${engine}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text });
 const docOf = async (id) => parseDrawio(await (await fetch(`${BASE}/documents/${id}`)).text());
 
-test('detection: dummy=1 and nothing else; held-off, d=g=s and MOS capacitors without the mark stay on page 1', () => {
+test('detection: dummy=1 honoured as written, d=g=s, gate on its off rail; a MOS capacitor is not a dummy', () => {
   const s = splitDummies(prep(OTA));
   assert.deepEqual(s.dummies.map((x) => x.c.ref).sort(), DUMMIES);
-  for (const x of s.dummies) assert.equal(x.why, 'dummy=1');
-  // review r4 (2): layout3d's ota5t, XM25 (gate on ground, drain on vtail) and XM154 (gate on power, drain on
-  // von) carry no dummy=1: they load signal nodes and stay on page 1; only XM1, XM67, XM139 leave it
+  assert.equal(s.dummies.find((x) => x.c.ref === 'XD1').why, 'dummy=1');
+  assert.equal(s.dummies.find((x) => x.c.ref === 'XD4').why, 'bornes sur un seul net');
+  assert.match(s.dummies.find((x) => x.c.ref === 'XD3').why, /grille au rail/);
+  // Eric 08.11 (corrects review r4 (2)): layout3d's ota5t, XM25 (gate on ground, drain on vtail) and XM154 (gate
+  // on power, drain on von) carry no dummy=1 but are always off: dummies, on page 2, with XM1, XM67, XM139
   const cell = fs.readFileSync(new URL('./fixtures/layout3d/ota5t_cell.sp', import.meta.url), 'utf8');
   const l3 = splitDummies(orientSupplies(mergeFingers(withGroundAlias(unwrapSingleSubckt(parseSpice(cell))))).parsed);
-  assert.deepEqual(l3.dummies.map((x) => x.c.ref).sort(), ['XM1', 'XM139', 'XM67']);
-  for (const r of ['XM25', 'XM154']) assert.ok(l3.main.components.some((c) => c.ref === r), r + ' on page 1');
-  // a group lists only marked dummies; the title counts them alone (48 × XM1, not XM25's 2 added)
-  for (const g of l3.groups) for (const c of g.items) assert.ok(['XM1', 'XM67', 'XM139'].includes(c.ref), c.ref);
-  assert.ok(l3.groups.some((g) => /: 48 × sg13_lv_nmos 5\/2,/.test(g.title)), l3.groups.map((g) => g.title).join(' | '));
-  const off = splitDummies(prep('M1 out in 0 0 nmos W=1u L=1u\nM2 out 0 0 0 nmos W=1u L=1u\nM3 0 0 0 0 nmos W=1u L=1u\nR1 vdd out 1k\n.end'));
-  assert.deepEqual(off.dummies, [], 'held off (M2) and d=g=s (M3), unmarked: not dummies');
+  assert.deepEqual(l3.dummies.map((x) => x.c.ref).sort(), ['XM1', 'XM139', 'XM154', 'XM25', 'XM67']);
+  for (const r of ['XM25', 'XM154']) assert.ok(!l3.main.components.some((c) => c.ref === r), r + ' not on page 1');
+  // the MOS capacitor XM85 (gate on ibias, drain and source on ground) stays on page 1
+  assert.ok(l3.main.components.some((c) => c.ref === 'XM85'), 'XM85 (MOS capacitor) on page 1');
   // dummy=1 alone decides: this gate is on a signal, nothing else would call it a dummy
   const flag = splitDummies(prep('M1 out in 0 0 nmos W=1u L=1u\nM2 a in 0 0 nmos W=1u L=1u dummy=1\nR1 vdd out 1k\nR2 vdd a 1k\n.end'));
   assert.deepEqual(flag.dummies.map((x) => [x.c.ref, x.why]), [['M2', 'dummy=1']]);
