@@ -30,8 +30,8 @@ export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail'
   for (const g of groups) {
     const snap = Array.from(model.childNodes).map((n) => n.cloneNode(true));
     const snapIds = new Set(allCells(model).map((n) => n.getAttribute('id')));
-    // review r3 (e): the snapshot is restored as fresh clones, so a second undo after a second try (the forced
-    // redraw) gets the state before the rail again, not nodes the first restore handed to the retry
+    // review r3 (e): the snapshot is restored as fresh clones, never the snapshot's own nodes (a restored node that
+    // a later try edits would no longer be the state before the rail: sky130_ota_5t's orphan dots)
     const undo = () => { while (model.firstChild) model.removeChild(model.firstChild); for (const n of snap) model.appendChild(n.cloneNode(true)); };
     const ok = mode === 'branch' ? await perBranch(model, g) : await oneRail(model, g);
     if (!ok) { undo(); warnings.push(`rail ${g.name || g.kind}: not redrawn (no line fits its pins), drawn as the placer left it`); continue; }
@@ -39,17 +39,11 @@ export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail'
     // the cells (not the model's children: one root) present before this rail: only the rail's new wires are judged
     const before = snapIds;
     const fresh = new Set(allCells(model).map(cellInfo).filter((c) => c.kind === 'edge' && !before.has(c.id)).map((c) => c.id));
-    let onBody = wiresOnBody(model, fresh);
-    if (onBody.length && mode !== 'branch') {
-      // review r2 (B1): only the pins whose drop crosses a body are routed; the rail stays one line (rule 5)
-      const cells = new Map(allCells(model).map(cellInfo).map((c) => [c.id, c]));
-      const force = new Set(onBody.map((x) => cells.get(x.split(' / ')[0])).filter(Boolean)
-        .map((e) => `${e.source}|${Number(e.style.map.get('exitX') ?? 0.5)}|${Number(e.style.map.get('exitY') ?? 0.5)}`));
-      undo();
-      await oneRail(model, g, force);
-      const fresh2 = new Set(allCells(model).map(cellInfo).filter((c) => c.kind === 'edge' && !before.has(c.id)).map((c) => c.id));
-      onBody = wiresOnBody(model, fresh2);
-    }
+    const onBody = wiresOnBody(model, fresh);
+    // review r3 (E4): no second try with the crossing pins forced to the router. Once only the rail's own wires are
+    // judged (the fix above), a crossing comes from the rail LINE through a body, which routing a pin does not
+    // change: in every fixture the forced retry crossed again (benoitlx_miller C1 -> M1, brokaw_bloc XMPL0 -> XMD),
+    // and the whole bench draws the same without it. The rail stays as the placer left it, and that is said.
     if (onBody.length) { undo(); warnings.push(`rail ${g.name || g.kind}: not redrawn (its wire would cross ${onBody.map((x) => x.split(' / ')[1]).join(', ')}), drawn as the placer left it`); continue; }
     if (fixDots) await fixDots(model);
     // Eric 08.11: the rail is the rule. A checker that counts more errors does not undo it; it is reported.
@@ -103,7 +97,7 @@ const drawn = (c) => {
 };
 
 /** One line, one symbol. */
-async function oneRail(model, g, force = new Set()) {
+async function oneRail(model, g) {
   const cs = allCells(model).map(cellInfo), byId = new Map(cs.map((c) => [c.id, c]));
   const parts = cs.filter((c) => c.kind === 'vertex' && c.x != null && !g.symbols.includes(c.id) && !String(c.id).startsWith('LBL_') && c.style.map.get('contactDot') !== '1').map(drawn);
   if (!parts.length) return false;
@@ -146,7 +140,7 @@ async function oneRail(model, g, force = new Set()) {
   const seen = new Set();
   for (const p of g.pins) {
     const k = `${p.part}|${p.rel.x}|${p.rel.y}`; if (seen.has(k)) continue; seen.add(k);
-    const straight = !force.has(k) && !blocked(p) && (down ? p.at.y <= y : p.at.y >= y);
+    const straight = !blocked(p) && (down ? p.at.y <= y : p.at.y >= y);
     // a pin whose straight drop crosses a body (review r2, B1): a jog out of its own side, then down (up) to the
     // line, when that path is clear; the router only if not
     // also a side pin blocked by nothing but its own body (a flipped MOS's gate on the rail, sky130_ota_5t): the
