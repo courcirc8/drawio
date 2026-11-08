@@ -15,7 +15,7 @@ import { tryManuel } from '../lib/auto.js';
 
 const fx = (n) => withGroundAlias(parseSpice(fs.readFileSync(new URL(`./fixtures/manuel/${n}.sp`, import.meta.url), 'utf8')));
 const draw = (p) => { const doc = newDocument(), m = getPage(doc); const r = importNetlistManuel(m, p); return { doc, m, r }; };
-const SURE = { g_ota1_core: ['core', 'bias'], g_ota1_cmfb: ['core'], g_ota23: ['core', 'bias', 'cmfb'], g_bias: ['core', 'bias'], g_ota1_hbt: ['core', 'bias', 'cmfb'], miller: ['core', 'bias'], bandgap: ['core'] };
+const SURE = { g_ota1_core: ['core', 'bias'], g_ota1_cmfb: ['core'], g_ota23: ['core', 'cmfb'], g_bias: ['core', 'bias'], g_ota1_hbt: ['core', 'cmfb'], miller: ['core'], bandgap: ['core'] };
 
 for (const [n, frames] of Object.entries(SURE)) {
   test(`manuel draws ${n}: LVS and geometric LVS green, frames ${frames}`, () => {

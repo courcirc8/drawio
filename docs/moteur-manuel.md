@@ -80,7 +80,49 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
   Q2, aucun fil ne croise une colonne), sa sortie est câblée au bus vref, la résistance de polarisation de l'OTA
   boucle de sa sortie vers `ibias`, le port vref est au bout du bus et la boîte de démarrage nomme ses broches. Les
   noms des bipolaires sont hors du cercle. `vb` reste une étiquette : le diviseur est à gauche de la colonne Q1.
+- **Comparateur StrongARM** (demande de l'Orchestrateur, 07.11) : les colonnes générales mêlaient les deux paires
+  croisées et le dessin échouait à son propre LVS géométrique. `strongarmCore` reconnaît le cœur nu (lecture
+  `strongarmReading` de `lib/place-strongarm.js`, sans inverseurs de sortie, avec queue, précharges par paires) et
+  le dessine comme les manuels dans un cadre « strongarm » : P croisés en haut (précharges de sortie à l'extérieur,
+  précharges des nœuds internes plus loin), N croisés au-dessous, paire d'entrée, queue sur l'axe ; le X des grilles
+  croisées par deux verticales et deux horizontales décalées, ports de sortie vers l'extérieur, `clk` en étiquette.
+  Avec des inverseurs de sortie, la lecture générale reste. Test : `test/strongarm-manuel.test.js`.
 - Valeurs en notation ingénieur (`100 kΩ`, `497 fF`), W/L en µm, modèle pour les bipolaires.
+
+## Doigts en parallèle (m=N)
+
+Une netlist extraite d'un layout a un dispositif par doigt (DIFFCC 18, TIABIAS2 30) : la lecture n'est pas sûre.
+Avant tout dessin (`netlist/import`, tous moteurs) et des deux côtés du LVS, les dispositifs identiques en
+parallèle n'en font qu'un, de multiplicateur `m=N` (somme des m), sous la première référence (ordre naturel),
+avec drain et source comme la plupart des doigts (source sur le bulk d'abord). Clé de fusion, la même que le
+schéma de layout3d (local_AI #468 + 965efff) : MOS (modèle, {drain, source} non ordonnés, grille, bulk, w, l, nf,
+ng, m) ; C (modèle, nœuds dans l'ordre, w, l, valeur) ; R (modèle, nœuds non ordonnés, w, l, valeur). La réponse
+de l'import donne `fingers` = {dispositif dessiné : ses doigts}. Code : `api-server/lib/fingers.js` ; test :
+`test/fingers.test.js`.
+
+## Rails d'alimentation : positif en haut, négatif en bas (Eric, 08.11)
+
+Règle obligatoire, tous moteurs. La polarité d'une alimentation vient de son nom et des MOS, jamais du coût de
+placement (`api-server/lib/supply-orient.js`) :
+- nom : `power_*`, `vdd*`, `vcc*`, `avdd*`… → positive ; `ground_*`, `vss*`, `gnd*`, `0`, `agnd*`… → négative ;
+- MOS : bulk de PMOS → positive, bulk de NMOS → négative (un net sans nom d'alimentation ne compte que s'il ne
+  porte que des bulks et des sources) ; nom et MOS en désaccord → avertissement, le nom l'emporte.
+
+Avant tout dessin, un PMOS dont le drain est sur une alimentation positive et la source non est retourné
+(drain ↔ source ; NMOS : alimentation négative). Une extraction de layout nomme drain et source comme elle les
+trouve (LOADMIR : XM5 drain sur `power_ana`). Le LVS netlist (`lib/lvs.js`) traite drain et source d'un MOS comme
+interchangeables, comme tout LVS.
+
+Alimentation unique sans masse (LOADMIR de layout3d) : la lecture `manuel` a un seul rail, en haut ; les PMOS
+pendent dessous sur une rangée, sources en haut. Un transistor en diode avec sa source de courant de polarisation
+en série (référence de miroir + `I`) est dans le cœur, à côté de la queue qu'il recopie, pas dans un cadre
+Polarisation en bas ; sa source `I` n'a pas de port.
+
+`drawRails` (`lib/rails.js`) ne défait plus un rail que le contrôleur pénalise : il le garde et l'écrit dans
+`warnings`. La réponse de l'import donne `supply` = {`polarity`, `swapped`, `warnings`}. Contrôle :
+`supplyOrderViolations` (chaque MOS sur l'alimentation positive au-dessus de chaque MOS sur la négative) ;
+test `test/supply-rails.test.js` (LOADMIR d'abord, puis OTA 5T N/P, Miller N/P, folded, StrongARM, g_bias,
+bandgap en `auto` et en `manuel`).
 
 ## Critère « sûr »
 

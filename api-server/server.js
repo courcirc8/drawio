@@ -31,7 +31,9 @@ import * as annotate from './lib/annotate.js';
 import * as critic from './lib/critic.js';
 import * as exportAsc from './lib/export-asc.js';
 import { rewire } from './lib/rewire.js';
+import { orientSupplies, supplyOrderWarnings } from './lib/supply-orient.js';
 import { withGroundAlias } from './lib/ground-alias.js';
+import { mergeFingers } from './lib/fingers.js';
 
 const argPort = process.argv.indexOf('--port');
 const PORT = argPort > -1 ? parseInt(process.argv[argPort + 1], 10)
@@ -381,6 +383,8 @@ app.post('/documents/:id/route', wrap(async (req, res) => {
 }));
 
 // ------------------------------------------------------------- EDA
+// the drawn device -> the fingers it stands for (parallel devices merged into m=N), when there are any
+const fingersOf = (parsed) => (Object.keys(parsed.merged || {}).length ? { fingers: parsed.merged } : {});
 app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   const entry = documents.getDoc(req.params.id);
   const m = model.getPage(entry.doc, req.query.page);
@@ -415,7 +419,13 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
       ...(ok ? {} : { error: 'hierarchical LVS failed' }), pages: r.pages, map: r.map, lvs: r.lvs, banks: r.banks, ...(r.macroModels ? { macroModels: r.macroModels } : {}) });
   }
   // a ground spelled vss / gnd (alone) is drawn as ground: one GND rail (lib/ground-alias.js)
-  const parsed = withGroundAlias(netlist.parseSpice(spice));
+  // parallel fingers of a layout extraction merged into m=N before any drawing (lib/fingers.js), then the MOS
+  // turned to face their supply: positive on top, negative at the bottom (Eric 08.11, lib/supply-orient.js)
+  const oriented = orientSupplies(mergeFingers(withGroundAlias(netlist.parseSpice(spice))));
+  const parsed = oriented.parsed;
+  // what the supply rule did, in every import response: polarity read, MOS turned, name/polarity disagreements
+  const supply = { polarity: oriented.polarity, ...(oriented.swapped.length ? { swapped: oriented.swapped } : {}),
+    ...(oriented.warnings.length ? { warnings: oriented.warnings } : {}) };
   // kept with the document: the simulation annotations (lib/sim-annotate.js)
   // find nodes through the netlist that was drawn
   (entry.importNetlist ||= {})[req.query.page || ''] = spice;
@@ -462,7 +472,9 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     if (!lvsReport.match) throw model.httpError(422, 'final optimized document failed strict LVS');
     return res.status(201).json({ engine: (usedEngine === 'v3' ? 'place3+optimize' : String(usedEngine).startsWith('v4') ? 'place4+optimize' : 'place2+optimize') + (engine === 'auto' ? ' (auto)' : ''), score: best.score,
       metrics: best.metrics, params: best.params, history, lvs: lvsReport,
-      components: best.placed.components, wires: best.placed.wires,
+      components: best.placed.components, wires: best.placed.wires, supply: (() => {
+        const w = supplyOrderWarnings(model.allCells(model.getPage(entry.doc)).map(model.cellInfo), parsed);
+        return w.length ? { ...supply, warnings: [...(supply.warnings || []), ...w] } : supply; })(),
       ...(annReport ? { annotations: annReport } : {}) });
   }
   // Four engines now, from two lines of work merged 2026-08-31: v1/v2 and elk
@@ -487,7 +499,10 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     const report = lvs.compare(extracted, parsed);
     const decision = lvs.gate(report, { force });
     if (!decision.ok) return res.status(decision.status).json({ error: decision.error, report });
-    return res.status(decision.status).json({ ...placed, routed: placed.wires.length, lvs: report });
+    // a rail kept against the checker, or not redrawn, is said (lib/rails.js): never a silent fallback
+    const railWarn = [...(win.polish?.rails?.warnings || []), ...supplyOrderWarnings(model.allCells(model.getPage(entry.doc)).map(model.cellInfo), parsed)];
+    const supplyOut = railWarn.length ? { ...supply, warnings: [...(supply.warnings || []), ...railWarn] } : supply;
+    return res.status(decision.status).json({ ...placed, routed: placed.wires.length, lvs: report, supply: supplyOut, ...fingersOf(parsed) });
   } else if (engine === 'manuel') {
     // lib/place-manuel.js: textbook drawing by rules (columns, mirror pairs,
     // bias/CMFB frames, label nets), only when its reading is sure; wires are
@@ -526,7 +541,10 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   const report = lvs.compare(extracted, parsed);
   const decision = lvs.gate(report, { force });
   if (!decision.ok) return res.status(decision.status).json({ error: decision.error, report });
-  const payload = { ...placed, routed: routed.ids.length, lvs: report };
+  // the supply order checked on the finished drawing, every engine (review r2): said, never silent
+  const orderWarn = supplyOrderWarnings(model.allCells(m).map(model.cellInfo), parsed);
+  const supplyOut = orderWarn.length ? { ...supply, warnings: [...(supply.warnings || []), ...orderWarn] } : supply;
+  const payload = { ...placed, routed: routed.ids.length, lvs: report, supply: supplyOut, ...fingersOf(parsed) };
   if (decision.warnings) payload.warnings = decision.warnings;
   if (annReport) payload.annotations = annReport;
   res.status(decision.status).json(payload);

@@ -32,6 +32,7 @@ import { manuelReading, chan, gateOf, isP, BIASNAME } from './manuel-reading.js'
 import { preserveElectricalData } from './electrical-data.js';
 import { geoLvs } from './geo-lvs.js';
 import { brokawReading, importBrokaw } from './place-brokaw.js';
+import { strongarmReading } from './place-strongarm.js';
 
 const ROW = 170, DEV_H = 110, MID = 100, RAIL_GAP = 40;
 const JUNCTION = 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;';
@@ -292,7 +293,9 @@ function layoutFrame(F, R, ctx) {
     const mirrorRefOf = (i) => {
       const ps = cols[i].parts;
       // diode-connected: the gate is the drain, above (N) or below (P, hanging from the top rail)
-      if (ps.length !== 1 || !isTr(ps[0].c) || (gateOf(ps[0].c) !== ps[0].up && gateOf(ps[0].c) !== ps[0].down)) return null;
+      // (Eric 08.11) or with its bias current source in series under (over) it, drawn in the same column
+      if (!isTr(ps[0].c) || (gateOf(ps[0].c) !== ps[0].up && gateOf(ps[0].c) !== ps[0].down)) return null;
+      if (ps.length > 2 || (ps.length === 2 && ps[1].c.prefix !== 'I')) return null;
       const g = gateOf(ps[0].c);
       const js = cols.map((col, k) => (k !== i && col.parts.some((p) => isTr(p.c) && gateOf(p.c) === g) ? k : -1)).filter((k) => k >= 0);
       // the tail on the axis first (Eric 07.11: the PMOS bias reference sits left, beside the tail it mirrors,
@@ -312,6 +315,13 @@ function layoutFrame(F, R, ctx) {
       if (cols[i].selfSym && !axisUsed) { order.axis.push(i); axisUsed = true; continue; }
       if (par != null && side[par] !== 0) { const L = side[par] < 0 ? order.L : order.R; L.splice(L.indexOf(par) + 1, 0, i); side[i] = side[par]; continue; }
       if (ctx.textbook !== false && mirrorRefOf(i) != null) continue;     // placed after the axis is known
+      // a lone column ending on the node of a paired column (a dummy beside a mirror's diode, LOADMIR 08.11):
+      // on that column's side, outermost, so the node does not cross the other half
+      if (!R.bot) {
+        const own = [cols[i].top, cols[i].bot].filter((n) => n && n !== R.top);
+        const sib = cols.findIndex((c, j) => j !== i && c.pair != null && side[j] !== 0 && c.parts.some((p) => own.includes(p.up) || own.includes(p.down)));
+        if (sib >= 0) { (side[sib] < 0 ? order.L : order.R).push(i); side[i] = side[sib]; continue; }
+      }
       order.R.push(i); side[i] = 1;
     }
     // the reference diode of the tail's mirror: outermost on the left, its gate toward the tail
@@ -451,6 +461,7 @@ function layoutFrame(F, R, ctx) {
   // bias current). Only when the net stays in this frame (else the label joins the frames).
   const biasBus = new Map();       // net -> refs of the other gates on the bus
   const biasRef = new Map();       // net -> x of the reference's drain (the bias input enters there, from below)
+  const biasSrc = new Set();       // bias nets whose reference column holds its current source (no port)
   if (ctx.textbook !== false) {
     for (const r of mirrorBar) {
       const c = F.parts.find((q) => q.ref === r);
@@ -459,6 +470,7 @@ function layoutFrame(F, R, ctx) {
       if (!ctx.labelNets.has(g) || !nodeCols.has(g)) continue;
       if ((ctx.allParts || F.parts).some((q) => !F.parts.includes(q) && q.nodes.includes(g))) continue;
       biasBus.set(g, F.parts.filter((q) => isTr(q) && gateOf(q) === g && !mirrorBar.has(q.ref)).map((q) => q.ref));
+      if (cols[colOfRef.get(r)].parts.length > 1) biasSrc.add(g);   // its current source is drawn: no input port
     }
   }
 
@@ -543,6 +555,8 @@ function layoutFrame(F, R, ctx) {
       // level, the bridge straight (the classic two-stage figure)
       else if (ctx.textbook !== false && !b && a.top && isTr(p.c) && F.chains.some((ch) => (ch.a === n && midNets.has(ch.b)) || (ch.b === n && midNets.has(ch.a)))) yNode.set(n, midY);
       // the last node of a column (a tail): at the level of the pin, sources joined by one line (Razavi)
+      // no bottom rail (one supply, LOADMIR 08.11): a step under the pins, so a node of several drains is a dotted T
+      else if (!b && isTr(p.c) && !R.bot) yNode.set(n, pinP(p.c.ref, 'bot').y + 30);
       else if (!b && isTr(p.c)) yNode.set(n, pinP(p.c.ref, 'bot').y);
       else yNode.set(n, rowY(a) + DEV_H + 30);
     });
@@ -555,6 +569,8 @@ function layoutFrame(F, R, ctx) {
   // the diode's gate-drain connection does not run over the drains of the other columns
   for (const g of biasBus.keys()) {
     const t = F.parts.find((q) => mirrorBar.has(q.ref) && gateOf(q) === g), gy = pinP(t.ref, 'gate').y;
+    // the reference holds its current source below (above): the node right past its drain, the source lower
+    if (biasSrc.has(g)) { const dn = gy < yNode.get(g); yNode.set(g, pinP(t.ref, dn ? 'bot' : 'top').y + (dn ? 30 : -30)); continue; }
     yNode.set(g, yNode.get(g) + (gy < yNode.get(g) ? 30 : -30));
   }
   // per net: points on its spine (x -> point), and drops already drawn
@@ -614,7 +630,9 @@ function layoutFrame(F, R, ctx) {
           biasRef.set(g, pinP(rf, gp.y < yNode.get(g) ? 'bot' : 'top').x);
         } else if (nodeCols.has(g) && !ctx.labelNets.has(g)) {
           // the diode / driving node: a drop from the bar to its spine, beside the driving column
-          const j = [...nodeCols.get(g)][0];
+          // the column of a bar device when it drives the node (the mirror's diode), not a neighbour on that node
+          const own = [...nodeCols.get(g)].filter((k) => cols[k].parts.some((q) => q.c.ref === c.ref || q.c.ref === o));
+          const j = own.length ? own[0] : [...nodeCols.get(g)][0];
           const xr = paired ? xs[j] + (xs[j] <= 0 ? 90 : -90) : mid.x + Math.sign(xs[j] - mid.x) * 15;
           S.path(g, { x: xr, y: gp.y }, { x: xr, y: yNode.get(g) }); addSpine(g, xr);
         } else if (satelliteNets.has(g)) satAt.set(g, { x: 0, y: gp.y - 0, dir: 0, bar: true });
@@ -624,6 +642,9 @@ function layoutFrame(F, R, ctx) {
       if (g === R.top || g === R.bot) {
         const e = { x: gp.x + dir * 30, y: gp.y };
         S.path(g, gp, e);
+        // one supply, no ground (LOADMIR 08.11): a gate on the supply of a top-row device rises to the rail, one
+        // symbol for the whole rail
+        if (!R.bot && g === R.top && cols[i].top === R.top && cols[i].parts[0] === p) { S.path(g, e, { x: e.x, y: yR }); continue; }
         S.path(g, e, { x: e.x, y: g === R.top ? e.y - 20 : e.y + 20 });
         ctx.localTaps.push({ sheet: S, net: g, p: { x: e.x, y: g === R.top ? e.y - 20 : e.y + 20 } });
         continue;
@@ -844,6 +865,7 @@ function layoutFrame(F, R, ctx) {
     // the outer end carries a bridge (a Miller R-C): the name goes on the inner end
     if (pts.length > 1 && bridgeEnd.has(`${n}@${xe}`)) { s = -s; xe = s > 0 ? pts[pts.length - 1] : pts[0]; }
     if (joinEnd.has(n) && pts.length > 1) { const xj = joinEnd.get(n); s = Math.abs(pts[pts.length - 1] - xj) >= Math.abs(pts[0] - xj) ? 1 : -1; xe = s > 0 ? pts[pts.length - 1] : pts[0]; }
+    if (biasSrc.has(n)) continue;  // the source in the reference column is the bias input
     if (biasRef.has(n)) {         // the bias current enters the reference's drain from below (above, for N)
       const xd = biasRef.get(n), dn = y > yR + (yG - yR) / 2 ? -1 : 1, q = { x: xd, y: y + dn * 30 };
       S.path(n, { x: xd, y }, q);
@@ -1145,6 +1167,96 @@ function importLadder(model, parsed, L) {
   return { geo, wires };
 }
 
+/* ------------------------------------------------------------ StrongARM */
+/** THE STRONGARM LATCH COMPARATOR as textbooks draw it (lib/place-strongarm.js's reading; Orchestrator 07.11: the
+ *  general columns mixed the two cross-coupled pairs and failed the geometric LVS):
+ *
+ *     clk ┤P9 P7├clk   P5 ╳ P6   clk┤P8 P10├ clk     precharge | cross-coupled PMOS | precharge
+ *       X ─────┘ A ─────┤    ├───── B └───── Y       outputs A / B, inner nodes X / Y
+ *                      N3 ╳ N4                       cross-coupled NMOS
+ *               inp ┤ N1    N2 ├ inn                 input pair, drains on the NMOS pair's sources
+ *                     clk ┤ tail                     clocked tail, centred
+ *
+ *  The X: the two left gates (P5, N3) on one vertical tied to B, the two right gates on one vertical tied to A,
+ *  each tie a horizontal from the far column (crossings without dots, T joins dotted). Only when the reading
+ *  covers every device (no output inverters, nothing else). */
+function strongarmCore(parsed) {
+  const R = strongarmReading(parsed);
+  if (!R || R.invA || !R.tail) return null;
+  const refs = [R.n1, R.n2, R.n3, R.n4, R.p5, R.p6, R.tail, R.p7, R.p8, R.p9, R.p10].filter(Boolean);
+  if (refs.length !== parsed.components.length) return null;
+  // the precharge devices come in pairs (P7/P8 on the outputs, P9/P10 on the inner nodes) or not at all
+  if (!R.p7 !== !R.p8 || !R.p9 !== !R.p10) return null;
+  return R;
+}
+function importStrongarm(model, parsed, R) {
+  const S = new Sheet(), by = new Map(parsed.components.map((c) => [c.ref, c]));
+  const { A, B, X, Y, T } = R.nodes;
+  const vdd = chan(by.get(R.p5))[0], gnd = chan(by.get(R.tail))[1];
+  const xA = -150, xB = 150, xP7 = xA - 200, xP8 = xB + 200, xP9 = xA - 380, xP10 = xB + 380, yR = 40;
+  const top = (v) => v.pinAbs[v.pinOf.top], bot = (v) => v.pinAbs[v.pinOf.bot];
+  const clkAt = [];                       // gate stubs carrying the clock (a label each, the tail's an input port)
+  const gate = (c, v, dir, far = 30) => { const g = S.term(gateOf(c), v, v.pinOf.gate); const e = { x: g.x + dir * far, y: g.y }; S.path(gateOf(c), g, e); return e; };
+  // row 1: the cross-coupled PMOS between the output precharges
+  const y1 = yR + 40;
+  const p5 = placeTr(S, by.get(R.p5), xA, y1, 1), p6 = placeTr(S, by.get(R.p6), xB, y1, -1);
+  const p7 = R.p7 && placeTr(S, by.get(R.p7), xP7, y1, -1), p8 = R.p8 && placeTr(S, by.get(R.p8), xP8, y1, 1);
+  const yA = bot(p5).y + 30;
+  // row 2: the cross-coupled NMOS between the inner-node precharges (hanging from the rail, further out)
+  const y2 = yA + 40;
+  const n3 = placeTr(S, by.get(R.n3), xA, y2, 1), n4 = placeTr(S, by.get(R.n4), xB, y2, -1);
+  const p9 = R.p9 && placeTr(S, by.get(R.p9), xP9, y2, -1), p10 = R.p10 && placeTr(S, by.get(R.p10), xP10, y2, 1);
+  const yX = bot(n3).y + 30;
+  // row 3: the input pair, row 4: the tail
+  const y3 = yX + 40;
+  const n1 = placeTr(S, by.get(R.n1), xA, y3, -1), n2 = placeTr(S, by.get(R.n2), xB, y3, 1);
+  const yT = bot(n1).y + 30;
+  const tail = placeTr(S, by.get(R.tail), 0, yT + 30, -1);
+  // the supply rail and every source hanging from it
+  const fromRail = [p5, p6, p7, p8, p9, p10].filter(Boolean);
+  for (const v of fromRail) S.path(vdd, S.term(vdd, v, v.pinOf.top), { x: top(v).x, y: yR });
+  const xs = fromRail.map((v) => top(v).x).sort((a, b) => a - b);
+  for (let k = 1; k < xs.length; k++) S.path(vdd, { x: xs[k - 1], y: yR }, { x: xs[k], y: yR });
+  S.path(vdd, { x: 0, y: yR - 20 }, { x: 0, y: yR }); S.term(vdd, tapVdd(S, vdd, { x: 0, y: yR - 20 }), 'S');
+  // the columns: outputs A / B between the PMOS and the NMOS, inner nodes X / Y between the NMOS and the inputs
+  const column = (net, upper, lower, y) => { S.path(net, S.term(net, upper, upper.pinOf.bot), { x: bot(upper).x, y }, S.term(net, lower, lower.pinOf.top)); };
+  column(A, p5, n3, yA); column(B, p6, n4, yA);
+  column(X, n3, n1, yX); column(Y, n4, n2, yX);
+  // the precharges onto their nodes
+  const pre = (v, net, y, x) => { if (!v) return; S.path(net, S.term(net, v, v.pinOf.bot), { x: bot(v).x, y }, { x, y }); };
+  pre(p7, A, yA, xA); pre(p8, B, yA, xB); pre(p9, X, yX, xA); pre(p10, Y, yX, xB);
+  // the X of the cross-coupled pairs: left gates (P5, N3) driven by B, right gates (P6, N4) by A
+  const gL = xA + 75, gR = xB - 75, yAt = yA - 15, yBt = yA + 15;
+  for (const [c, v] of [[by.get(R.p5), p5], [by.get(R.n3), n3]]) { const g = S.term(gateOf(c), v, v.pinOf.gate); S.path(B, g, { x: gL, y: g.y }); }
+  for (const [c, v] of [[by.get(R.p6), p6], [by.get(R.n4), n4]]) { const g = S.term(gateOf(c), v, v.pinOf.gate); S.path(A, g, { x: gR, y: g.y }); }
+  const gy = (v) => v.pinAbs[v.pinOf.gate].y;
+  S.path(B, { x: gL, y: gy(p5) }, { x: gL, y: gy(n3) }); S.path(B, { x: xB, y: yBt }, { x: gL, y: yBt });
+  S.path(A, { x: gR, y: gy(p6) }, { x: gR, y: gy(n4) }); S.path(A, { x: xA, y: yAt }, { x: gR, y: yAt });
+  // the outputs: an arrow outward from each output node (past its precharge)
+  const outX = (x0, s) => x0 + s * 40;
+  for (const [net, x0, s] of [[A, p7 ? bot(p7).x : xA, -1], [B, p8 ? bot(p8).x : xB, 1]]) {
+    const q = { x: outX(x0, s), y: yA };
+    S.path(net, { x: x0, y: yA }, q);
+    const pv = portVert(S, net, q, s, true, 'output'); S.term(net, pv, pv.portPin);
+  }
+  // the inputs and the clock
+  for (const [c, v, s] of [[by.get(R.n1), n1, -1], [by.get(R.n2), n2, 1]]) {
+    const e = gate(c, v, s, 40), pv = portVert(S, gateOf(c), e, s, true, 'input'); S.term(gateOf(c), pv, pv.portPin);
+  }
+  for (const [r, v, s] of [[R.p7, p7, -1], [R.p8, p8, 1], [R.p9, p9, -1], [R.p10, p10, 1]]) {
+    if (!v) continue;
+    const c = by.get(r), e = gate(c, v, s), pv = portVert(S, gateOf(c), e, s, false); S.term(gateOf(c), pv, pv.portPin);
+  }
+  { const c = by.get(R.tail), e = gate(c, tail, -1, 40), pv = portVert(S, gateOf(c), e, -1, true, 'input'); S.term(gateOf(c), pv, pv.portPin); }
+  // the tail node and the ground
+  S.path(T, S.term(T, n1, n1.pinOf.bot), { x: xA, y: yT }, { x: xB, y: yT }, S.term(T, n2, n2.pinOf.bot));
+  S.path(T, { x: 0, y: yT }, S.term(T, tail, tail.pinOf.top));
+  const g0 = S.term(gnd, tail, tail.pinOf.bot), q = { x: g0.x, y: g0.y + 20 };
+  S.path(gnd, g0, q); S.term(gnd, tapGnd(S, q), 'N');
+  const wires = emit(model, [S], parsed, new Set([vdd, gnd]));
+  return { geo: geoLvs(model), wires };
+}
+
 /* ------------------------------------------------------------ entry point */
 const TITLES = { bias: 'Polarisation', cmfb: 'CMFB', startup: 'Démarrage' };
 export function importNetlistManuel(model, parsed, opts = {}) {
@@ -1160,6 +1272,13 @@ export function importNetlistManuel(model, parsed, opts = {}) {
 }
 
 function drawManuel(model, parsed, opts) {
+  // the StrongARM latch comparator: its own textbook figure before the columns (they mix its cross-coupled pairs)
+  const SA = !opts.reading && strongarmCore(parsed);
+  if (SA) {
+    const { geo, wires } = importStrongarm(model, parsed, SA);
+    if (!geo.ok && !opts.noGeo) { const e = new Error('manuel: geometric LVS failed: ' + geo.errors.slice(0, 3).map((x) => x.msg).join('; ')); e.geo = geo; throw e; }
+    return { geo, engine: 'manuel', components: parsed.components.map((c) => c.ref), wires, frames: ['strongarm'] };
+  }
   const r = opts.reading || manuelReading(parsed, { textbook: opts.textbook });
   if (!r) {
     // a Brokaw bandgap (lib/place-brokaw.js), else a ladder between two buses

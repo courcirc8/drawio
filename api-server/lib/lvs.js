@@ -6,10 +6,13 @@
  */
 
 import { groundMapper } from './ground-alias.js';
+import { mergeFingers } from './fingers.js';
 
 /** @param extracted {components:[{ref,prefix,nodes,value}]} — from extractNetlist
  *  @param golden {components:[…]} — from parseSpice */
 export function compare(extracted, golden) {
+  // parallel identical devices are one device of multiplier m=N on both sides (lib/fingers.js)
+  extracted = mergeFingers(extracted); golden = mergeFingers(golden);
   const errors = [...(golden.warnings || []), ...(extracted.issues || []).filter(x => x.code !== 'anchor-name-stale')];
   const duplicates = cs => cs.filter((c,i) => cs.findIndex(d => d.ref.toUpperCase() === c.ref.toUpperCase()) !== i).map(c => c.ref);
   if (!golden.components.length) errors.push({code:'empty-reference'});
@@ -39,8 +42,10 @@ export function compare(extracted, golden) {
   // Symmetric two-terminal elements (R, C, L) are electrically identical
   // with swapped pins: canonicalize their terminal index so a reversed
   // resistor still matches.
+  // A MOS is symmetric too: drain and source (pins 0 and 2) are interchangeable, as in every LVS tool (a layout
+  // extraction names them as it finds them; lib/supply-orient.js turns them to face their supply).
   const SYMMETRIC = new Set(['R', 'C', 'L']);
-  const termId = (c, ref, i) => SYMMETRIC.has(c.prefix) ? ref + '.x' : ref + '.' + i;
+  const termId = (c, ref, i) => SYMMETRIC.has(c.prefix) ? ref + '.x' : c.prefix === 'M' && (i === 0 || i === 2) ? ref + '.ds' : ref + '.' + i;
   const termsA = new Map(), termsB = new Map(); // net -> terminal multiset
   // a ground spelled vss / gnd (alone, no `0`) is the ground on either side (lib/ground-alias.js)
   const gA = groundMapper(extracted.components), gB = groundMapper(golden.components);

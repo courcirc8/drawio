@@ -388,15 +388,45 @@ export function glueLabels(model, gap = 3) {
 /** Error count of the bench checker (tools/check.py) on a page, null on failure. */
 export async function checkerErrors(m) { return (await errorCount(m))?.n ?? null; }
 
+/** Two nets drawn on top of each other (rule 22, 22-contact) left by the placer's router, re-routed after the
+ *  rails are redrawn (refractory, 08.11: the old routed rail wire used to make the router lay them apart by
+ *  chance; a straight or jogged rail no longer does). Kept only when the checker counts fewer errors.
+ *  Fixed routes (rails, templates) are never touched. -> number of wires re-routed (0 = drawing unchanged) */
+export async function rerouteClashes(model, fix = fixDots) {
+  const r = await errorCount(model);
+  if (!r) return 0;
+  const edges = new Map(allCells(model).map(cellInfo).filter((c) => c.kind === 'edge').map((c) => [c.id, c]));
+  const ids = new Set();
+  for (const v of r.v.filter((x) => x.rule === '22' || x.rule === '22-contact')) {
+    for (const m of String(v.message || '').matchAll(/(?:fil|vs) (\S+)/g)) {
+      const e = edges.get(m[1]);
+      if (e && e.style.map.get('drawioApiFixedRoute') !== '1') ids.add(e.id);
+    }
+  }
+  if (!ids.size) return 0;
+  const snap = Array.from(model.childNodes).map((n) => n.cloneNode(true));
+  await routePage(model, [...ids], {});
+  if (fix) await fix(model);
+  const r2 = await errorCount(model);
+  if (r2 && r2.n < r.n) return ids.size;
+  while (model.firstChild) model.removeChild(model.firstChild);
+  for (const n of snap) model.appendChild(n.cloneNode(true));
+  return 0;
+}
+
 /** Contact dots as the bench checker wants them: rebuilt from the wires, then
  *  added where check.py finds a branch without one (rule 30) and removed where
  *  it finds one on a mere bend (dot-2way). */
 export async function fixDots(model) {
   try { rebuildLocalDots(model); } catch { /* none */ }
+  // the checker may name one missing branch dot per run (ota_5t ground rail, 08.11): repeat until none is left
+  let k = 0, last = '';
+  for (let pass = 0; pass < 6; pass++) {
   const r = await errorCount(model);
   const vs = (r?.v || []).filter((x) => (x.rule === '30' || x.rule === 'dot-2way') && Array.isArray(x.at));
-  if (!vs.length) return;
-  let k = 0;
+  const sig = JSON.stringify(vs.map((x) => [x.rule, x.at]));
+  if (!vs.length || sig === last) return;
+  last = sig;
   for (const x of vs) {
     const cells = allCells(model);
     const at = (el) => { const c = cellInfo(el); return c.kind === 'vertex' && c.style.map.get('contactDot') === '1' && Math.hypot(c.x + c.w / 2 - x.at[0], c.y + c.h / 2 - x.at[1]) < 1.5; };
@@ -404,5 +434,6 @@ export async function fixDots(model) {
     if (cells.some(at)) continue;
     while (cells.some((el) => el.getAttribute('id') === 'ST_DOT_' + k)) k++;
     addVertex(model, { id: 'ST_DOT_' + k++, x: x.at[0] - 3, y: x.at[1] - 3, w: 6, h: 6, style: 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;' });
+  }
   }
 }
