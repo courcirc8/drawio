@@ -29,11 +29,15 @@ export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail'
   const warnings = [];
   for (const g of groups) {
     const snap = Array.from(model.childNodes).map((n) => n.cloneNode(true));
-    const undo = () => { while (model.firstChild) model.removeChild(model.firstChild); for (const n of snap) model.appendChild(n); };
+    const snapIds = new Set(allCells(model).map((n) => n.getAttribute('id')));
+    // review r3 (e): the snapshot is restored as fresh clones, so a second undo after a second try (the forced
+    // redraw) gets the state before the rail again, not nodes the first restore handed to the retry
+    const undo = () => { while (model.firstChild) model.removeChild(model.firstChild); for (const n of snap) model.appendChild(n.cloneNode(true)); };
     const ok = mode === 'branch' ? await perBranch(model, g) : await oneRail(model, g);
     if (!ok) { undo(); warnings.push(`rail ${g.name || g.kind}: not redrawn (no line fits its pins), drawn as the placer left it`); continue; }
     // a rail wire through a part's body is a real defect, not a checker count: that rail stays as the placer drew it
-    const before = new Set(snap.map((n) => n.getAttribute && n.getAttribute('id')));
+    // the cells (not the model's children: one root) present before this rail: only the rail's new wires are judged
+    const before = snapIds;
     const fresh = new Set(allCells(model).map(cellInfo).filter((c) => c.kind === 'edge' && !before.has(c.id)).map((c) => c.id));
     let onBody = wiresOnBody(model, fresh);
     if (onBody.length && mode !== 'branch') {

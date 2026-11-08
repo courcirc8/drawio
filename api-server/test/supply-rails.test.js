@@ -193,3 +193,31 @@ test('E3 (r3): no rail wire runs through a name label', async () => {
   }
   assert.deepEqual(hits, []);
 });
+
+// REVIEW r3 (e): a rail that cannot be redrawn is undone to the very state before it: same cells, no stray
+// junction dot (the snapshot's nodes were handed back, then edited by the retry: sky130_ota_5t's orphan dots)
+test('(e) (r3): an undone rail leaves the drawing as it was', async () => {
+  const { drawRails } = await import('../lib/rails.js');
+  const { fixDots } = await import('../lib/straighten.js');
+  const { trial } = await import('../lib/auto.js');
+  process.env.AUTO_RAILS = 'off';
+  let t; try { t = await trial(raw('./fixtures/corpus-regress/benoitlx_miller.cir'), 'v4', null, {}, {}); } finally { delete process.env.AUTO_RAILS; }
+  const m = getPage(t.doc);
+  const groundWires = () => { const cs = allCells(m).map(cellInfo), gs = new Set(cs.filter((c) => /signal_ground/.test(c.styleRaw || '')).map((c) => c.id));
+    return cs.filter((c) => c.kind === 'edge' && (gs.has(c.source) || gs.has(c.target))).map((c) => `${c.id}:${c.styleRaw}`).sort(); };
+  const before = groundWires();
+  const { serialize } = await import('../lib/model.js');
+  const { execFileSync } = await import('node:child_process');
+  const os = await import('node:os'), path = await import('node:path');
+  // the bench checker's own word for a dot out of every wire (tools/check.py, rule dot-orphan)
+  const stray = () => { const f = path.join(os.tmpdir(), `rails-e-${process.pid}.drawio`); fs.writeFileSync(f, serialize(t.doc));
+    let out; try { out = execFileSync('python3', [new URL('../tools/check.py', import.meta.url).pathname, f, '--json'], { encoding: 'utf8' }); } catch (e) { out = e.stdout; } finally { fs.rmSync(f, { force: true }); }
+    return JSON.parse(out).violations.filter((v) => v.rule === 'dot-orphan').map((v) => JSON.stringify(v.at)).sort(); };
+  const stray0 = stray();
+  // the ground rail of this v4 drawing would cross M8: undone, its wires as the placer drew them
+  const out = await drawRails(m, { fixDots });
+  assert.ok((out.warnings || []).some((w) => /^rail ground: not redrawn/.test(w)), JSON.stringify(out));
+  assert.deepEqual(groundWires(), before);
+  // no junction dot left out of every wire that was not already so
+  assert.deepEqual(stray().filter((x) => !stray0.includes(x)), []);
+});
