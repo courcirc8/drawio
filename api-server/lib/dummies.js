@@ -108,7 +108,7 @@ export async function drawDummiesPage(doc, split, page1Nets) {
   for (const d of Array.from(doc.getElementsByTagName('diagram'))) if (d.getAttribute('name') === DUMMY_PAGE) d.parentNode.removeChild(d);
   addPage(doc, DUMMY_PAGE);
   const model = getPage(doc, DUMMY_PAGE);
-  // review #81 (2): page 1's devices vote, never a dummy's bulk (an internal mid on a well tie is no rail)
+  // review #81: a rail by its name only (a dummy's bulk or a follower's source-bulk node is no rail)
   const pol = supplyPolOf(split);
   const neg = (n) => n === '0' || pol.get(n) === 'neg', pos = (n) => pol.get(n) === 'pos';
   const sheets = [], rails = new Set();
@@ -422,10 +422,10 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0), opts 
       // stays unnamed ('none'), and the two-page LVS then refuses the drawing
       const o = origins[0];
       if (!o) {
-        // Orchestrator decision 08.11 (b): a .subckt pin that page 1 does not use at all (only page 2's dummies, or
-        // no device) is still a real pin: its port, on its own, under page 1's drawing (no pin is added). A supply
-        // never gets here: page 2 draws it (exempt above), and a net no device uses gets no polarity vote
-        if (opts.port && !page1NetsOf(split).has(net)) {
+        // Orchestrator decision 08.11 (b): a .subckt pin page 1 does not name, used by no page-1 device or named on
+        // page 2 (diffcc_bulk_pin's vp: bulks only on page 1, on the dummy XM1), is still a real pin: its port, on
+        // its own, under page 1's drawing (no pin is added). A name-recognised supply page 2 draws is exempt above
+        if (opts.port && (!page1NetsOf(split).has(net) || on2.has(net))) {
           const vs = cells.filter((c) => c.kind === 'vertex' && c.x != null && c.w);
           const x0 = vs.length ? Math.min(...vs.map((c) => c.x)) : 40, y0 = vs.length ? Math.max(...vs.map((c) => c.y + c.h)) : 40;
           const y = y0 + 40 + 36 * out.filter((l) => l.on === 'port' && l.alone).length;
@@ -477,23 +477,23 @@ function tapWire(m, { e, i, pl }, p) {
 export const unnamedWarnings = (labelled) => labelled.filter((l) => l.on === 'none')
   .map((l) => `net ${l.net}: not named on page 1 (no pin or dot of that net to hang its name on)`);
 
-/** Orchestrator decision 08.11 (a): a SUPPLY net (positive or negative by name or by its devices, ground and its
- *  alias) is global: drawn as a rail on each page, it never has to appear on page 1 for the pages to join (DIFFCC:
- *  vdd only on the dummy XM1 and on the pair's bulks). -> (net) => boolean
- *  Review #81 (2): the device vote counts page 1's devices only; a dummy or an lvs_ignore parasite never makes a
- *  net a supply (an internal `mid` tied to a dummy's bulk stays a signal). A net page 1 does not use at all (only
- *  on page 2) is a supply by its NAME only. */
+/** Orchestrator decision 08.11 (a): a SUPPLY net is global: drawn as a rail on each page, it never has to appear
+ *  on page 1 for the pages to join (DIFFCC: vdd only on the dummy XM1 and on the pair's bulks). -> (net) => boolean
+ *  Review #81 pass 2: a supply by its NAME only (supply-orient.js POS_NAME / NEG_NAME), node 0 and the ground
+ *  alias. A device vote never exempts a net: a PMOS follower's source tied to its bulk (an internal o) is a signal;
+ *  missing from page 1, it is a .subckt pin's port (b) or a 422 (c). */
 export function supplyNetsOf(split) {
   const pol = supplyPolOf(split), gnd = String(split.main?.groundAlias || '').toUpperCase();
-  return (n) => n === '0' || pol.has(n) || (gnd && String(n).toUpperCase() === gnd);
+  return (n) => n === '0' || pol.has(n) || (!!gnd && String(n).toUpperCase() === gnd);
 }
 
-/** split -> Map net -> 'pos'|'neg': page 1's devices vote (supply-orient.js); a net only page 2 uses goes by its
- *  name alone. The rails page 2 draws and the supplies supplyNetsOf exempts are the same nets. */
+/** split -> Map net -> 'pos'|'neg', by name (and the ground alias): the rails page 2 draws and the supplies
+ *  supplyNetsOf exempts are the same nets */
 export function supplyPolOf(split) {
-  const { pol } = supplyPolarity({ components: split.main.components }), p1 = page1NetsOf(split);
-  for (const n of page2NetsOf(split)) if (!p1.has(n) && !pol.has(n)) {
-    if (POS_NAME.test(n)) pol.set(n, 'pos'); else if (NEG_NAME.test(n)) pol.set(n, 'neg');
+  const pol = new Map(), gnd = String(split.main?.groundAlias || '').toUpperCase();
+  for (const n of new Set([...page1NetsOf(split), ...page2NetsOf(split)])) {
+    if (POS_NAME.test(n)) pol.set(n, 'pos');
+    else if (NEG_NAME.test(n) || (gnd && String(n).toUpperCase() === gnd)) pol.set(n, 'neg');
   }
   return pol;
 }

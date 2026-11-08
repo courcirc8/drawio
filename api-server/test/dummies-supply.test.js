@@ -87,19 +87,42 @@ test('(c) an internal net (tail) named on page 2 and erased from page 1: still 4
 const splitOf = (text) => splitDummies(orientSupplies(mergeFingers(withGroundAlias(unwrapSingleSubckt(parseSpice(text))))).parsed);
 const warned = (r, net) => (r.body.warnings || []).some((w) => w.startsWith(`net ${net}: not named on page 1`));
 
-test('#81 (6) a supply by its devices only (vp, bulk of the pair, no supply name): global as vdd', async () => {
-  assert.equal(supplyNetsOf(splitOf(fx('diffcc_bulk')))('vp'), true, 'vp a supply by the vote of page 1');
+test('#81 pass 2: a supply by its devices only (vp, no supply name) is no global supply: (c) a 422, (b) a pin\'s port', async () => {
+  assert.equal(supplyNetsOf(splitOf(fx('diffcc_bulk')))('vp'), false, 'vp exempt by no vote');
+  assert.equal(supplyNetsOf(splitOf(fx('diffcc')))('vdd'), true, 'vdd by its name');
   const { proc, base } = await start({});
   try {
     for (const eng of ['auto', 'v2', 'v4']) {
       const r = await imp(base, fx('diffcc_bulk'), `engine=${eng}`);
+      assert.equal(r.status, 422, `${eng}: ${JSON.stringify(r.body).slice(0, 300)}`);
+      assert.match(JSON.stringify(r.body), /named on page 2, not on page 1: vp/);
+    }
+    for (const eng of ['auto', 'v2']) {
+      const r = await imp(base, fx('diffcc_bulk_pin'), `engine=${eng}`);
       assert.equal(r.status, 201, `${eng}: ${JSON.stringify(r.body).slice(0, 300)}`);
       assert.equal(r.body.dummies?.lvs?.match, true, eng);
-      assert.ok(!JSON.stringify(r.body.warnings || []).includes('vp'), `${eng}: ${JSON.stringify(r.body.warnings)}`);
-      assert.ok(r.cells2.some((c) => c.refdes === 'XM1'), `${eng}: XM1 on page 2`);
+      assert.ok(ports(r.cells).includes('vp'), `${eng}: vp's port on page 1: ${ports(r.cells)}`);
     }
   } finally { proc.kill('SIGTERM'); }
 });
+
+// the reviewer's probes (deploiements/revue-drawio-81/probe): a PMOS follower whose source is tied to its bulk (o)
+// and a dummy on o; o carried no supply name, a device vote alone made it a supply, named only on page 2 (201)
+for (const f of ['sf5', 'sf3']) {
+  test(`#81 pass 2 ${f}: an internal net voted by bulks (o) is a signal: named on page 1 too`, async () => {
+    assert.equal(supplyNetsOf(splitOf(fx(f)))('o'), false);
+    const { proc, base } = await start({});
+    try {
+      for (const eng of ['auto', 'v2', 'v4']) {
+        const r = await imp(base, fx(f), `engine=${eng}`);
+        assert.equal(r.status, 201, `${eng}: ${JSON.stringify(r.body).slice(0, 300)}`);
+        assert.equal(r.body.dummies?.lvs?.match, true, eng);
+        assert.ok(r.cells.some((c) => String(c.value) === 'o'), `${eng}: o named on page 1`);
+        assert.ok(r.cells2.some((c) => String(c.value) === 'o'), `${eng}: o named on page 2`);
+      }
+    } finally { proc.kill('SIGTERM'); }
+  });
+}
 
 test('#81 (2) mid on a dummy\'s bulk and drain is no supply: labelled on both pages; erased from page 1, a 422', async () => {
   const split = splitOf(fx('mid_dum'));
