@@ -128,6 +128,12 @@ async function oneRail(model, g, force = new Set()) {
   updateCell(model, symId, { dx: Math.round(xL - sp.x), dy: Math.round(y - sp.y) });
   // each pin: straight to the line when the way is free, else routed to the symbol
   const routed = [];
+  // the size labels (LBL_*) too: a jog through one is worse than the router's way round
+  // (the text box as the quality gate estimates it, lib/quality.js)
+  const texts = cs.filter((c) => c.kind === 'vertex' && c.x != null && String(c.id).startsWith('LBL_') && String(c.value || '').trim()).map((c) => {
+    const tw = Math.max(c.w, 7 * String(c.value || '').length), al = c.style.map.get('align') || 'center';
+    return { id: c.id, x: al === 'right' ? c.x + c.w - tw : al === 'left' ? c.x : c.x + c.w / 2 - tw / 2, y: c.y + 1, w: tw, h: c.h - 2 };
+  });
   // its own part too: a pin that is not on the rail side of its part would run through its own body (bench41)
   const blocked = (p) => parts.some((c) => c.x < p.at.x + 2 && c.x + c.w > p.at.x - 2
     && (down ? c.y + c.h > p.at.y + 1 && c.y < y : c.y < p.at.y - 1 && c.y + c.h > y));
@@ -137,7 +143,9 @@ async function oneRail(model, g, force = new Set()) {
     const straight = !force.has(k) && !blocked(p) && (down ? p.at.y <= y : p.at.y >= y);
     // a pin whose straight drop crosses a body (review r2, B1): a jog out of its own side, then down (up) to the
     // line, when that path is clear; the router only if not
-    const jog = !straight && force.has(k) ? jogPath(p, y, parts) : null;
+    // also a side pin blocked by nothing but its own body (a flipped MOS's gate on the rail, sky130_ota_5t): the
+    // router would take it round the whole drawing
+    const jog = !straight && (down ? p.at.y <= y : p.at.y >= y) ? jogPath(p, y, parts, texts) : null;
     const w = addWire(model, { source: p.part, target: symId, sourcePin: p.rel, targetPin: sRel,
       style: straight || jog ? STR : 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;endFill=0;',
       points: straight ? [{ x: Math.round(p.at.x), y }, { x: xL, y }] : jog ? [...jog, { x: xL, y }] : [] });
@@ -149,11 +157,13 @@ async function oneRail(model, g, force = new Set()) {
 
 /** A pin on the side of its part: 20 px out of that side, then straight to the rail line at y; null when either
  *  leg crosses a part's body (its own included). */
-function jogPath(p, y, parts) {
-  const side = p.rel.x <= 0.01 ? -1 : p.rel.x >= 0.99 ? 1 : 0;
+function jogPath(p, y, parts, texts = []) {
+  // the side in the drawing (rel is unflipped: a flipped MOS has its gate, rel.x = 0, on its right)
+  const own = parts.find((c) => c.id === p.part);
+  const side = !own ? 0 : Math.abs(p.at.x - own.x) < 1.5 ? -1 : Math.abs(p.at.x - own.x - own.w) < 1.5 ? 1 : 0;
   if (!side) return null;
   const x = Math.round(p.at.x + 20 * side), y0 = Math.round(p.at.y);
-  const hits = (a, b) => parts.some((c) => Math.max(a.x, b.x) > c.x + 1 && Math.min(a.x, b.x) < c.x + c.w - 1
+  const hits = (a, b) => [...parts, ...texts].some((c) => Math.max(a.x, b.x) > c.x + 1 && Math.min(a.x, b.x) < c.x + c.w - 1
     && Math.max(a.y, b.y) > c.y + 1 && Math.min(a.y, b.y) < c.y + c.h - 1);
   const q0 = { x: Math.round(p.at.x), y: y0 }, q1 = { x, y: y0 }, q2 = { x, y };
   return hits(q0, q1) || hits(q1, q2) ? null : [q1, q2];
