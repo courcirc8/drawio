@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { parseSpice } from '../lib/netlist.js';
 import { parseDrawio, getPage, allCells, cellInfo } from '../lib/model.js';
@@ -21,10 +22,14 @@ import { splitDummies, labelSharedOnPage1, supplyNetsOf } from '../lib/dummies.j
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const fx = (n) => fs.readFileSync(new URL(`./fixtures/dummies/${n}.sp`, import.meta.url), 'utf8');
 const start = async (env) => {
-  const port = 9000 + Math.floor(Math.random() * 900), base = `http://127.0.0.1:${port}`;
+  // a port the system says is free (a random one could be another test server's: its /health answered, the
+  // import went to a server without this test's DRAWIO_TEST_FAULT), and our own process still alive
+  const port = await new Promise((ok) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
+  const base = `http://127.0.0.1:${port}`;
   const proc = spawn(process.execPath, [path.join(HERE, '../server.js'), '--port', String(port)], { stdio: 'pipe', env: { ...process.env, ...env } });
   for (let i = 0; i < 100; i++) {
-    try { if ((await fetch(base + '/health')).ok) return { proc, base }; } catch { /* not up yet */ }
+    if (proc.exitCode != null) throw new Error(`server exited (${proc.exitCode})`);
+    try { if ((await fetch(base + '/health')).ok && proc.exitCode == null) return { proc, base }; } catch { /* not up yet */ }
     await new Promise((r) => setTimeout(r, 100));
   }
   proc.kill('SIGTERM'); throw new Error('server did not start');
