@@ -35,7 +35,17 @@ export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail'
     // a rail wire through a part's body is a real defect, not a checker count: that rail stays as the placer drew it
     const before = new Set(snap.map((n) => n.getAttribute && n.getAttribute('id')));
     const fresh = new Set(allCells(model).map(cellInfo).filter((c) => c.kind === 'edge' && !before.has(c.id)).map((c) => c.id));
-    const onBody = wiresOnBody(model, fresh);
+    let onBody = wiresOnBody(model, fresh);
+    if (onBody.length && mode !== 'branch') {
+      // review r2 (B1): only the pins whose drop crosses a body are routed; the rail stays one line (rule 5)
+      const cells = new Map(allCells(model).map(cellInfo).map((c) => [c.id, c]));
+      const force = new Set(onBody.map((x) => cells.get(x.split(' / ')[0])).filter(Boolean)
+        .map((e) => `${e.source}|${Number(e.style.map.get('exitX') ?? 0.5)}|${Number(e.style.map.get('exitY') ?? 0.5)}`));
+      undo();
+      await oneRail(model, g, force);
+      const fresh2 = new Set(allCells(model).map(cellInfo).filter((c) => c.kind === 'edge' && !before.has(c.id)).map((c) => c.id));
+      onBody = wiresOnBody(model, fresh2);
+    }
     if (onBody.length) { undo(); warnings.push(`rail ${g.name || g.kind}: not redrawn (its wire would cross ${onBody.map((x) => x.split(' / ')[1]).join(', ')}), drawn as the placer left it`); continue; }
     if (fixDots) await fixDots(model);
     // Eric 08.11: the rail is the rule. A checker that counts more errors does not undo it; it is reported.
@@ -87,7 +97,7 @@ const drawn = (c) => {
 };
 
 /** One line, one symbol. */
-async function oneRail(model, g) {
+async function oneRail(model, g, force = new Set()) {
   const cs = allCells(model).map(cellInfo), byId = new Map(cs.map((c) => [c.id, c]));
   const parts = cs.filter((c) => c.kind === 'vertex' && c.x != null && !g.symbols.includes(c.id) && !String(c.id).startsWith('LBL_') && c.style.map.get('contactDot') !== '1').map(drawn);
   if (!parts.length) return false;
@@ -124,14 +134,29 @@ async function oneRail(model, g) {
   const seen = new Set();
   for (const p of g.pins) {
     const k = `${p.part}|${p.rel.x}|${p.rel.y}`; if (seen.has(k)) continue; seen.add(k);
-    const straight = !blocked(p) && (down ? p.at.y <= y : p.at.y >= y);
+    const straight = !force.has(k) && !blocked(p) && (down ? p.at.y <= y : p.at.y >= y);
+    // a pin whose straight drop crosses a body (review r2, B1): a jog out of its own side, then down (up) to the
+    // line, when that path is clear; the router only if not
+    const jog = !straight && force.has(k) ? jogPath(p, y, parts) : null;
     const w = addWire(model, { source: p.part, target: symId, sourcePin: p.rel, targetPin: sRel,
-      style: straight ? STR : 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;endFill=0;',
-      points: straight ? [{ x: Math.round(p.at.x), y }, { x: xL, y }] : [] });
-    if (!straight) routed.push(w.getAttribute('id'));
+      style: straight || jog ? STR : 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;endFill=0;',
+      points: straight ? [{ x: Math.round(p.at.x), y }, { x: xL, y }] : jog ? [...jog, { x: xL, y }] : [] });
+    if (!straight && !jog) routed.push(w.getAttribute('id'));
   }
   if (routed.length) await routePage(model, routed, {});
   return true;
+}
+
+/** A pin on the side of its part: 20 px out of that side, then straight to the rail line at y; null when either
+ *  leg crosses a part's body (its own included). */
+function jogPath(p, y, parts) {
+  const side = p.rel.x <= 0.01 ? -1 : p.rel.x >= 0.99 ? 1 : 0;
+  if (!side) return null;
+  const x = Math.round(p.at.x + 20 * side), y0 = Math.round(p.at.y);
+  const hits = (a, b) => parts.some((c) => Math.max(a.x, b.x) > c.x + 1 && Math.min(a.x, b.x) < c.x + c.w - 1
+    && Math.max(a.y, b.y) > c.y + 1 && Math.min(a.y, b.y) < c.y + c.h - 1);
+  const q0 = { x: Math.round(p.at.x), y: y0 }, q1 = { x, y: y0 }, q2 = { x, y };
+  return hits(q0, q1) || hits(q1, q2) ? null : [q1, q2];
 }
 
 /** One symbol per pin, straight over / under it. */

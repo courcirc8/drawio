@@ -31,7 +31,7 @@ import * as annotate from './lib/annotate.js';
 import * as critic from './lib/critic.js';
 import * as exportAsc from './lib/export-asc.js';
 import { rewire } from './lib/rewire.js';
-import { orientSupplies } from './lib/supply-orient.js';
+import { orientSupplies, supplyOrderWarnings } from './lib/supply-orient.js';
 import { withGroundAlias } from './lib/ground-alias.js';
 import { mergeFingers } from './lib/fingers.js';
 
@@ -472,7 +472,9 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     if (!lvsReport.match) throw model.httpError(422, 'final optimized document failed strict LVS');
     return res.status(201).json({ engine: (usedEngine === 'v3' ? 'place3+optimize' : String(usedEngine).startsWith('v4') ? 'place4+optimize' : 'place2+optimize') + (engine === 'auto' ? ' (auto)' : ''), score: best.score,
       metrics: best.metrics, params: best.params, history, lvs: lvsReport,
-      components: best.placed.components, wires: best.placed.wires, supply,
+      components: best.placed.components, wires: best.placed.wires, supply: (() => {
+        const w = supplyOrderWarnings(model.allCells(model.getPage(entry.doc)).map(model.cellInfo), parsed);
+        return w.length ? { ...supply, warnings: [...(supply.warnings || []), ...w] } : supply; })(),
       ...(annReport ? { annotations: annReport } : {}) });
   }
   // Four engines now, from two lines of work merged 2026-08-31: v1/v2 and elk
@@ -498,8 +500,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     const decision = lvs.gate(report, { force });
     if (!decision.ok) return res.status(decision.status).json({ error: decision.error, report });
     // a rail kept against the checker, or not redrawn, is said (lib/rails.js): never a silent fallback
-    const railWarn = [...(win.polish?.rails?.warnings || []),
-      ...(win.supplyOrder || []).map((v) => `supply order: ${v.pos} (positive supply) is not above ${v.neg} (negative supply)`)];
+    const railWarn = [...(win.polish?.rails?.warnings || []), ...supplyOrderWarnings(model.allCells(model.getPage(entry.doc)).map(model.cellInfo), parsed)];
     const supplyOut = railWarn.length ? { ...supply, warnings: [...(supply.warnings || []), ...railWarn] } : supply;
     return res.status(decision.status).json({ ...placed, routed: placed.wires.length, lvs: report, supply: supplyOut, ...fingersOf(parsed) });
   } else if (engine === 'manuel') {
@@ -540,7 +541,10 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   const report = lvs.compare(extracted, parsed);
   const decision = lvs.gate(report, { force });
   if (!decision.ok) return res.status(decision.status).json({ error: decision.error, report });
-  const payload = { ...placed, routed: routed.ids.length, lvs: report, supply, ...fingersOf(parsed) };
+  // the supply order checked on the finished drawing, every engine (review r2): said, never silent
+  const orderWarn = supplyOrderWarnings(model.allCells(m).map(model.cellInfo), parsed);
+  const supplyOut = orderWarn.length ? { ...supply, warnings: [...(supply.warnings || []), ...orderWarn] } : supply;
+  const payload = { ...placed, routed: routed.ids.length, lvs: report, supply: supplyOut, ...fingersOf(parsed) };
   if (decision.warnings) payload.warnings = decision.warnings;
   if (annReport) payload.annotations = annReport;
   res.status(decision.status).json(payload);

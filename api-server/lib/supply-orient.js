@@ -97,3 +97,11 @@ export function supplyOrderViolations(cells, parsed) {
   for (const p of pos) for (const q of neg) if (frameOf.get(p) === frameOf.get(q) && y.get(p) >= y.get(q)) out.push({ pos: p, neg: q });
   return out;
 }
+
+/** The supply-order check of a finished drawing, as said in every import response whatever the engine (review r2):
+ *  one line per pair of devices drawn with a negative supply above a positive one. */
+export function supplyOrderWarnings(cells, parsed) {
+  let v = [];
+  try { v = supplyOrderViolations(cells, parsed); } catch { return []; }
+  return v.map((x) => `supply order: ${x.pos} (positive supply) is not above ${x.neg} (negative supply)`);
+}

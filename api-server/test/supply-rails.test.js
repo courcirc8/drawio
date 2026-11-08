@@ -137,3 +137,36 @@ test('R3: every MOS of the sweep fixtures has numeric W and L', () => {
     }
   }
 });
+
+// REVIEW r2 (B1): a pin whose straight drop runs on a body (a device tied to its own rail) is jogged or routed;
+// the rail stays one line with one symbol (rule 5), it is never dissolved into one symbol per pin
+test('B1: the template keeps one vdd and one ground rail when a drop would cross a body', async () => {
+  const { trial } = await import('../lib/auto.js');
+  const { wiresOnBody } = await import('../lib/quality.js');
+  const t = await trial(raw('./fixtures/supply-rails/ota5t_tied.sp'), 'ota', null, {}, {});
+  const m = getPage(t.doc), cs = allCells(m).map(cellInfo);
+  assert.equal(cs.filter((c) => /signal_sources\.(vdd|vss2)/.test(c.styleRaw || '')).length, 1, 'one vdd symbol');
+  assert.equal(cs.filter((c) => /signal_ground/.test(c.styleRaw || '')).length, 1, 'one ground symbol');
+  assert.deepEqual(wiresOnBody(m), []);
+  assert.equal(t.errs, 0);
+});
+
+// REVIEW r2 (A6, A8): names and MOS disagree (PMOS on "vss", NMOS on "vdd"), every drawing breaks the order by name
+const CONFLICT = 'M1 out in vss vss pmos W=2u L=1u\nM2 out in2 vdd vdd nmos W=1u L=1u\n.end';
+test('R1 (r2): a candidate trial counts its supply-order breaks', async () => {
+  const { trial } = await import('../lib/auto.js');
+  const p = orientSupplies(withGroundAlias(parseSpice(CONFLICT))).parsed;
+  assert.ok((await trial(p, 'v4', null, {}, {})).supplyOrder > 0);
+});
+test('R1 (r2): autoPlace reports a final drawing that still breaks the order', async () => {
+  const o = orientSupplies(withGroundAlias(parseSpice(CONFLICT)));
+  assert.ok(o.warnings.length >= 1, 'the name/polarity disagreement is said');
+  const r = await autoPlace(o.parsed);
+  assert.ok(Array.isArray(r.supplyOrder) && r.supplyOrder.length > 0, JSON.stringify(r.supplyOrder));
+});
+test('R1 (r2): supplyOrderWarnings words each pair', async () => {
+  const { supplyOrderWarnings } = await import('../lib/supply-orient.js');
+  const o = orientSupplies(withGroundAlias(parseSpice(CONFLICT))), r = await autoPlace(o.parsed);
+  const w = supplyOrderWarnings(allCells(getPage(r.doc)).map(cellInfo), o.parsed);
+  assert.deepEqual(w, ['supply order: M2 (positive supply) is not above M1 (negative supply)']);
+});
