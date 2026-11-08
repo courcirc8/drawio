@@ -22,30 +22,28 @@ import { wiresOnBody } from './quality.js';
 
 const STR = 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiTemplate=1;';
 
-export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail', errorCount, fixDots } = {}) {
+export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail', errorCount, fixDots, reroute } = {}) {
   if (mode === 'off') return { mode, rails: 0, redrawn: 0 };   // as the placer drew them
   const groups = railGroups(model);
   let errs = errorCount ? await errorCount(model) : null, done = 0;
   const warnings = [];
   for (const g of groups) {
     const snap = Array.from(model.childNodes).map((n) => n.cloneNode(true));
-    const undo = () => { while (model.firstChild) model.removeChild(model.firstChild); for (const n of snap) model.appendChild(n); };
+    const snapIds = new Set(allCells(model).map((n) => n.getAttribute('id')));
+    // review r3 (e): the snapshot is restored as fresh clones, never the snapshot's own nodes (a restored node that
+    // a later try edits would no longer be the state before the rail: sky130_ota_5t's orphan dots)
+    const undo = () => { while (model.firstChild) model.removeChild(model.firstChild); for (const n of snap) model.appendChild(n.cloneNode(true)); };
     const ok = mode === 'branch' ? await perBranch(model, g) : await oneRail(model, g);
     if (!ok) { undo(); warnings.push(`rail ${g.name || g.kind}: not redrawn (no line fits its pins), drawn as the placer left it`); continue; }
     // a rail wire through a part's body is a real defect, not a checker count: that rail stays as the placer drew it
-    const before = new Set(snap.map((n) => n.getAttribute && n.getAttribute('id')));
+    // the cells (not the model's children: one root) present before this rail: only the rail's new wires are judged
+    const before = snapIds;
     const fresh = new Set(allCells(model).map(cellInfo).filter((c) => c.kind === 'edge' && !before.has(c.id)).map((c) => c.id));
-    let onBody = wiresOnBody(model, fresh);
-    if (onBody.length && mode !== 'branch') {
-      // review r2 (B1): only the pins whose drop crosses a body are routed; the rail stays one line (rule 5)
-      const cells = new Map(allCells(model).map(cellInfo).map((c) => [c.id, c]));
-      const force = new Set(onBody.map((x) => cells.get(x.split(' / ')[0])).filter(Boolean)
-        .map((e) => `${e.source}|${Number(e.style.map.get('exitX') ?? 0.5)}|${Number(e.style.map.get('exitY') ?? 0.5)}`));
-      undo();
-      await oneRail(model, g, force);
-      const fresh2 = new Set(allCells(model).map(cellInfo).filter((c) => c.kind === 'edge' && !before.has(c.id)).map((c) => c.id));
-      onBody = wiresOnBody(model, fresh2);
-    }
+    const onBody = wiresOnBody(model, fresh);
+    // review r3 (E4): no second try with the crossing pins forced to the router. Once only the rail's own wires are
+    // judged (the fix above), a crossing comes from the rail LINE through a body, which routing a pin does not
+    // change: in every fixture the forced retry crossed again (benoitlx_miller C1 -> M1, brokaw_bloc XMPL0 -> XMD),
+    // and the whole bench draws the same without it. The rail stays as the placer left it, and that is said.
     if (onBody.length) { undo(); warnings.push(`rail ${g.name || g.kind}: not redrawn (its wire would cross ${onBody.map((x) => x.split(' / ')[1]).join(', ')}), drawn as the placer left it`); continue; }
     if (fixDots) await fixDots(model);
     // Eric 08.11: the rail is the rule. A checker that counts more errors does not undo it; it is reported.
@@ -56,7 +54,9 @@ export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail'
     }
     done++;
   }
-  return { mode, rails: groups.length, redrawn: done, ...(warnings.length ? { warnings } : {}) };
+  // the placer's wires that two nets now share (they were laid apart by the old rail's routing): re-routed
+  const rerouted = done && reroute ? await reroute(model) : 0;
+  return { mode, rails: groups.length, redrawn: done, ...(rerouted ? { rerouted } : {}), ...(warnings.length ? { warnings } : {}) };
 }
 
 /** Rails: {kind: 'power'|'ground', name, symbols: [ids], pins: [{part, rel, at, edges}]}
@@ -97,7 +97,7 @@ const drawn = (c) => {
 };
 
 /** One line, one symbol. */
-async function oneRail(model, g, force = new Set()) {
+async function oneRail(model, g) {
   const cs = allCells(model).map(cellInfo), byId = new Map(cs.map((c) => [c.id, c]));
   const parts = cs.filter((c) => c.kind === 'vertex' && c.x != null && !g.symbols.includes(c.id) && !String(c.id).startsWith('LBL_') && c.style.map.get('contactDot') !== '1').map(drawn);
   if (!parts.length) return false;
@@ -140,7 +140,7 @@ async function oneRail(model, g, force = new Set()) {
   const seen = new Set();
   for (const p of g.pins) {
     const k = `${p.part}|${p.rel.x}|${p.rel.y}`; if (seen.has(k)) continue; seen.add(k);
-    const straight = !force.has(k) && !blocked(p) && (down ? p.at.y <= y : p.at.y >= y);
+    const straight = !blocked(p) && (down ? p.at.y <= y : p.at.y >= y);
     // a pin whose straight drop crosses a body (review r2, B1): a jog out of its own side, then down (up) to the
     // line, when that path is clear; the router only if not
     // also a side pin blocked by nothing but its own body (a flipped MOS's gate on the rail, sky130_ota_5t): the
@@ -162,11 +162,17 @@ function jogPath(p, y, parts, texts = []) {
   const own = parts.find((c) => c.id === p.part);
   const side = !own ? 0 : Math.abs(p.at.x - own.x) < 1.5 ? -1 : Math.abs(p.at.x - own.x - own.w) < 1.5 ? 1 : 0;
   if (!side) return null;
-  const x = Math.round(p.at.x + 20 * side), y0 = Math.round(p.at.y);
+  const y0 = Math.round(p.at.y);
   const hits = (a, b) => [...parts, ...texts].some((c) => Math.max(a.x, b.x) > c.x + 1 && Math.min(a.x, b.x) < c.x + c.w - 1
     && Math.max(a.y, b.y) > c.y + 1 && Math.min(a.y, b.y) < c.y + c.h - 1);
-  const q0 = { x: Math.round(p.at.x), y: y0 }, q1 = { x, y: y0 }, q2 = { x, y };
-  return hits(q0, q1) || hits(q1, q2) ? null : [q1, q2];
+  // 20 px out; else just past a size label on that side (Jianxun ota_5t: M7's drain beside its "M7"), up to 160 px
+  const outs = [20, ...texts.map((t) => side > 0 ? t.x + t.w + 10 - p.at.x : p.at.x - t.x + 10)
+    .filter((d) => d > 20 && d <= 160).sort((a, b) => a - b)];
+  for (const d of outs) {
+    const x = Math.round(p.at.x + d * side), q0 = { x: Math.round(p.at.x), y: y0 }, q1 = { x, y: y0 }, q2 = { x, y };
+    if (!hits(q0, q1) && !hits(q1, q2)) return [q1, q2];
+  }
+  return null;
 }
 
 /** One symbol per pin, straight over / under it. */

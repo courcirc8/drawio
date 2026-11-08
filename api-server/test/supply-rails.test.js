@@ -170,3 +170,71 @@ test('R1 (r2): supplyOrderWarnings words each pair', async () => {
   const w = supplyOrderWarnings(allCells(getPage(r.doc)).map(cellInfo), o.parsed);
   assert.deepEqual(w, ['supply order: M2 (positive supply) is not above M1 (negative supply)']);
 });
+
+// REVIEW r3 (A5): manuel can read a netlist and still draw it out of the supply order (NMOS tied by their drain to
+// vdd, drawn level with a diode to ground: bank case dvd-natif/esscirc_2007033, rebuilt here as a synthetic
+// circuit). tryManuel must then refuse its drawing, so auto never returns it unchecked.
+test('A5 (r3): tryManuel refuses a manuel drawing that breaks the supply order', async () => {
+  const { tryManuel } = await import('../lib/auto.js');
+  const { manuelReading } = await import('../lib/manuel-reading.js');
+  const { importNetlistManuel } = await import('../lib/place-manuel.js');
+  const { newDocument } = await import('../lib/model.js');
+  const p = orientSupplies(withGroundAlias(parseSpice('M1 vdd a a 0 nmos W=1u L=1u\nM2 vdd b b 0 nmos W=1u L=1u\nM3 c c 0 0 nmos W=1u L=1u\n.end'))).parsed;
+  assert.ok(manuelReading(p), 'manuel reads it');
+  const m = getPage(newDocument());
+  importNetlistManuel(m, p);
+  assert.ok(compare(extractNetlist(m), p).match, 'manuel draws it LVS-clean');
+  assert.ok(supplyOrderViolations(allCells(m).map(cellInfo), p).length > 0, 'manuel draws it out of order');
+  assert.equal(tryManuel(p), null);
+});
+
+// REVIEW r3 (E3): a jog never runs through a size label; with labels ignored as obstacles, ME and MF's rail
+// wires cross LBL_ME and LBL_MF here. The text box is the quality gate's estimate (lib/quality.js).
+test('E3 (r3): no rail wire runs through a name label', async () => {
+  const { trial } = await import('../lib/auto.js');
+  const { polylineOf } = await import('../lib/route.js');
+  const t = await trial(raw('./fixtures/supply-rails/ota5t_tied.sp'), 'ota', null, {}, {});
+  const cs = allCells(getPage(t.doc)).map(cellInfo), by = new Map(cs.map((c) => [c.id, c]));
+  const texts = cs.filter((c) => c.kind === 'vertex' && String(c.id).startsWith('LBL_') && String(c.value || '').trim()).map((c) => {
+    const tw = Math.max(c.w, 7 * String(c.value).length), al = c.style.map.get('align') || 'center';
+    return { id: c.id, x: al === 'right' ? c.x + c.w - tw : al === 'left' ? c.x : c.x + c.w / 2 - tw / 2, y: c.y + 1, w: tw, h: c.h - 2 };
+  });
+  assert.ok(texts.length >= 2);
+  const hits = [];
+  for (const e of cs.filter((c) => c.kind === 'edge' && /drawioApiTemplate=1/.test(c.styleRaw || ''))) {
+    const pl = polylineOf(e, by) || [];
+    for (let i = 1; i < pl.length; i++) {
+      const a = pl[i - 1], b = pl[i];
+      for (const x of texts) if (Math.max(a.x, b.x) > x.x + 1 && Math.min(a.x, b.x) < x.x + x.w - 1 && Math.max(a.y, b.y) > x.y + 1 && Math.min(a.y, b.y) < x.y + x.h - 1) hits.push(`${e.id} / ${x.id}`);
+    }
+  }
+  assert.deepEqual(hits, []);
+});
+
+// REVIEW r3 (e): a rail that cannot be redrawn is undone to the very state before it: same cells, no stray
+// junction dot (the snapshot's nodes were handed back, then edited by the retry: sky130_ota_5t's orphan dots)
+test('(e) (r3): an undone rail leaves the drawing as it was', async () => {
+  const { drawRails } = await import('../lib/rails.js');
+  const { fixDots } = await import('../lib/straighten.js');
+  const { trial } = await import('../lib/auto.js');
+  process.env.AUTO_RAILS = 'off';
+  let t; try { t = await trial(raw('./fixtures/corpus-regress/benoitlx_miller.cir'), 'v4', null, {}, {}); } finally { delete process.env.AUTO_RAILS; }
+  const m = getPage(t.doc);
+  const groundWires = () => { const cs = allCells(m).map(cellInfo), gs = new Set(cs.filter((c) => /signal_ground/.test(c.styleRaw || '')).map((c) => c.id));
+    return cs.filter((c) => c.kind === 'edge' && (gs.has(c.source) || gs.has(c.target))).map((c) => `${c.id}:${c.styleRaw}`).sort(); };
+  const before = groundWires();
+  const { serialize } = await import('../lib/model.js');
+  const { execFileSync } = await import('node:child_process');
+  const os = await import('node:os'), path = await import('node:path');
+  // the bench checker's own word for a dot out of every wire (tools/check.py, rule dot-orphan)
+  const stray = () => { const f = path.join(os.tmpdir(), `rails-e-${process.pid}.drawio`); fs.writeFileSync(f, serialize(t.doc));
+    let out; try { out = execFileSync('python3', [new URL('../tools/check.py', import.meta.url).pathname, f, '--json'], { encoding: 'utf8' }); } catch (e) { out = e.stdout; } finally { fs.rmSync(f, { force: true }); }
+    return JSON.parse(out).violations.filter((v) => v.rule === 'dot-orphan').map((v) => JSON.stringify(v.at)).sort(); };
+  const stray0 = stray();
+  // the ground rail of this v4 drawing would cross M8: undone, its wires as the placer drew them
+  const out = await drawRails(m, { fixDots });
+  assert.ok((out.warnings || []).some((w) => /^rail ground: not redrawn/.test(w)), JSON.stringify(out));
+  assert.deepEqual(groundWires(), before);
+  // no junction dot left out of every wire that was not already so
+  assert.deepEqual(stray().filter((x) => !stray0.includes(x)), []);
+});
