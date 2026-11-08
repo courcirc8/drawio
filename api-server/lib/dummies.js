@@ -17,6 +17,10 @@
  * A MOS capacitor (gate on a signal, drain and source on a rail) is not a dummy.
  * The device a dummy protects: the non-dummy MOS that shares a channel net with it, else the non-dummy MOS of
  * the same model and size (the array it ends), else none ("factices").
+ *
+ * Parasitic-estimate capacitors (Eric 08.11): a C line ending in `lvs_ignore=1` (layout parasitics annotated
+ * back into the netlist) goes to page 2 as well, never page 1, under the heading "Parasites estimés (LVS ignore)",
+ * each with its value; wired there to its rails, joined to page-1 nets by name like the dummies.
  */
 import { addPage, addVertex, addWire, allCells, cellInfo, freshId, getPage, updateCell } from './model.js';
 import { SPICE_MAP, classify } from './components.js';
@@ -26,11 +30,13 @@ import { supplyPolarity } from './supply-orient.js';
 import { connectivity, extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 import { groundMapper } from './ground-alias.js';
-import { annotation, Sheet, emit as emitSheets, placeTr, portVert, tapGnd, tapVdd } from './place-manuel.js';
+import { annotation, Sheet, emit as emitSheets, placeTr, placeTwo, portVert, tapGnd, tapVdd } from './place-manuel.js';
 
 export const DUMMY_PAGE = 'factices';
 const isMos = (c) => c.prefix === 'M' && (c.nodes || []).length >= 3;
 const isP = (c) => /pmos|pfet|pch/i.test(String(c.model || c.value || ''));
+export const PARASITIC_TITLE = 'Parasites estimés (LVS ignore)';
+const parasitic = (c) => c.prefix === 'C' && (String(c.params?.lvs_ignore ?? '') === '1' || /(^|\s)lvs_ignore\s*=\s*1(\s|$)/i.test(String(c.value || '')));
 const flagged = (c) => String(c.params?.dummy ?? '') === '1' || /(^|\s)dummy\s*=\s*1(\s|$)/i.test(String(c.value || ''));
 
 /** parsed -> {main (parsed without its dummies), dummies: [{c, why}], groups: [{protects, items, title}]} */
@@ -45,9 +51,10 @@ export function splitDummies(parsed) {
       : (isP(c) ? pos(g) : neg(g)) ? 'grille au rail (toujours bloqué)' : null;
     if (why) dummies.push({ c, why });
   }
-  const dSet = new Set(dummies.map((x) => x.c.ref));
+  const pars = parsed.components.filter(parasitic);
+  const dSet = new Set([...dummies.map((x) => x.c.ref), ...pars.map((c) => c.ref)]);
   const main = parsed.components.filter((c) => !dSet.has(c.ref));
-  if (!dummies.length || !main.length) return { main: parsed, dummies: [], groups: [] };
+  if ((!dummies.length && !pars.length) || !main.length) return { main: parsed, dummies: [], groups: [], parasitics: [] };
   const size = (c) => `${String(c.model || '').toLowerCase()}|${annotation(c).replace(/\s*×\d+$/, '')}`;
   // dummies joined by a net of their own (neither a rail nor a page-1 net) stay in one group: that net is wired on page 2
   const mainNets = new Set(main.flatMap((c) => c.nodes));
@@ -88,7 +95,8 @@ export function splitDummies(parsed) {
     g.title = `${g.protects.length ? `factices de ${g.protects.join('/')}` : 'factices'} : `
       + [...kinds].map(([k, n]) => `${n} × ${k}`).join(' ; ') + `, grille → ${gates.join(', ')}`;
   }
-  return { main: { ...parsed, components: main }, dummies, groups: [...groups.values()], dummyParsed: { ...parsed, components: dummies.map((x) => x.c) } };
+  return { main: { ...parsed, components: main }, dummies, groups: [...groups.values()], parasitics: pars,
+    dummyParsed: { ...parsed, components: [...dummies.map((x) => x.c), ...pars] } };
 }
 
 
@@ -173,8 +181,70 @@ export async function drawDummiesPage(doc, split, page1Nets) {
     sheets.push(S);
     y0 = top + h + 70 + 8 * local.length + 20 * negR.length;
   }
+  if (split.parasitics?.length) sheets.push(drawParasitics(split.parasitics, page1Nets, pos, neg, y0, rails));
   emitSheets(model, sheets, split.dummyParsed, rails);
   return model;
+}
+
+/**
+ * The parasitic capacitors: one row of vertical caps, positive rail end up, negative rail end down; a page-1 net
+ * on one pin gets its label on a short stub; a net on two pins or more (or local to page 2) is one bus with one
+ * label (review r2, N4).
+ */
+function drawParasitics(items, page1Nets, pos, neg, y0, rails) {
+  const S = new Sheet();
+  // [top net, bottom net]: a positive supply up, a negative one down, else the netlist order
+  const ends = items.map((c) => { const [a, b] = c.nodes; return pos(b) && !pos(a) || neg(a) && !neg(b) ? [b, a] : [a, b]; });
+  const uses = new Map();
+  for (const e of ends) for (const n of e) uses.set(n, (uses.get(n) || 0) + 1);
+  const sig = (n) => !pos(n) && !neg(n);
+  // a bus above when the net is a top end somewhere, else below
+  const busUp = [...uses.keys()].filter((n) => sig(n) && (uses.get(n) >= 2 || !page1Nets.has(n)) && ends.some((e) => e[0] === n));
+  const busDn = [...uses.keys()].filter((n) => sig(n) && (uses.get(n) >= 2 || !page1Nets.has(n)) && !busUp.includes(n));
+  const bus = (n) => busUp.includes(n) || busDn.includes(n);
+  const posR = [...new Set(ends.map((e) => e[0]).filter(pos))], negR = [...new Set(ends.map((e) => e[1]).filter(neg))];
+  const top = y0 + 90 + 20 * (posR.length + busUp.length);
+  const lab = 8 * Math.max(4, ...[...uses.keys()].map((n) => String(n).length)) + 40;
+  const pitch = Math.max(170, lab + 100);
+  // placed first: the bottom lines sit under the lowest real pin
+  const placed = items.map((c, i) => { const cx = 60 + lab + i * pitch, v = placeTwo(S, c, cx, top, ends[i][0], true, 1); return { cx, v }; });
+  const bot = Math.max(...placed.map(({ v }) => v.pinAbs[v.other].y));
+  const upY = (n) => top - 30 - 20 * busUp.indexOf(n), posY = (n) => top - 30 - 20 * busUp.length - 20 * posR.indexOf(n);
+  const dnY = (n) => bot + 30 + 20 * busDn.indexOf(n), negY = (n) => bot + 30 + 20 * busDn.length + 20 * negR.indexOf(n);
+  const touch = new Map(), at = (n, x) => { if (!touch.has(n)) touch.set(n, []); touch.get(n).push(x); };
+  placed.forEach(({ cx, v }, i) => {
+    const [tn, bn] = ends[i];
+    const pt = S.term(tn, v, v.first), pb = S.term(bn, v, v.other);
+    // the far column, right of the ref text, for a pin whose bus is on the other side
+    const xr = cx + 100;
+    for (const [n, p, up] of [[tn, pt, true], [bn, pb, false]]) {
+      const o = up ? -1 : 1;
+      if (up ? pos(n) : neg(n)) { S.path(n, p, { x: p.x, y: up ? posY(n) : negY(n) }); at(n, p.x); }
+      else if (bus(n) && busUp.includes(n) === up) { S.path(n, p, { x: p.x, y: up ? upY(n) : dnY(n) }); at(n, p.x); }
+      else if (bus(n)) { const yb = busUp.includes(n) ? upY(n) : dnY(n); S.path(n, p, { x: p.x, y: p.y + 12 * o }, { x: xr, y: p.y + 12 * o }, { x: xr, y: yb }); at(n, xr); }
+      else {
+        // a page-1 net (or a rail on the far side): its label on a stub, left of the cap
+        const e = { x: p.x - 15, y: p.y + 15 * o }; S.path(n, p, { x: p.x, y: e.y }, e);
+        const lv = portVert(S, n, e, -1, false); S.term(n, lv, lv.portPin);
+      }
+    }
+  });
+  for (const [n, xs] of touch) {
+    const lo = Math.min(...xs), hi = Math.max(...xs), x0 = lo - 30;
+    if (bus(n)) {
+      const y = busUp.includes(n) ? upY(n) : dnY(n);
+      S.path(n, { x: x0, y }, { x: Math.max(hi, x0 + 1), y });
+      const lv = portVert(S, n, { x: x0, y }, -1, false); S.term(n, lv, lv.portPin);
+      continue;
+    }
+    rails.add(n);
+    const y = pos(n) ? posY(n) : negY(n);
+    S.path(n, { x: x0, y }, { x: Math.max(hi, x0 + 1), y });
+    const sym = n === '0' ? tapGnd(S, { x: x0, y }) : pos(n) ? tapVdd(S, n, { x: x0, y }) : portVert(S, n, { x: x0, y }, -1, false);
+    S.term(n, sym, n === '0' ? 'N' : pos(n) ? 'S' : sym.portPin);
+  }
+  S.text(`<b>${PARASITIC_TITLE}</b> : ${items.length} capacité${items.length > 1 ? 's' : ''}`, 40, y0, 360, 20, 'left', 12);
+  return S;
 }
 
 // terminal ids as lib/lvs.js counts them (R/C/L symmetric, MOS drain/source interchangeable)
@@ -297,7 +367,7 @@ export const page1NetsOf = (split) => new Set(split.main.components.flatMap((c) 
 /** Page 2 drawn and checked for an import, ALWAYS (Orchestrator decision 08.11: every drawing has its page 2,
  *  "Aucun factice" when the netlist has none); page 1 gets the labels of the nets page 2 names (N1). */
 export async function dummiesForImport(doc, split, full) {
-  if (!split.dummies.length) {
+  if (!split.dummies.length && !split.parasitics?.length) {
     for (const d of Array.from(doc.getElementsByTagName('diagram'))) if (d.getAttribute('name') === DUMMY_PAGE) d.parentNode.removeChild(d);
     addPage(doc, DUMMY_PAGE);
     addVertex(getPage(doc, DUMMY_PAGE), { id: 'NO_DUMMY', style: 'text;html=1;align=left;verticalAlign=middle;fontSize=12;fontStyle=2;', x: 40, y: 40, w: 160, h: 20, value: 'Aucun factice' });
@@ -308,6 +378,9 @@ export async function dummiesForImport(doc, split, full) {
   const labelled = labelSharedOnPage1(doc, split, named2.filter((n) => page1NetsOf(split).has(n)));
   const lvs = lvsTwoPages(doc, split, full);
   const count = split.dummies.reduce((n, x) => n + (Number(x.c.params?.m ?? 1) || 1), 0);
-  return { page: DUMMY_PAGE, count, groups: split.groups.map((g) => g.title),
-    detected: split.dummies.map((x) => ({ ref: x.c.ref, why: x.why })), labelled, lvs, warning: `${count} factices sur la page 2` };
+  const np = split.parasitics?.length || 0;
+  return { page: DUMMY_PAGE, count, parasitics: (split.parasitics || []).map((c) => c.ref),
+    groups: [...split.groups.map((g) => g.title), ...(np ? [PARASITIC_TITLE] : [])],
+    detected: split.dummies.map((x) => ({ ref: x.c.ref, why: x.why })), labelled, lvs,
+    warning: [count ? `${count} factices` : '', np ? `${np} capacité${np > 1 ? 's' : ''} parasite${np > 1 ? 's' : ''}` : ''].filter(Boolean).join(' et ') + ' sur la page 2' };
 }

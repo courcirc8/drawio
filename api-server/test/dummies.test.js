@@ -146,7 +146,7 @@ const importDoc = async (text, engine) => {
   return { status: r.status, body: await r.json(), doc: await docOf(id) };
 };
 
-for (const fx of ['ota_dum', 'eric_mload_dum', 'eric_mload_flat_dum']) {
+for (const fx of ['ota_dum', 'eric_mload_dum', 'eric_mload_flat_dum', 'eric_mload_par', 'eric_mload_par_only']) {
   test(`N1 ${fx}: every name page 2 shows is shown on page 1 too, on every engine`, async () => {
     for (const engine of fx === 'ota_dum' ? ENGINES.filter((e) => e !== 'manuel') : ENGINES) {
       const { status, body, doc } = await importDoc(FIX(fx), engine);
@@ -181,6 +181,41 @@ for (const fx of ['eric_mload_sub', 'eric_mload_flat']) {
       }
       if (fx === 'eric_mload_sub') for (const pin of ['d3', 'o1']) assert.ok(namesOn(m).has(pin), `${engine}: pin ${pin} not named on page 1`);
       assert.equal(listPages(doc).at(-1).name, DUMMY_PAGE);
+    }
+  });
+}
+
+// Eric 08.11: parasitic-estimate capacitors (C ... lvs_ignore=1) go to page 2 with the dummies, never page 1
+test('parasitics: an lvs_ignore=1 capacitor is split off page 1; a plain capacitor stays', () => {
+  const sp = prep(FIX('eric_mload_par').replace('.end', 'C9 d3 o1 1p\n.end'));
+  const s = splitDummies(sp);
+  assert.deepEqual(s.parasitics.map((c) => c.ref).sort(), ['Cp1', 'Cp2', 'Cp3']);
+  assert.ok(!s.main.components.some((c) => /^Cp/.test(c.ref)));
+  assert.ok(s.main.components.some((c) => c.ref === 'C9'));
+});
+
+for (const fx of ['eric_mload_par', 'eric_mload_par_only']) {
+  test(`parasitics ${fx}: none on page 1, all on page 2 under their heading with their value, on every engine`, async () => {
+    for (const engine of ENGINES) {
+      const { status, body, doc } = await importDoc(FIX(fx), engine);
+      assert.equal(status, 201, `${engine}: ${JSON.stringify(body).slice(0, 300)}`);
+      assert.equal(body.dummies.lvs.match, true, `${engine}: two-page LVS`);
+      const c1 = cellsOf(getPage(doc, 0)), p2 = getPage(doc, DUMMY_PAGE), c2 = cellsOf(p2);
+      const refs = fx === 'eric_mload_par' ? ['Cp1', 'Cp2', 'Cp3'] : ['Cp1', 'Cp2'];
+      for (const r of refs) {
+        assert.ok(!c1.some((c) => c.id === r || c.refdes === r), `${engine}: ${r} on page 1`);
+        assert.ok(c2.some((c) => c.kind === 'vertex' && c.id === r), `${engine}: ${r} missing from page 2`);
+      }
+      assert.ok(c2.some((c) => /Parasites estimés \(LVS ignore\)/.test(String(c.value))), `${engine}: heading`);
+      for (const v of ['12.5 fF', '8.1 fF']) assert.ok(c2.some((c) => String(c.value).includes(v)), `${engine}: value ${v}`);
+      // wired on page 2: each cap's vss end on the ground rail, shared nets by one label each (N4)
+      assert.deepEqual(geoLvs(p2).errors, [], engine);
+      const cp1 = extractNetlist(p2).components.find((c) => c.ref === 'Cp1');
+      assert.ok(cp1.nodes.includes('0'), `${engine}: Cp1 to ground on page 2 (${cp1.nodes})`);
+      if (fx === 'eric_mload_par_only') {
+        for (const n of ['d3', 'o1']) assert.equal(labels(c2).filter((c) => String(c.value) === n).length, 1, `${engine}: one ${n} label`);
+        assert.ok(!c2.some((c) => c.id === 'NO_DUMMY'), `${engine}: "Aucun factice" with parasitics`);
+      }
     }
   });
 }
