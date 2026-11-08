@@ -393,10 +393,14 @@ export async function checkerErrors(m) { return (await errorCount(m))?.n ?? null
  *  it finds one on a mere bend (dot-2way). */
 export async function fixDots(model) {
   try { rebuildLocalDots(model); } catch { /* none */ }
+  // the checker may name one missing branch dot per run (ota_5t ground rail, 08.11): repeat until none is left
+  let k = 0, last = '';
+  for (let pass = 0; pass < 6; pass++) {
   const r = await errorCount(model);
   const vs = (r?.v || []).filter((x) => (x.rule === '30' || x.rule === 'dot-2way') && Array.isArray(x.at));
-  if (!vs.length) return;
-  let k = 0;
+  const sig = JSON.stringify(vs.map((x) => [x.rule, x.at]));
+  if (!vs.length || sig === last) return;
+  last = sig;
   for (const x of vs) {
     const cells = allCells(model);
     const at = (el) => { const c = cellInfo(el); return c.kind === 'vertex' && c.style.map.get('contactDot') === '1' && Math.hypot(c.x + c.w / 2 - x.at[0], c.y + c.h / 2 - x.at[1]) < 1.5; };
@@ -404,5 +408,6 @@ export async function fixDots(model) {
     if (cells.some(at)) continue;
     while (cells.some((el) => el.getAttribute('id') === 'ST_DOT_' + k)) k++;
     addVertex(model, { id: 'ST_DOT_' + k++, x: x.at[0] - 3, y: x.at[1] - 3, w: 6, h: 6, style: 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;' });
+  }
   }
 }

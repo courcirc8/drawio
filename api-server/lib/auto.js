@@ -22,6 +22,7 @@ import { execFile } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { classify } from './components.js';
 import { newDocument, getPage, normalizeOrigin, serialize, parseXml, allCells, cellInfo } from './model.js';
+import { geoLvs } from './geo-lvs.js';
 import { importNetlist2 } from './place2.js';
 import { importNetlist4, AUTO_CANDIDATES, AUTO_SPACINGS } from './place4.js';
 import { routePage, pinAbs, netGroups, polylineOf } from './route.js';
@@ -490,6 +491,11 @@ async function autoPlaceOnce(parsed, only = null) {
         // supply and ground: one rail line with one label (Eric's default) or a
         // symbol per branch (AUTO_RAILS=branch)
         polish.rails = await drawRails(page, { errorCount: checkerErrors, fixDots });
+        // a contact dot left where a wire was before straightening / ports / rails moved it: on no wire, joined
+        // by none (the geometric LVS calls it dangling) -> removed; connectivity unchanged (a dot is decoration)
+        const stray = new Set(geoLvs(page).errors.filter((x) => x.rule === 'dangling' && /^junction \S+ joins 0 wire$/.test(x.msg)).map((x) => x.msg.split(' ')[1]));
+        for (const el of allCells(page)) { const c = cellInfo(el); if (stray.has(c.id) && c.style.map.get('contactDot') === '1') el.parentNode.removeChild(el); }
+        if (stray.size) polish.strayDots = stray.size;
       } catch (e) { polish.error = String(e.message || e); /* the unfinished drawing stays as chosen */ }
     }
     return polish;
