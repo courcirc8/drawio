@@ -38,6 +38,8 @@ import { drawRails } from './rails.js';
 import { supplyOrderViolations } from './supply-orient.js';
 import { annotateSizes } from './size-labels.js';
 import { qualityGate } from './quality.js';
+// failed checks of the quality gate on a page (99: the gate itself failed)
+const gateFailCount = (m, parsed) => { try { return Object.values(qualityGate(m, parsed).checks).filter((c) => !c.ok).length; } catch { return 99; } };
 import { importNetlistOta, otaReading, importNetlistMiller, millerReading } from './place-ota.js';
 import { importNetlistLna, lnaReading } from './place-lna.js';
 import { importNetlistPair, pairReading, importNetlistVco, vcoReading } from './place-pair.js';
@@ -92,7 +94,7 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   if (process.env.AUTO_WIRE_NAMES !== '0') { try { await wireNamedNets(m); } catch { /* judged as drawn */ } }
   // a template is judged FINISHED (straightened, ports aligned): its quality
   // gate decides whether it takes priority
-  if ((eng === 'ota' || eng === 'miller' || eng === 'lna' || eng === 'pair' || eng === 'vco' || eng === 'strongarm' || eng === 'cs' || eng === 'indirect' || eng === 'cascode' || eng === 'classab' || eng === 'bandgap' || eng === 'ring' || eng === 'ldo') && process.env.AUTO_JUDGE !== 'js') { try { if (eng === 'vco' || eng === 'strongarm') await crossCoupledX(m, parsed, { errorCount: checkerErrors, fixDots }); await straighten(m); await alignPorts(m, { errorCount: checkerErrors }); await drawRails(m, { errorCount: checkerErrors, fixDots, reroute: rerouteClashes }); } catch { /* judged as drawn */ } }
+  if ((eng === 'ota' || eng === 'miller' || eng === 'lna' || eng === 'pair' || eng === 'vco' || eng === 'strongarm' || eng === 'cs' || eng === 'indirect' || eng === 'cascode' || eng === 'classab' || eng === 'bandgap' || eng === 'ring' || eng === 'ldo') && process.env.AUTO_JUDGE !== 'js') { try { if (eng === 'vco' || eng === 'strongarm') await crossCoupledX(m, parsed, { errorCount: checkerErrors, fixDots }); await straighten(m); await alignPorts(m, { errorCount: checkerErrors }); await drawRails(m, { errorCount: checkerErrors, fixDots, reroute: (x) => rerouteClashes(x, fixDots, { gate: (y) => gateFailCount(y, parsed) }) }); } catch { /* judged as drawn */ } }
   let lvsOk = true;
   try { lvsOk = compare(extractNetlist(m), parsed).match; } catch { lvsOk = false; }
   if (!lvsOk) return { eng, restMode, sp, extra, doc, placed, errs: Infinity, conv: 0, lvsFailed: true };
@@ -505,7 +507,7 @@ async function autoPlaceOnce(parsed, only = null) {
         polish.ports = await alignPorts(page, { errorCount: checkerErrors });
         // supply and ground: one rail line with one label (Eric's default) or a
         // symbol per branch (AUTO_RAILS=branch)
-        polish.rails = await drawRails(page, { errorCount: checkerErrors, fixDots, reroute: rerouteClashes });
+        polish.rails = await drawRails(page, { errorCount: checkerErrors, fixDots, reroute: (x) => rerouteClashes(x, fixDots, { gate: (y) => gateFailCount(y, parsed) }) });
         // a contact dot left where a wire was before straightening / ports / rails moved it: on no wire, joined
         // by none (the geometric LVS calls it dangling) -> removed; connectivity unchanged (a dot is decoration)
         const stray = new Set(geoLvs(page).errors.filter((x) => x.rule === 'dangling' && /^junction \S+ joins 0 wire$/.test(x.msg)).map((x) => x.msg.split(' ')[1]));

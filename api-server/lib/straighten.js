@@ -390,9 +390,9 @@ export async function checkerErrors(m) { return (await errorCount(m))?.n ?? null
 
 /** Two nets drawn on top of each other (rule 22, 22-contact) left by the placer's router, re-routed after the
  *  rails are redrawn (refractory, 08.11: the old routed rail wire used to make the router lay them apart by
- *  chance; a straight or jogged rail no longer does). Kept only when the checker counts fewer errors.
+ *  chance; a straight or jogged rail no longer does). Kept only when the checker counts fewer errors and the quality gate (opts.gate) fails no more checks.
  *  Fixed routes (rails, templates) are never touched. -> number of wires re-routed (0 = drawing unchanged) */
-export async function rerouteClashes(model, fix = fixDots) {
+export async function rerouteClashes(model, fix = fixDots, { gate } = {}) {
   const r = await errorCount(model);
   if (!r) return 0;
   const edges = new Map(allCells(model).map(cellInfo).filter((c) => c.kind === 'edge').map((c) => [c.id, c]));
@@ -404,14 +404,23 @@ export async function rerouteClashes(model, fix = fixDots) {
     }
   }
   if (!ids.size) return 0;
-  const snap = Array.from(model.childNodes).map((n) => n.cloneNode(true));
+  const snap = keepState(model), g1 = gate ? gate(model) : null;
   await routePage(model, [...ids], {});
   if (fix) await fix(model);
   const r2 = await errorCount(model);
-  if (r2 && r2.n < r.n) return ids.size;
-  while (model.firstChild) model.removeChild(model.firstChild);
-  for (const n of snap) model.appendChild(n.cloneNode(true));
+  // review r4 (4): fewer checker errors is not enough, the quality gate must not get worse (refractory_layout:
+  // errors 6 -> 1 but gate 2 -> 3 when the checker alone decided)
+  if (r2 && r2.n < r.n && (g1 == null || gate(model) <= g1)) return ids.size;
+  snap.restore();
   return 0;
+}
+
+/** The model as it is now, to be put back: restore() rebuilds it from FRESH clones each time, so a restored
+ *  drawing that is edited afterwards never changes the snapshot (review r3 (e): sky130_ota_5t's orphan dots
+ *  came from a restored node, the snapshot's own, edited by a retry). */
+export function keepState(model) {
+  const snap = Array.from(model.childNodes).map((n) => n.cloneNode(true));
+  return { restore() { while (model.firstChild) model.removeChild(model.firstChild); for (const n of snap) model.appendChild(n.cloneNode(true)); } };
 }
 
 /** Contact dots as the bench checker wants them: rebuilt from the wires, then

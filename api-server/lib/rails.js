@@ -19,6 +19,7 @@ import { allCells, cellInfo, updateCell, addWire, deleteCell, getCell, freshId }
 import { classify } from './components.js';
 import { pinAbs, routePage, netGroups, polylineOf, rotatedAabb } from './route.js';
 import { wiresOnBody } from './quality.js';
+import { keepState } from './straighten.js';
 
 const STR = 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiTemplate=1;';
 
@@ -28,11 +29,9 @@ export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail'
   let errs = errorCount ? await errorCount(model) : null, done = 0;
   const warnings = [];
   for (const g of groups) {
-    const snap = Array.from(model.childNodes).map((n) => n.cloneNode(true));
     const snapIds = new Set(allCells(model).map((n) => n.getAttribute('id')));
-    // review r3 (e): the snapshot is restored as fresh clones, never the snapshot's own nodes (a restored node that
-    // a later try edits would no longer be the state before the rail: sky130_ota_5t's orphan dots)
-    const undo = () => { while (model.firstChild) model.removeChild(model.firstChild); for (const n of snap) model.appendChild(n.cloneNode(true)); };
+    // review r3 (e): the snapshot is restored as fresh clones, never the snapshot's own nodes (lib/straighten.js)
+    const undo = keepState(model).restore;
     const ok = mode === 'branch' ? await perBranch(model, g) : await oneRail(model, g);
     if (!ok) { undo(); warnings.push(`rail ${g.name || g.kind}: not redrawn (no line fits its pins), drawn as the placer left it`); continue; }
     // a rail wire through a part's body is a real defect, not a checker count: that rail stays as the placer drew it
