@@ -75,11 +75,17 @@ export function orientSupplies(parsed) {
 
 /**
  * The rule on a drawing: every MOS with a channel pin on a positive supply sits above every MOS with a channel
- * pin on a negative supply (centre to centre). -> [{pos, neg}] pairs that break it.
+ * pin on a negative supply (centre to centre), within the same frame. -> [{pos, neg}] pairs that break it.
  */
 export function supplyOrderViolations(cells, parsed) {
   const { pol } = supplyPolarity(parsed);
-  const y = new Map(cells.filter((c) => c.kind === 'vertex' && c.refdes && c.y != null).map((c) => [c.refdes, c.y + (c.h || 0) / 2]));
+  const devs = cells.filter((c) => c.kind === 'vertex' && c.refdes && c.y != null);
+  const y = new Map(devs.map((c) => [c.refdes, c.y + (c.h || 0) / 2]));
+  // a frame of its own (manuel's dashed boxes: Polarisation, start-up, CMFB) has its own rails: the rule holds
+  // inside each frame and in the unframed part, not across them
+  const frames = cells.filter((c) => c.kind === 'vertex' && c.x != null && /dashed=1/.test(c.styleRaw || '') && /apiAnnotation=1/.test(c.styleRaw || '') && !/^text;/.test(c.styleRaw || ''));
+  const frameOf = new Map(devs.map((c) => { const cx = c.x + (c.w || 0) / 2, cy = c.y + (c.h || 0) / 2;
+    return [c.refdes, frames.findIndex((f) => cx > f.x && cx < f.x + f.w && cy > f.y && cy < f.y + f.h)]; }));
   const pos = [], neg = [];
   for (const c of parsed.components) {
     if (!kindOf(c) || !y.has(c.ref)) continue;
@@ -88,6 +94,6 @@ export function supplyOrderViolations(cells, parsed) {
     if (ch.includes('neg') && !ch.includes('pos')) neg.push(c.ref);
   }
   const out = [];
-  for (const p of pos) for (const q of neg) if (y.get(p) >= y.get(q)) out.push({ pos: p, neg: q });
+  for (const p of pos) for (const q of neg) if (frameOf.get(p) === frameOf.get(q) && y.get(p) >= y.get(q)) out.push({ pos: p, neg: q });
   return out;
 }
