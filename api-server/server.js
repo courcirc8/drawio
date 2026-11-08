@@ -34,7 +34,7 @@ import { rewire } from './lib/rewire.js';
 import { annotateSizes } from './lib/size-labels.js';
 import { unwrapSingleSubckt } from './lib/unwrap-subckt.js';
 import { orientSupplies, supplyOrderWarnings } from './lib/supply-orient.js';
-import { splitDummies, dummiesForImport, lvsTwoPages, DUMMY_PAGE } from './lib/dummies.js';
+import { splitDummies, dummiesForImport, labelSharedOnPage1, lvsTwoPages, DUMMY_PAGE } from './lib/dummies.js';
 import { withGroundAlias } from './lib/ground-alias.js';
 import { mergeFingers } from './lib/fingers.js';
 
@@ -437,7 +437,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     if (!d) return null;
     if (!d.lvs.match && !force) throw model.httpError(422, `dummies page: LVS of both pages failed`);
     payload.dummies = d;
-    payload.warnings = [...(payload.warnings || []), d.warning];
+    if (d.warning) payload.warnings = [...(payload.warnings || []), d.warning];
     return d;
   };
   // what the supply rule did, in every import response: polarity read, MOS turned, name/polarity disagreements
@@ -561,6 +561,9 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   // but the HTTP response reflects the failure unless ?force=1 downgrades it.
   // W/L ×m under every transistor name, whatever the engine (lib/size-labels.js; text only, the LVS is unchanged)
   annotateSizes(m, parsed);
+  // a one-.subckt deck's pins are named on page 1 whatever the engine (review r2, N2: MLOAD's d3 on v2/v4): a
+  // label of that name on a stub from one of its pins, when the engine drew none
+  const pinLabels = parsed.pins ? labelSharedOnPage1(entry.doc, split, parsed.pins, m) : [];
   const extracted = netlist.extractNetlist(m);
   const report = lvs.compare(extracted, parsed);
   const decision = lvs.gate(report, { force });
@@ -572,6 +575,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   if (decision.warnings) payload.warnings = decision.warnings;
   await withDummies(entry.doc, payload);
   if (annReport) payload.annotations = annReport;
+  if (pinLabels.length) payload.pinLabels = pinLabels;
   res.status(decision.status).json(payload);
 }));
 

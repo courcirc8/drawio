@@ -74,10 +74,11 @@ for (const engine of ['auto', 'v2']) {
     // (2) every dummy on page 2, nothing of page 1 there
     for (const d of DUMMIES) assert.ok(p2.some((c) => c.kind === 'vertex' && c.id === d), `${d} missing from page 2`);
     assert.ok(!p2.some((c) => /^XM\d$/.test(c.id)), 'a main device on page 2');
-    // (3) page-1 nets as labels of the identical name: one per dummy terminal on such a net
+    // (3) page-1 nets as labels of the identical name: one per group and net (N4: XD1 drain and source share
+    // ONE label, joined by a wire; XD5's drain, in another group, has its own)
     const lab = labels(p2).map((c) => String(c.value));
     assert.deepEqual([...new Set(lab)].sort(), ['tail', 'x']);
-    assert.equal(lab.filter((v) => v === 'tail').length, 3, 'XD1 drain and source, XD5 drain');
+    assert.equal(lab.filter((v) => v === 'tail').length, 2, 'one tail label per group');
     // (4) nets local to page 2 are wired: no label named dn, XD5 and XD6 joined by wires, the page clean
     const ex = extractNetlist(getPage(doc, DUMMY_PAGE)).components;
     const node = (ref, k) => ex.find((c) => c.ref === ref).nodes[k];
@@ -100,15 +101,19 @@ test('POST /lvs on a document with dummies: page 1 without them, both pages with
   assert.equal(bad.match, false, 'a dummy moved to another net');
 });
 
-test('re-import replaces the dummies page; a netlist without dummies has one page and no dummies key', async () => {
+test('re-import replaces the dummies page; a netlist without dummies still has its page 2, "Aucun factice"', async () => {
   const id = await newDoc();
   await (await imp(id, OTA, 'v2')).json();
   await (await imp(id, OTA, 'v2')).json();
   assert.equal(listPages(await docOf(id)).filter((p) => p.name === DUMMY_PAGE).length, 1);
   const id2 = await newDoc();
   const body = await (await imp(id2, 'M1 out in 0 0 nmos W=1u L=1u\nR1 vdd out 1k\n.end', 'v2')).json();
-  assert.equal(body.dummies, undefined);
-  assert.equal(listPages(await docOf(id2)).length, 1);
+  assert.equal(body.dummies.count, 0);
+  assert.ok(!(body.warnings || []).some((w) => /factices sur la page 2/.test(w)), JSON.stringify(body.warnings));
+  const doc2 = await docOf(id2);
+  assert.deepEqual(listPages(doc2).map((p) => p.name), [listPages(doc2)[0].name, DUMMY_PAGE]);
+  const p2 = cellsOf(getPage(doc2, DUMMY_PAGE));
+  assert.deepEqual(p2.filter((c) => c.kind === 'vertex').map((c) => String(c.value)), ['Aucun factice']);
 });
 
 test('the two-page LVS fails when a label is renamed or a page-2 wire is cut', async () => {
@@ -127,3 +132,55 @@ test('the two-page LVS fails when a label is renamed or a page-2 wire is cut', a
   wire.parentNode.removeChild(wire);
   assert.equal(lvsTwoPages(doc, only, s.dummyParsed).match, false, 'wire cut');
 });
+
+// ---- review r2 (Orchestrator 08.11): N1 names read on both pages, N2 W/L and pins on every engine,
+// N3 Eric's exact MLOAD, N4 one label per net and group
+const FIX = (n) => fs.readFileSync(new URL(`./fixtures/dummies/${n}.sp`, import.meta.url), 'utf8');
+const ENGINES = ['auto', 'manuel', 'v2', 'v4', 'elk', 'v3', 'v1'];
+// the names a reader sees on a page: labels, ports, supply symbols, and wires that carry a name
+const namesOn = (m) => new Set([...(extractNetlist(m).namedNets || []),
+  ...cellsOf(m).filter((c) => c.kind === 'edge' && c.value).map((c) => String(c.value))].map((n) => n.toLowerCase()));
+const importDoc = async (text, engine) => {
+  const id = await newDoc();
+  const r = await fetch(`${BASE}/documents/${id}/netlist/import?engine=${engine}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text });
+  return { status: r.status, body: await r.json(), doc: await docOf(id) };
+};
+
+for (const fx of ['ota_dum', 'eric_mload_dum', 'eric_mload_flat_dum']) {
+  test(`N1 ${fx}: every name page 2 shows is shown on page 1 too, on every engine`, async () => {
+    for (const engine of fx === 'ota_dum' ? ENGINES.filter((e) => e !== 'manuel') : ENGINES) {
+      const { status, body, doc } = await importDoc(FIX(fx), engine);
+      assert.equal(status, 201, `${engine}: ${JSON.stringify(body).slice(0, 300)}`);
+      assert.equal(body.dummies.lvs.match, true, `${engine}: two-page LVS`);
+      const on1 = namesOn(getPage(doc, 0));
+      const on2 = [...namesOn(getPage(doc, DUMMY_PAGE))].filter((n) => n !== '0');
+      assert.ok(on2.length > 0);
+      for (const n of on2) assert.ok(on1.has(n), `${engine}: "${n}" is named on page 2, not on page 1 (${[...on1]})`);
+    }
+  });
+}
+
+test('N4 eric_mload_dum: d3 on XM6 drain and source is ONE label and a wire', async () => {
+  const { doc } = await importDoc(FIX('eric_mload_dum'), 'auto');
+  const p2 = getPage(doc, DUMMY_PAGE);
+  assert.equal(labels(cellsOf(p2)).filter((c) => String(c.value) === 'd3').length, 1);
+  const xm6 = extractNetlist(p2).components.find((c) => c.ref === 'XM6');
+  assert.equal(xm6.nodes[0], xm6.nodes[2], 'XM6 drain and source wired together');
+  assert.deepEqual(geoLvs(p2).errors, []);
+});
+
+for (const fx of ['eric_mload_sub', 'eric_mload_flat']) {
+  test(`N2/N3 ${fx} (Eric's exact netlist): W/L ng under each name and the pins named, on every engine`, async () => {
+    for (const engine of ENGINES) {
+      const { status, body, doc } = await importDoc(FIX(fx), engine);
+      assert.equal(status, 201, `${engine}: ${JSON.stringify(body).slice(0, 300)}`);
+      assert.equal(body.lvs.match, true, engine);
+      const m = getPage(doc, 0), cs = cellsOf(m);
+      for (const ref of ['XM3', 'XM4']) {
+        assert.ok(cs.some((c) => c.kind === 'vertex' && new RegExp(`${ref}</b><br>.*35/8 ng=8`).test(String(c.value))), `${engine}: ${ref} 35/8 ng=8`);
+      }
+      if (fx === 'eric_mload_sub') for (const pin of ['d3', 'o1']) assert.ok(namesOn(m).has(pin), `${engine}: pin ${pin} not named on page 1`);
+      assert.equal(listPages(doc).at(-1).name, DUMMY_PAGE);
+    }
+  });
+}

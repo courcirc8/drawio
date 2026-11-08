@@ -13,7 +13,8 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 export function annotateSizes(model, parsed) {
   const byRef = new Map(parsed.components.map((c) => [String(c.ref), c]));
   let n = 0;
-  for (const info of allCells(model).map(cellInfo)) {
+  const cells = allCells(model).map(cellInfo);
+  for (const info of cells) {
     if (info.kind !== 'vertex' || !String(info.id).startsWith('LBL_')) continue;
     const ref = String(info.id).slice(4), c = byRef.get(ref);
     if (!c || String(info.value || '').trim() !== ref) continue;
@@ -27,6 +28,20 @@ export function annotateSizes(model, parsed) {
       style: { html: '1', whiteSpace: 'wrap' },
       x: Math.round((info.x || 0) + (info.w || 0) / 2 - w / 2), y: Math.round((info.y || 0) - 7), w, h,
     });
+    n++;
+  }
+  // engines that draw no name label (v1 and elk show the raw SPICE value under the symbol, v3 the ref and that
+  // value; review r2, N2): the symbol's own label becomes the name and the W/L line. `spice_value` stays the
+  // value the LVS reads (lib/netlist.js), so only the drawn text changes.
+  const named = new Set(cells.filter((c) => String(c.id).startsWith('LBL_')).map((c) => String(c.id).slice(4)));
+  for (const info of cells) {
+    if (info.kind !== 'vertex' || !info.refdes || named.has(String(info.refdes)) || /noLabel=1/.test(info.styleRaw || '')) continue;
+    if (info.attrs?.spice_value == null) continue;
+    const ref = String(info.refdes), c = byRef.get(ref);
+    if (!c || !(c.prefix === 'M' || (c.prefix === 'X' && /mos|fet/i.test(c.model || '')))) continue;
+    const ann = annotation(c);
+    if (!ann || !/\d\/\d|\d\.?\d*\/\d/.test(ann)) continue;
+    updateCell(model, info.id, { value: `<b>${esc(ref)}</b><br><font style="font-size:10px">${esc(ann)}</font>`, style: { html: '1' } });
     n++;
   }
   return n;

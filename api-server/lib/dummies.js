@@ -18,11 +18,12 @@
  * The device a dummy protects: the non-dummy MOS that shares a channel net with it, else the non-dummy MOS of
  * the same model and size (the array it ends), else none ("factices").
  */
-import { addPage, getPage } from './model.js';
-import { SPICE_MAP } from './components.js';
+import { addPage, addVertex, addWire, allCells, cellInfo, freshId, getPage, updateCell } from './model.js';
+import { SPICE_MAP, classify } from './components.js';
+import { netGroups, pinAbs, polylineOf } from './route.js';
 import { getShape } from './stencils.js';
 import { supplyPolarity } from './supply-orient.js';
-import { extractNetlist } from './netlist.js';
+import { connectivity, extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 import { groundMapper } from './ground-alias.js';
 import { annotation, Sheet, emit as emitSheets, placeTr, portVert, tapGnd, tapVdd } from './place-manuel.js';
@@ -106,9 +107,16 @@ export async function drawDummiesPage(doc, split, page1Nets) {
     // from the top: positive rails, buses of the nets local to this page, the row, negative rails
     const S = new Sheet();
     const nets = [...new Set(g.items.flatMap((c) => c.nodes.slice(0, 3)))];
-    const local = nets.filter((n) => !neg(n) && !pos(n) && !page1Nets.has(n));
+    // a page-1 net on two pins or more of the group (d3 at XM6 drain and source): one wire joins them and ONE
+    // label names it (review r2, N4), drawn as a bus like a local net
+    const uses = new Map();
+    for (const c of g.items) for (const n of c.nodes.slice(0, 3)) uses.set(n, (uses.get(n) || 0) + 1);
+    const shared = (n) => page1Nets.has(n) && !neg(n) && !pos(n);
+    const multi = nets.filter((n) => shared(n) && uses.get(n) >= 2);
+    const single = (n) => shared(n) && !multi.includes(n);
+    const local = nets.filter((n) => !neg(n) && !pos(n) && (!page1Nets.has(n) || multi.includes(n)));
     const posR = nets.filter(pos), negR = nets.filter(neg);
-    const lab = 25 + 8 * Math.max(4, ...nets.filter((n) => page1Nets.has(n) && !neg(n) && !pos(n)).map((n) => n.length)) + 12;
+    const lab = 25 + 8 * Math.max(4, ...nets.filter(single).map((n) => n.length)) + 12;
     const right = Math.max(105, lab), pitch = right + 8 * local.length + 120;
     const top = y0 + 90 + 20 * (posR.length + local.length);   // a positive symbol (26 high) clears the title
     const busY = (n) => top - 30 - 20 * local.indexOf(n);
@@ -122,7 +130,7 @@ export async function drawDummiesPage(doc, split, page1Nets) {
       const gx = v.pinAbs[v.pinOf.gate].x;
       for (const side of ['top', 'bot']) {
         const n = v.netOf[side], p = S.term(n, v, v.pinOf[side]), out = side === 'top' ? -1 : 1;
-        if (page1Nets.has(n) && !neg(n) && !pos(n)) {
+        if (single(n)) {
           // a page-1 net: its label at the pin, a short wire (the link to page 1 is the name)
           const e = { x: p.x + 25, y: p.y }; S.path(n, p, e); portVert(S, n, e, 1, false); S.term(n, S.verts.at(-1), S.verts.at(-1).portPin);
         } else if (local.includes(n)) {
@@ -146,7 +154,15 @@ export async function drawDummiesPage(doc, split, page1Nets) {
     // the lines: every rail with its symbol at the left end, every local bus between its outermost attachments
     for (const [n, xs] of touch) {
       const lo = Math.min(...xs), hi = Math.max(...xs);
-      if (local.includes(n)) { if (hi > lo) S.path(n, { x: lo, y: busY(n) }, { x: hi, y: busY(n) }); continue; }
+      if (local.includes(n)) {
+        if (hi > lo) S.path(n, { x: lo, y: busY(n) }, { x: hi, y: busY(n) });
+        if (multi.includes(n)) {
+          // its one label, at the left end of its bus
+          const x0 = lo - 30; S.path(n, { x: x0, y: busY(n) }, { x: lo, y: busY(n) });
+          const v = portVert(S, n, { x: x0, y: busY(n) }, -1, false); S.term(n, v, v.portPin);
+        }
+        continue;
+      }
       rails.add(n);
       const y = pos(n) ? posY(n) : negY(n), x0 = lo - 30;
       S.path(n, { x: x0, y }, { x: Math.max(hi, x0 + 1), y });
@@ -188,15 +204,110 @@ export function lvsTwoPages(doc, split, full) {
   return compare(merged, full);
 }
 
+const PORT_TEXT = (align) => `text;html=1;apiShape=port;align=${align};verticalAlign=middle;fontSize=12;fontStyle=2;spacing=2;`;
+const STUB = 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;endFill=0;drawioApiFixedRoute=1;';
+const hit = (r, s) => r.x < s.x + s.w && r.x + r.w > s.x && r.y < s.y + s.h && r.y + r.h > s.y;
+const segBox = (a, b, m = 0) => ({ x: Math.min(a.x, b.x) - m, y: Math.min(a.y, b.y) - m, w: Math.abs(a.x - b.x) + 2 * m, h: Math.abs(a.y - b.y) + 2 * m });
+
+/**
+ * Review r2 (N1): the link between the pages is a name, so the name must be READ on both pages. Every net named
+ * on page 2 (a label or a rail) that page 1 does not name already gets, on page 1, a net label of that exact
+ * name on a short stub from one of its device pins (the freest of them). -> [{net, at, clear}]
+ */
+export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0)) {
+  const p1 = extractNetlist(m);
+  const named = new Set((p1.namedNets || []).map((n) => String(n).toUpperCase()));
+  const missing = [...new Set(names)].filter((n) => n !== '0' && !named.has(String(n).toUpperCase()));
+  if (!missing.length) return [];
+  // page-1 net names -> netlist names, by terminal set (as lvsTwoPages)
+  const g1 = groundMapper(p1.components), gm = groundMapper(split.main.components);
+  const bySig = new Map([...netSigs(split.main.components, gm)].map(([n, s]) => [s, n]));
+  const ren = new Map([...netSigs(p1.components, g1)].map(([n, s]) => [n, bySig.get(s)]));
+  const conn = connectivity(m);
+  const cells = allCells(m).map(cellInfo), byId = new Map(cells.map((c) => [c.id, c]));
+  const boxes = cells.filter((c) => c.kind === 'vertex' && c.x != null && c.w).map((c) => ({ id: c.id, x: c.x, y: c.y, w: c.w, h: c.h }));
+  const segs = [];
+  for (const e of cells.filter((c) => c.kind === 'edge')) {
+    const pl = polylineOf(e, byId); if (!pl) continue;
+    for (let i = 1; i < pl.length; i++) segs.push([pl[i - 1], pl[i]]);
+  }
+  const out = [];
+  for (const net of missing) {
+    const keys = [...conn.nets].filter(([k]) => ren.get(g1(k)) === net).flatMap(([, ks]) => ks);
+    const cands = [], w = Math.max(30, 8 * net.length), h = 18;
+    // where a stub may start: a device pin of the net, straight out of the device; or a junction dot of the net
+    // (where its wires already meet), any of four ways
+    const pinTerms = keys.map((k) => conn.termInfo.get(k)).filter((t) => t && classify(t.cell).role === 'component');
+    const pinAt = pinTerms.map((t) => pinAbs(t.cell, t.pin));
+    const origins = pinTerms.map((t, i) => {
+      const p = pinAt[i], dx = p.x - (t.cell.x + t.cell.w / 2), dy = p.y - (t.cell.y + t.cell.h / 2);
+      const d = Math.abs(dx) >= Math.abs(dy) ? { x: Math.sign(dx) || 1, y: 0 } : { x: 0, y: Math.sign(dy) || 1 };
+      return { id: t.cell.id, pin: { x: t.pin.x, y: t.pin.y, ...(t.pin.name ? { name: t.pin.name } : {}) }, own: t.cell.id, p, dirs: [d] };
+    });
+    const groups = netGroups(cells), ends = (e) => { const pl = polylineOf(e, byId); return pl ? [pl[0], pl.at(-1)] : []; };
+    const near = (u, v) => Math.hypot(u.x - v.x, u.y - v.y) < 1;
+    const netWires = cells.filter((e) => e.kind === 'edge' && ends(e).some((u) => pinAt.some((v) => near(u, v))));
+    const gids = new Set(netWires.map((e) => groups.get(e.id)));
+    for (const j of cells.filter((c) => c.kind === 'vertex' && c.x != null && classify(c).role === 'junction')) {
+      const p = { x: j.x + j.w / 2, y: j.y + j.h / 2 };
+      if (!cells.some((e) => e.kind === 'edge' && gids.has(groups.get(e.id)) && (e.source === j.id || e.target === j.id))) continue;
+      origins.push({ id: j.id, pin: { x: 0.5, y: 0.5 }, own: j.id, p, dirs: [{ x: 0, y: 1 }, { x: 0, y: -1 }, { x: 1, y: 0 }, { x: -1, y: 0 }] });
+    }
+    for (const o of origins) for (const d of o.dirs) {
+      const p = o.p;
+      // straight out, or out then sideways (an L) when the straight way is taken
+      const shapes = [25, 45, 70].map((a) => [a, null, 0]);
+      for (const a of [15, 30]) for (const sg of [1, -1]) shapes.push([a, { x: d.y * sg, y: d.x * sg }, 30]);
+      for (const [a, q0, b] of shapes) {
+        const k = { x: p.x + d.x * a, y: p.y + d.y * a }, q = q0 || d, e = q0 ? { x: k.x + q.x * b, y: k.y + q.y * b } : k;
+        const r = q.x ? { x: q.x < 0 ? e.x - w : e.x, y: e.y - h / 2, w, h } : { x: e.x - w / 2, y: q.y < 0 ? e.y - h : e.y, w, h };
+        const pin = q.x ? (q.x < 0 ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 }) : (q.y < 0 ? { x: 0.5, y: 1 } : { x: 0.5, y: 0 });
+        const rr = { x: r.x - 3, y: r.y - 3, w: r.w + 6, h: r.h + 6 };
+        // the stub may leave a wire where it starts, never run along a wire, cross one, or touch a body
+        const along = [];
+        for (let i = 4; i <= a; i += 2) along.push({ x: p.x + d.x * i, y: p.y + d.y * i });
+        for (let i = 2; q0 && i <= b; i += 2) along.push({ x: k.x + q.x * i, y: k.y + q.y * i });
+        const dot = (u) => ({ x: u.x - 0.5, y: u.y - 0.5, w: 1, h: 1 });
+        let bad = 0;
+        for (const bx of boxes) if (hit(rr, bx) || along.some((u) => hit(dot(u), bx))) bad++;
+        for (const [u, v] of segs) if (hit(rr, segBox(u, v, 0.5)) || along.some((x) => hit(dot(x), segBox(u, v, 0.5)))) bad++;
+        if (!bad) cands.push({ len: a + b, o, p, k, e, r, pin, bent: !!q0, align: q.x ? (q.x < 0 ? 'right' : 'left') : 'center' });
+      }
+    }
+    if (!cands.length) {
+      // no free place for a label: the name goes on one of the net's wires (it names the net, lib/netlist.js)
+      const wire = netWires.find((e) => !e.value);
+      if (wire) { updateCell(m, wire.id, { value: net }); out.push({ net, at: wire.id, clear: false, on: 'wire' }); }
+      else out.push({ net, at: null, clear: false, on: 'none' });
+      continue;
+    }
+    cands.sort((a, b) => a.len - b.len);
+    const c = cands[0];
+    const lbl = addVertex(m, { id: freshId(m, 'NL_'), style: PORT_TEXT(c.align), x: c.r.x, y: c.r.y, w: c.r.w, h: c.r.h, value: net });
+    addWire(m, { source: c.o.id, target: lbl.getAttribute('id'), sourcePin: c.o.pin, targetPin: c.pin, style: STUB, ...(c.bent ? { points: [c.k] } : {}) });
+    boxes.push({ id: lbl.getAttribute('id'), ...c.r }); segs.push([c.p, c.k], [c.k, c.e]);
+    out.push({ net, at: c.o.id, clear: true, on: 'label' });
+  }
+  return out;
+}
+
 /** the nets of page 1 (the netlist without its dummies) */
 export const page1NetsOf = (split) => new Set(split.main.components.flatMap((c) => c.fullNodes || c.nodes));
 
-/** Page 2 drawn and checked for an import: null when the netlist has no dummy, else what the response says. */
+/** Page 2 drawn and checked for an import, ALWAYS (Orchestrator decision 08.11: every drawing has its page 2,
+ *  "Aucun factice" when the netlist has none); page 1 gets the labels of the nets page 2 names (N1). */
 export async function dummiesForImport(doc, split, full) {
-  if (!split.dummies.length) return null;
+  if (!split.dummies.length) {
+    for (const d of Array.from(doc.getElementsByTagName('diagram'))) if (d.getAttribute('name') === DUMMY_PAGE) d.parentNode.removeChild(d);
+    addPage(doc, DUMMY_PAGE);
+    addVertex(getPage(doc, DUMMY_PAGE), { id: 'NO_DUMMY', style: 'text;html=1;align=left;verticalAlign=middle;fontSize=12;fontStyle=2;', x: 40, y: 40, w: 160, h: 20, value: 'Aucun factice' });
+    return { page: DUMMY_PAGE, count: 0, groups: [], detected: [], labelled: [], lvs: lvsTwoPages(doc, split, full) };
+  }
   await drawDummiesPage(doc, split, page1NetsOf(split));
+  const named2 = extractNetlist(getPage(doc, DUMMY_PAGE)).namedNets || [];
+  const labelled = labelSharedOnPage1(doc, split, named2.filter((n) => page1NetsOf(split).has(n)));
   const lvs = lvsTwoPages(doc, split, full);
   const count = split.dummies.reduce((n, x) => n + (Number(x.c.params?.m ?? 1) || 1), 0);
   return { page: DUMMY_PAGE, count, groups: split.groups.map((g) => g.title),
-    detected: split.dummies.map((x) => ({ ref: x.c.ref, why: x.why })), lvs, warning: `${count} factices sur la page 2` };
+    detected: split.dummies.map((x) => ({ ref: x.c.ref, why: x.why })), labelled, lvs, warning: `${count} factices sur la page 2` };
 }
