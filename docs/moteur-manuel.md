@@ -100,6 +100,30 @@ ng, m) ; C (modèle, nœuds dans l'ordre, w, l, valeur) ; R (modèle, nœuds non
 de l'import donne `fingers` = {dispositif dessiné : ses doigts}. Code : `api-server/lib/fingers.js` ; test :
 `test/fingers.test.js`.
 
+## Rails d'alimentation : positif en haut, négatif en bas (Eric, 08.11)
+
+Règle obligatoire, tous moteurs. La polarité d'une alimentation vient de son nom et des MOS, jamais du coût de
+placement (`api-server/lib/supply-orient.js`) :
+- nom : `power_*`, `vdd*`, `vcc*`, `avdd*`… → positive ; `ground_*`, `vss*`, `gnd*`, `0`, `agnd*`… → négative ;
+- MOS : bulk de PMOS → positive, bulk de NMOS → négative (un net sans nom d'alimentation ne compte que s'il ne
+  porte que des bulks et des sources) ; nom et MOS en désaccord → avertissement, le nom l'emporte.
+
+Avant tout dessin, un PMOS dont le drain est sur une alimentation positive et la source non est retourné
+(drain ↔ source ; NMOS : alimentation négative). Une extraction de layout nomme drain et source comme elle les
+trouve (LOADMIR : XM5 drain sur `power_ana`). Le LVS netlist (`lib/lvs.js`) traite drain et source d'un MOS comme
+interchangeables, comme tout LVS.
+
+Alimentation unique sans masse (LOADMIR de layout3d) : la lecture `manuel` a un seul rail, en haut ; les PMOS
+pendent dessous sur une rangée, sources en haut. Un transistor en diode avec sa source de courant de polarisation
+en série (référence de miroir + `I`) est dans le cœur, à côté de la queue qu'il recopie, pas dans un cadre
+Polarisation en bas ; sa source `I` n'a pas de port.
+
+`drawRails` (`lib/rails.js`) ne défait plus un rail que le contrôleur pénalise : il le garde et l'écrit dans
+`warnings`. La réponse de l'import donne `supply` = {`polarity`, `swapped`, `warnings`}. Contrôle :
+`supplyOrderViolations` (chaque MOS sur l'alimentation positive au-dessus de chaque MOS sur la négative) ;
+test `test/supply-rails.test.js` (LOADMIR d'abord, puis OTA 5T N/P, Miller N/P, folded, StrongARM, g_bias,
+bandgap en `auto` et en `manuel`).
+
 ## Critère « sûr »
 
 `manuelReading` rend `null`, ou le moteur lève une erreur, et `auto` se replie sur les autres moteurs (inchangés), si :

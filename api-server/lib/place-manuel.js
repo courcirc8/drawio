@@ -293,7 +293,9 @@ function layoutFrame(F, R, ctx) {
     const mirrorRefOf = (i) => {
       const ps = cols[i].parts;
       // diode-connected: the gate is the drain, above (N) or below (P, hanging from the top rail)
-      if (ps.length !== 1 || !isTr(ps[0].c) || (gateOf(ps[0].c) !== ps[0].up && gateOf(ps[0].c) !== ps[0].down)) return null;
+      // (Eric 08.11) or with its bias current source in series under (over) it, drawn in the same column
+      if (!isTr(ps[0].c) || (gateOf(ps[0].c) !== ps[0].up && gateOf(ps[0].c) !== ps[0].down)) return null;
+      if (ps.length > 2 || (ps.length === 2 && ps[1].c.prefix !== 'I')) return null;
       const g = gateOf(ps[0].c);
       const js = cols.map((col, k) => (k !== i && col.parts.some((p) => isTr(p.c) && gateOf(p.c) === g) ? k : -1)).filter((k) => k >= 0);
       // the tail on the axis first (Eric 07.11: the PMOS bias reference sits left, beside the tail it mirrors,
@@ -313,6 +315,13 @@ function layoutFrame(F, R, ctx) {
       if (cols[i].selfSym && !axisUsed) { order.axis.push(i); axisUsed = true; continue; }
       if (par != null && side[par] !== 0) { const L = side[par] < 0 ? order.L : order.R; L.splice(L.indexOf(par) + 1, 0, i); side[i] = side[par]; continue; }
       if (ctx.textbook !== false && mirrorRefOf(i) != null) continue;     // placed after the axis is known
+      // a lone column ending on the node of a paired column (a dummy beside a mirror's diode, LOADMIR 08.11):
+      // on that column's side, outermost, so the node does not cross the other half
+      if (!R.bot) {
+        const own = [cols[i].top, cols[i].bot].filter((n) => n && n !== R.top);
+        const sib = cols.findIndex((c, j) => j !== i && c.pair != null && side[j] !== 0 && c.parts.some((p) => own.includes(p.up) || own.includes(p.down)));
+        if (sib >= 0) { (side[sib] < 0 ? order.L : order.R).push(i); side[i] = side[sib]; continue; }
+      }
       order.R.push(i); side[i] = 1;
     }
     // the reference diode of the tail's mirror: outermost on the left, its gate toward the tail
@@ -452,6 +461,7 @@ function layoutFrame(F, R, ctx) {
   // bias current). Only when the net stays in this frame (else the label joins the frames).
   const biasBus = new Map();       // net -> refs of the other gates on the bus
   const biasRef = new Map();       // net -> x of the reference's drain (the bias input enters there, from below)
+  const biasSrc = new Set();       // bias nets whose reference column holds its current source (no port)
   if (ctx.textbook !== false) {
     for (const r of mirrorBar) {
       const c = F.parts.find((q) => q.ref === r);
@@ -460,6 +470,7 @@ function layoutFrame(F, R, ctx) {
       if (!ctx.labelNets.has(g) || !nodeCols.has(g)) continue;
       if ((ctx.allParts || F.parts).some((q) => !F.parts.includes(q) && q.nodes.includes(g))) continue;
       biasBus.set(g, F.parts.filter((q) => isTr(q) && gateOf(q) === g && !mirrorBar.has(q.ref)).map((q) => q.ref));
+      if (cols[colOfRef.get(r)].parts.length > 1) biasSrc.add(g);   // its current source is drawn: no input port
     }
   }
 
@@ -544,6 +555,8 @@ function layoutFrame(F, R, ctx) {
       // level, the bridge straight (the classic two-stage figure)
       else if (ctx.textbook !== false && !b && a.top && isTr(p.c) && F.chains.some((ch) => (ch.a === n && midNets.has(ch.b)) || (ch.b === n && midNets.has(ch.a)))) yNode.set(n, midY);
       // the last node of a column (a tail): at the level of the pin, sources joined by one line (Razavi)
+      // no bottom rail (one supply, LOADMIR 08.11): a step under the pins, so a node of several drains is a dotted T
+      else if (!b && isTr(p.c) && !R.bot) yNode.set(n, pinP(p.c.ref, 'bot').y + 30);
       else if (!b && isTr(p.c)) yNode.set(n, pinP(p.c.ref, 'bot').y);
       else yNode.set(n, rowY(a) + DEV_H + 30);
     });
@@ -556,6 +569,8 @@ function layoutFrame(F, R, ctx) {
   // the diode's gate-drain connection does not run over the drains of the other columns
   for (const g of biasBus.keys()) {
     const t = F.parts.find((q) => mirrorBar.has(q.ref) && gateOf(q) === g), gy = pinP(t.ref, 'gate').y;
+    // the reference holds its current source below (above): the node right past its drain, the source lower
+    if (biasSrc.has(g)) { const dn = gy < yNode.get(g); yNode.set(g, pinP(t.ref, dn ? 'bot' : 'top').y + (dn ? 30 : -30)); continue; }
     yNode.set(g, yNode.get(g) + (gy < yNode.get(g) ? 30 : -30));
   }
   // per net: points on its spine (x -> point), and drops already drawn
@@ -615,7 +630,9 @@ function layoutFrame(F, R, ctx) {
           biasRef.set(g, pinP(rf, gp.y < yNode.get(g) ? 'bot' : 'top').x);
         } else if (nodeCols.has(g) && !ctx.labelNets.has(g)) {
           // the diode / driving node: a drop from the bar to its spine, beside the driving column
-          const j = [...nodeCols.get(g)][0];
+          // the column of a bar device when it drives the node (the mirror's diode), not a neighbour on that node
+          const own = [...nodeCols.get(g)].filter((k) => cols[k].parts.some((q) => q.c.ref === c.ref || q.c.ref === o));
+          const j = own.length ? own[0] : [...nodeCols.get(g)][0];
           const xr = paired ? xs[j] + (xs[j] <= 0 ? 90 : -90) : mid.x + Math.sign(xs[j] - mid.x) * 15;
           S.path(g, { x: xr, y: gp.y }, { x: xr, y: yNode.get(g) }); addSpine(g, xr);
         } else if (satelliteNets.has(g)) satAt.set(g, { x: 0, y: gp.y - 0, dir: 0, bar: true });
@@ -625,6 +642,9 @@ function layoutFrame(F, R, ctx) {
       if (g === R.top || g === R.bot) {
         const e = { x: gp.x + dir * 30, y: gp.y };
         S.path(g, gp, e);
+        // one supply, no ground (LOADMIR 08.11): a gate on the supply of a top-row device rises to the rail, one
+        // symbol for the whole rail
+        if (!R.bot && g === R.top && cols[i].top === R.top && cols[i].parts[0] === p) { S.path(g, e, { x: e.x, y: yR }); continue; }
         S.path(g, e, { x: e.x, y: g === R.top ? e.y - 20 : e.y + 20 });
         ctx.localTaps.push({ sheet: S, net: g, p: { x: e.x, y: g === R.top ? e.y - 20 : e.y + 20 } });
         continue;
@@ -845,6 +865,7 @@ function layoutFrame(F, R, ctx) {
     // the outer end carries a bridge (a Miller R-C): the name goes on the inner end
     if (pts.length > 1 && bridgeEnd.has(`${n}@${xe}`)) { s = -s; xe = s > 0 ? pts[pts.length - 1] : pts[0]; }
     if (joinEnd.has(n) && pts.length > 1) { const xj = joinEnd.get(n); s = Math.abs(pts[pts.length - 1] - xj) >= Math.abs(pts[0] - xj) ? 1 : -1; xe = s > 0 ? pts[pts.length - 1] : pts[0]; }
+    if (biasSrc.has(n)) continue;  // the source in the reference column is the bias input
     if (biasRef.has(n)) {         // the bias current enters the reference's drain from below (above, for N)
       const xd = biasRef.get(n), dn = y > yR + (yG - yR) / 2 ? -1 : 1, q = { x: xd, y: y + dn * 30 };
       S.path(n, { x: xd, y }, q);

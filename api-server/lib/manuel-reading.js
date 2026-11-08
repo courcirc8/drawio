@@ -25,6 +25,7 @@
  */
 
 export const SUPPLY = /^(a?v(dd|cc)\w*|vpwr|vdda|dvdd|vcca|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
+import { NEG_NAME } from './supply-orient.js';
 const GND = '0';
 const MIRROR_REF = process.env.MANUEL_MIRROR_REF !== '0';
 export const BIASNAME = /^(v?bias\w*|vb\w*|[np]bias\w*|vc[mnp]\w*|vref\w*|vg\w*)$/i;
@@ -47,9 +48,10 @@ const isRail = (n, R) => n === R.top || n === R.bot;
 
 function railsOf(parsed) {
   const nets = new Set(parsed.components.flatMap((c) => c.nodes));
-  if (!nets.has(GND)) return null;
   const sup = [...nets].filter((n) => SUPPLY.test(n));
   if (sup.length > 1) return null;
+  // one supply and no ground (a PMOS load cut out of a layout, LOADMIR 08.11): one rail on top, none at the bottom
+  if (!nets.has(GND)) return sup.length === 1 && ![...nets].some((n) => NEG_NAME.test(n)) ? { top: sup[0], bot: null } : null;
   return { top: sup[0] || null, bot: GND };
 }
 
@@ -97,7 +99,10 @@ function read(parsed, opts = {}) {
   // ports: signal nets with one terminal, or output-named nets
   // the pins of a .subckt page (lib/hier.js: parsed.pins) are ports whatever their degree
   const pinSet = new Set((parsed.pins || []).map((n) => String(n).toLowerCase()));
-  const isPort = (n) => !isRail(n, R) && (pinSet.has(String(n).toLowerCase()) || ((degree(n) === 1 || OUTNAME.test(n)) && !/^o\d/i.test(n)));
+  // a single supply and no ground (LOADMIR of layout3d): nothing in the cell sinks the current of a channel net,
+  // it comes from outside -> a port (Eric 07.11: "il faut un port d'entrée pour le courant de polarisation")
+  const fedFromOutside = (n) => !R.bot && (all.get(n)?.chan.length || 0) > 0;
+  const isPort = (n) => !isRail(n, R) && (pinSet.has(String(n).toLowerCase()) || fedFromOutside(n) || ((degree(n) === 1 || OUTNAME.test(n)) && !/^o\d/i.test(n)));
   const groups = cccs(comps, R);
   const nTr = (g) => g.filter(isTr).length;
   const netsOf = (g) => new Set(g.flatMap((c) => [...chan(c), gateOf(c)].filter((n) => n && !isRail(n, R))));
@@ -196,7 +201,11 @@ function read(parsed, opts = {}) {
     const drivesCore = [...nets].some((n) => gateNets.has(n));
     // the reference diode of a core mirror (a lone diode-connected device on a rail whose gate drives a
     // core gate, the tail's): drawn as the left half of that mirror, beside it (Orchestrator, 26.10)
-    if (MIRROR_REF && opts.textbook !== false && g.length === 1 && isTr(g[0]) && chan(g[0]).includes(gateOf(g[0])) && chan(g[0]).some((n) => isRail(n, R)) && gateNets.has(gateOf(g[0]))) { frames.core.push(...g); continue; }
+    // with its bias current source in series (IB from the diode node to the other rail, Eric 08.11: matched
+    // devices stay aligned, all hanging on vdd): the reference column, source below it, joins the core too
+    const refTr = g.filter(isTr), refI = g.filter((c) => !isTr(c));
+    if (MIRROR_REF && opts.textbook !== false && refTr.length === 1 && chan(refTr[0]).includes(gateOf(refTr[0])) && chan(refTr[0]).some((n) => isRail(n, R)) && gateNets.has(gateOf(refTr[0]))
+      && refI.length <= 1 && refI.every((c) => c.prefix === 'I' && chan(c).includes(gateOf(refTr[0])) && chan(c).some((n) => isRail(n, R)))) { frames.core.push(...g); continue; }
     const hasPort = [...nets].some((n) => isPort(n) && !BIASNAME.test(n));
     if (pairIn(g) && drivesCore) { frames.cmfb.push(...g); continue; }
     if (g.every((c) => !isTr(c))) { later.push(g); continue; }
@@ -206,7 +215,10 @@ function read(parsed, opts = {}) {
   // sensing resistors inside the core: passive parts whose nets are only outputs / CMFB nets
   if (frames.cmfb.length) {
     const cmNets = new Set(frames.cmfb.flatMap((c) => [...chan(c), gateOf(c)]).filter(Boolean));
-    const moved = frames.core.filter((c) => !isTr(c) && chan(c).every((n) => isRail(n, R) || cmNets.has(n) || OUTNAME.test(n)) && chan(c).some((n) => cmNets.has(n)));
+    // (not the bias current source of a core mirror reference: it stays beside its diode, Eric 08.11 — the
+    // cascode OTA's IB into XM0, whose vbn also drives the CMFB tail)
+    const refNodes = new Set(frames.core.filter((c) => isTr(c) && chan(c).includes(gateOf(c)) && chan(c).some((n) => isRail(n, R))).map(gateOf));
+    const moved = frames.core.filter((c) => !isTr(c) && !(c.prefix === 'I' && chan(c).some((n) => refNodes.has(n))) && chan(c).every((n) => isRail(n, R) || cmNets.has(n) || OUTNAME.test(n)) && chan(c).some((n) => cmNets.has(n)));
     for (const c of moved) { frames.core.splice(frames.core.indexOf(c), 1); frames.cmfb.push(c); }
     // and the parts hanging from the sensing node only (a resistor to a rail)
     const sense = new Set(moved.flatMap((c) => chan(c)).filter((n) => cmNets.has(n)));

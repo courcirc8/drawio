@@ -8,6 +8,7 @@
  * spelled like a ground. A deck with both `0` and `VSS` (a split supply, VSS
  * negative) or with two ground spellings (avss + dvss) is left as written —
  * merging them would short two rails.
+ * `vee` alone counts too (Eric 08.11: the negative supply is the bottom rail; the placers know only `0`).
  *
  * The placers see the alias renamed `0`; lib/lvs.js applies the same rule to
  * both sides, so a drawing (ground symbol = net 0) still matches the deck that
@@ -17,7 +18,7 @@
 /** The supply names lib/place2.js draws as a supply tap (shared with lib/place4.js). */
 export const SUPPLY_NAME = /^(a?v(dd|cc)d?|vpwr|vdda|dvdd|vcca|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 
-export const GROUND_NAME = /^(gnd|vss|vgnd|agnd|dgnd|avss|dvss|vssa|vssd|gnda|gndd|gnd!|vss!|0!|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
+export const GROUND_NAME = /^(gnd|vss|vee|avee|vgnd|agnd|dgnd|avss|dvss|vssa|vssd|gnda|gndd|gnd!|vss!|0!|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
 
 /** The single ground alias among `nets` (iterable of names), else null. */
 export function groundAlias(nets) {
