@@ -121,10 +121,13 @@ export async function drawDummiesPage(doc, split, page1Nets) {
     // label names it (review r2, N4), drawn as a bus like a local net
     const uses = new Map();
     for (const c of g.items) for (const n of c.nodes.slice(0, 3)) uses.set(n, (uses.get(n) || 0) + 1);
-    const shared = (n) => page1Nets.has(n) && !neg(n) && !pos(n);
+    // a .subckt pin is named like a page-1 net (Orchestrator 08.11 (b): DIFFCC's vbd, a pin only a dummy uses):
+    // a label, never a local bus left with one end
+    const pinNets = new Set(split.main.pins || []);
+    const shared = (n) => (page1Nets.has(n) || pinNets.has(n)) && !neg(n) && !pos(n);
     const multi = nets.filter((n) => shared(n) && uses.get(n) >= 2);
     const single = (n) => shared(n) && !multi.includes(n);
-    const local = nets.filter((n) => !neg(n) && !pos(n) && (!page1Nets.has(n) || multi.includes(n)));
+    const local = nets.filter((n) => !neg(n) && !pos(n) && (!shared(n) || multi.includes(n)));
     const posR = nets.filter(pos), negR = nets.filter(neg);
     const lab = 25 + 8 * Math.max(4, ...nets.filter(single).map((n) => n.length)) + 12;
     const right = Math.max(105, lab), pitch = right + 8 * local.length + 120;
@@ -279,7 +282,8 @@ export function lvsTwoPages(doc, split, full) {
   const shown = new Set([...(p1.namedNets || []), ...allCells(getPage(doc, 0)).map(cellInfo).filter((e) => e.kind === 'edge').map((e) => String(e.value || '').trim())]
     .filter(Boolean).map((n) => String(n).toUpperCase()));
   const gnd = String(split.main?.groundAlias || '').toUpperCase(), p1n = page1NetsOf(split);
-  const unnamed = [...named2].filter((n) => g2(n) !== '0' && String(n).toUpperCase() !== gnd && p1n.has(n) && !shown.has(String(n).toUpperCase()));
+  const supply = supplyNetsOf(split);
+  const unnamed = [...named2].filter((n) => g2(n) !== '0' && String(n).toUpperCase() !== gnd && !supply(n) && p1n.has(n) && !shown.has(String(n).toUpperCase()));
   if (unnamed.length) { report.match = false; report.unnamed = unnamed; }
   return report;
 }
@@ -311,7 +315,9 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0), opts 
   for (const e of allCells(m).map(cellInfo)) if (e.kind === 'edge' && String(e.value || '').trim()) named.add(String(e.value).trim().toUpperCase());
   // ground (and the name it goes by, ground_ana: drawn as the ground symbol, which names it) is never missing
   const gnd = String(split.main?.groundAlias || '').toUpperCase();
-  const missing = [...new Set(names)].filter((n) => n !== '0' && String(n).toUpperCase() !== gnd && !named.has(String(n).toUpperCase()));
+  // nor is any supply (Orchestrator 08.11 (a)): a rail on each page names it; one only on page 2 needs nothing here
+  const supply = supplyNetsOf(split);
+  const missing = [...new Set(names)].filter((n) => n !== '0' && String(n).toUpperCase() !== gnd && !supply(n) && !named.has(String(n).toUpperCase()));
   if (!missing.length) return [];
   // page-1 net names -> netlist names, by terminal set (as lvsTwoPages)
   const g1 = groundMapper(p1.components), gm = groundMapper(split.main.components);
@@ -413,7 +419,22 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0), opts 
       // first pin (or dot), over whatever is there (clear: false); only a net with no pin and no dot on page 1
       // stays unnamed ('none'), and the two-page LVS then refuses the drawing
       const o = origins[0];
-      if (!o) { out.push({ net, at: null, clear: false, on: 'none' }); continue; }
+      if (!o) {
+        // Orchestrator decision 08.11 (b): a .subckt pin (not a supply) that page 1 does not draw at all (only on
+        // page 2's dummies) is still a real pin: its port, on its own, under page 1's drawing (no pin is added)
+        if (opts.port && !page1NetsOf(split).has(net) && !supplyNetsOf(split)(net)) {
+          const vs = cells.filter((c) => c.kind === 'vertex' && c.x != null && c.w);
+          const x0 = vs.length ? Math.min(...vs.map((c) => c.x)) : 40, y0 = vs.length ? Math.max(...vs.map((c) => c.y + c.h)) : 40;
+          const y = y0 + 40 + 36 * out.filter((l) => l.on === 'port' && l.alone).length;
+          const ps = portStyleFor(net, 1);
+          const id = freshId(m, 'P_');
+          addVertex(m, { id, style: ps.style, x: x0, y, w: pb.w, h: pb.h, value: net });
+          boxes.push({ id, x: x0, y, w: pb.w, h: pb.h });
+          out.push({ net, at: null, clear: true, on: 'port', alone: true });
+          continue;
+        }
+        out.push({ net, at: null, clear: false, on: 'none' }); continue;
+      }
       const d = o.dirs[0], k = { x: o.p.x + d.x * 25, y: o.p.y + d.y * 25 };
       cands.push({ len: 25, port: false, side: d.x, o, p: o.p, k, e: k, bent: false, forced: true,
         r: d.x ? { x: d.x < 0 ? k.x - tw : k.x, y: k.y - th / 2, w: tw, h: th } : { x: k.x - tw / 2, y: d.y < 0 ? k.y - th : k.y, w: tw, h: th },
@@ -453,6 +474,15 @@ function tapWire(m, { e, i, pl }, p) {
 export const unnamedWarnings = (labelled) => labelled.filter((l) => l.on === 'none')
   .map((l) => `net ${l.net}: not named on page 1 (no pin or dot of that net to hang its name on)`);
 
+/** Orchestrator decision 08.11 (a): a SUPPLY net (positive or negative by name or by its devices, ground and its
+ *  alias) is global: drawn as a rail on each page, it never has to appear on page 1 for the pages to join (DIFFCC:
+ *  vdd only on the dummy XM1 and on the pair's bulks). -> (net) => boolean */
+export function supplyNetsOf(split) {
+  const all = { components: [...split.main.components, ...split.dummies.map((x) => x.c), ...(split.parasitics || [])] };
+  const { pol } = supplyPolarity(all), gnd = String(split.main?.groundAlias || '').toUpperCase();
+  return (n) => n === '0' || pol.has(n) || (gnd && String(n).toUpperCase() === gnd);
+}
+
 /** the nets of page 1 (the netlist without its dummies) */
 export const page1NetsOf = (split) => new Set(split.main.components.flatMap((c) => c.fullNodes || c.nodes));
 
@@ -467,7 +497,8 @@ export async function dummiesForImport(doc, split, full) {
   }
   await drawDummiesPage(doc, split, page1NetsOf(split));
   const named2 = extractNetlist(getPage(doc, DUMMY_PAGE)).namedNets || [];
-  const labelled = labelSharedOnPage1(doc, split, named2.filter((n) => page1NetsOf(split).has(n)));
+  const supply = supplyNetsOf(split);
+  const labelled = labelSharedOnPage1(doc, split, named2.filter((n) => page1NetsOf(split).has(n) && !supply(n)));
   // test hook (review r3, D10): one wire of page 2 taken away, so the import's page-2 gate is exercised for real
   if (process.env.DRAWIO_TEST_FAULT === 'dummies-page') {
     const w = allCells(getPage(doc, DUMMY_PAGE)).find((el) => el.getAttribute('edge') === '1');
@@ -476,7 +507,7 @@ export async function dummiesForImport(doc, split, full) {
   // test hook (review r4, W1/W2): every print of one shared name erased from page 1 (its labels, ports, wire
   // texts), so the name check of the two-page LVS, the 422 and the warning line are exercised end to end
   if (process.env.DRAWIO_TEST_FAULT === 'page1-name') {
-    const n = named2.find((x) => page1NetsOf(split).has(x) && x !== '0'), m1 = getPage(doc, 0);
+    const n = named2.find((x) => page1NetsOf(split).has(x) && !supply(x)), m1 = getPage(doc, 0);
     for (const el of allCells(m1)) {
       const c = cellInfo(el);
       if (String(c.value || '').trim() !== n) continue;
