@@ -27,7 +27,7 @@ import { addPage, addVertex, addWire, allCells, cellInfo, deleteCell, freshId, g
 import { SPICE_MAP, classify } from './components.js';
 import { netGroups, pinAbs, polylineOf } from './route.js';
 import { getShape } from './stencils.js';
-import { supplyPolarity } from './supply-orient.js';
+import { supplyPolarity, POS_NAME, NEG_NAME } from './supply-orient.js';
 import { portDirection } from './port-style.js';
 import { connectivity, extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
@@ -108,7 +108,8 @@ export async function drawDummiesPage(doc, split, page1Nets) {
   for (const d of Array.from(doc.getElementsByTagName('diagram'))) if (d.getAttribute('name') === DUMMY_PAGE) d.parentNode.removeChild(d);
   addPage(doc, DUMMY_PAGE);
   const model = getPage(doc, DUMMY_PAGE);
-  const { pol } = supplyPolarity({ components: [...split.main.components, ...split.dummyParsed.components] });
+  // review #81 (2): page 1's devices vote, never a dummy's bulk (an internal mid on a well tie is no rail)
+  const pol = supplyPolOf(split);
   const neg = (n) => n === '0' || pol.get(n) === 'neg', pos = (n) => pol.get(n) === 'pos';
   const sheets = [], rails = new Set();
   let y0 = 40;
@@ -315,9 +316,10 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0), opts 
   for (const e of allCells(m).map(cellInfo)) if (e.kind === 'edge' && String(e.value || '').trim()) named.add(String(e.value).trim().toUpperCase());
   // ground (and the name it goes by, ground_ana: drawn as the ground symbol, which names it) is never missing
   const gnd = String(split.main?.groundAlias || '').toUpperCase();
-  // nor is any supply (Orchestrator 08.11 (a)): a rail on each page names it; one only on page 2 needs nothing here
-  const supply = supplyNetsOf(split);
-  const missing = [...new Set(names)].filter((n) => n !== '0' && String(n).toUpperCase() !== gnd && !supply(n) && !named.has(String(n).toUpperCase()));
+  // nor is a supply page 2 draws (Orchestrator 08.11 (a)): its rail there names it. A supply page 2 does not draw
+  // (no dummy on it, review #81 (1)) is looked after here as before: hung on page 1, or said in a warning
+  const supply = supplyNetsOf(split), on2 = page2NetsOf(split);
+  const missing = [...new Set(names)].filter((n) => n !== '0' && String(n).toUpperCase() !== gnd && !(supply(n) && on2.has(n)) && !named.has(String(n).toUpperCase()));
   if (!missing.length) return [];
   // page-1 net names -> netlist names, by terminal set (as lvsTwoPages)
   const g1 = groundMapper(p1.components), gm = groundMapper(split.main.components);
@@ -420,9 +422,10 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0), opts 
       // stays unnamed ('none'), and the two-page LVS then refuses the drawing
       const o = origins[0];
       if (!o) {
-        // Orchestrator decision 08.11 (b): a .subckt pin (not a supply) that page 1 does not draw at all (only on
-        // page 2's dummies) is still a real pin: its port, on its own, under page 1's drawing (no pin is added)
-        if (opts.port && !page1NetsOf(split).has(net) && !supplyNetsOf(split)(net)) {
+        // Orchestrator decision 08.11 (b): a .subckt pin that page 1 does not use at all (only page 2's dummies, or
+        // no device) is still a real pin: its port, on its own, under page 1's drawing (no pin is added). A supply
+        // never gets here: page 2 draws it (exempt above), and a net no device uses gets no polarity vote
+        if (opts.port && !page1NetsOf(split).has(net)) {
           const vs = cells.filter((c) => c.kind === 'vertex' && c.x != null && c.w);
           const x0 = vs.length ? Math.min(...vs.map((c) => c.x)) : 40, y0 = vs.length ? Math.max(...vs.map((c) => c.y + c.h)) : 40;
           const y = y0 + 40 + 36 * out.filter((l) => l.on === 'port' && l.alone).length;
@@ -476,12 +479,27 @@ export const unnamedWarnings = (labelled) => labelled.filter((l) => l.on === 'no
 
 /** Orchestrator decision 08.11 (a): a SUPPLY net (positive or negative by name or by its devices, ground and its
  *  alias) is global: drawn as a rail on each page, it never has to appear on page 1 for the pages to join (DIFFCC:
- *  vdd only on the dummy XM1 and on the pair's bulks). -> (net) => boolean */
+ *  vdd only on the dummy XM1 and on the pair's bulks). -> (net) => boolean
+ *  Review #81 (2): the device vote counts page 1's devices only; a dummy or an lvs_ignore parasite never makes a
+ *  net a supply (an internal `mid` tied to a dummy's bulk stays a signal). A net page 1 does not use at all (only
+ *  on page 2) is a supply by its NAME only. */
 export function supplyNetsOf(split) {
-  const all = { components: [...split.main.components, ...split.dummies.map((x) => x.c), ...(split.parasitics || [])] };
-  const { pol } = supplyPolarity(all), gnd = String(split.main?.groundAlias || '').toUpperCase();
+  const pol = supplyPolOf(split), gnd = String(split.main?.groundAlias || '').toUpperCase();
   return (n) => n === '0' || pol.has(n) || (gnd && String(n).toUpperCase() === gnd);
 }
+
+/** split -> Map net -> 'pos'|'neg': page 1's devices vote (supply-orient.js); a net only page 2 uses goes by its
+ *  name alone. The rails page 2 draws and the supplies supplyNetsOf exempts are the same nets. */
+export function supplyPolOf(split) {
+  const { pol } = supplyPolarity({ components: split.main.components }), p1 = page1NetsOf(split);
+  for (const n of page2NetsOf(split)) if (!p1.has(n) && !pol.has(n)) {
+    if (POS_NAME.test(n)) pol.set(n, 'pos'); else if (NEG_NAME.test(n)) pol.set(n, 'neg');
+  }
+  return pol;
+}
+
+/** the nets page 2 draws (dummies, lvs_ignore parasites) */
+export const page2NetsOf = (split) => new Set([...split.dummies.map((x) => x.c), ...(split.parasitics || [])].flatMap((c) => c.fullNodes || c.nodes || []));
 
 /** the nets of page 1 (the netlist without its dummies) */
 export const page1NetsOf = (split) => new Set(split.main.components.flatMap((c) => c.fullNodes || c.nodes));
