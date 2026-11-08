@@ -31,7 +31,10 @@ import * as annotate from './lib/annotate.js';
 import * as critic from './lib/critic.js';
 import * as exportAsc from './lib/export-asc.js';
 import { rewire } from './lib/rewire.js';
+import { annotateSizes } from './lib/size-labels.js';
+import { unwrapSingleSubckt } from './lib/unwrap-subckt.js';
 import { orientSupplies, supplyOrderWarnings } from './lib/supply-orient.js';
+import { splitDummies, dummiesForImport, labelSharedOnPage1, lvsTwoPages, unnamedWarnings, DUMMY_PAGE } from './lib/dummies.js';
 import { withGroundAlias } from './lib/ground-alias.js';
 import { mergeFingers } from './lib/fingers.js';
 
@@ -421,8 +424,23 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   // a ground spelled vss / gnd (alone) is drawn as ground: one GND rail (lib/ground-alias.js)
   // parallel fingers of a layout extraction merged into m=N before any drawing (lib/fingers.js), then the MOS
   // turned to face their supply: positive on top, negative at the bottom (Eric 08.11, lib/supply-orient.js)
-  const oriented = orientSupplies(mergeFingers(withGroundAlias(netlist.parseSpice(spice))));
-  const parsed = oriented.parsed;
+  // a deck that is one .subckt only (a layout3d cell): its body, pins as ports (lib/unwrap-subckt.js)
+  const oriented = orientSupplies(mergeFingers(withGroundAlias(unwrapSingleSubckt(netlist.parseSpice(spice)))));
+  // Eric 08.11: the dummies (dummy=1 or detected) leave page 1 for a page 2 of their own, wired to their rails,
+  // joined to page 1 by net labels of the same name (lib/dummies.js); page 1 is drawn and checked without them
+  const full = oriented.parsed;
+  const split = splitDummies(full);
+  const parsed = split.main;
+  // page 2 drawn, then both pages checked together against the whole netlist (fails closed like the page-1 LVS)
+  const withDummies = async (doc, payload) => {
+    const d = await dummiesForImport(doc, split, full);
+    if (!d) return null;
+    if (!d.lvs.match && !force) throw model.httpError(422, `dummies page: LVS of both pages failed${d.lvs.unnamed?.length ? ` (named on page 2, not on page 1: ${d.lvs.unnamed.join(', ')})` : ''}`);
+    payload.dummies = d;
+    if (d.warning) payload.warnings = [...(payload.warnings || []), d.warning];
+    if (d.warnings?.length) payload.warnings = [...(payload.warnings || []), ...d.warnings];
+    return d;
+  };
   // what the supply rule did, in every import response: polarity read, MOS turned, name/polarity disagreements
   const supply = { polarity: oriented.polarity, ...(oriented.swapped.length ? { swapped: oriented.swapped } : {}),
     ...(oriented.warnings.length ? { warnings: oriented.warnings } : {}) };
@@ -468,9 +486,13 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     if (seedDoc && seedDoc.annotations) {
       annReport = annotate.applyAnnotations(model.getPage(entry.doc), seedDoc, { scale: annScale });
     }
+    // W/L under every name on this path too (review r3, B1): text only, after the route
+    annotateSizes(model.getPage(entry.doc), parsed);
     const lvsReport = lvs.compare(netlist.extractNetlist(model.getPage(entry.doc)), parsed);
     if (!lvsReport.match) throw model.httpError(422, 'final optimized document failed strict LVS');
-    return res.status(201).json({ engine: (usedEngine === 'v3' ? 'place3+optimize' : String(usedEngine).startsWith('v4') ? 'place4+optimize' : 'place2+optimize') + (engine === 'auto' ? ' (auto)' : ''), score: best.score,
+    const optOut = {};
+    await withDummies(entry.doc, optOut);
+    return res.status(201).json({ ...optOut, engine: (usedEngine === 'v3' ? 'place3+optimize' : String(usedEngine).startsWith('v4') ? 'place4+optimize' : 'place2+optimize') + (engine === 'auto' ? ' (auto)' : ''), score: best.score,
       metrics: best.metrics, params: best.params, history, lvs: lvsReport,
       components: best.placed.components, wires: best.placed.wires, supply: (() => {
         const w = supplyOrderWarnings(model.allCells(model.getPage(entry.doc)).map(model.cellInfo), parsed);
@@ -495,6 +517,8 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     try { win = await autoPlace(parsed); } catch (e) { throw model.httpError(e.status || 500, e.message); }
     entry.doc = win.doc;
     placed = { ...win.placed, engine: win.label + ' (auto)', auto: win.trials };
+    // a one-.subckt deck's pins named on page 1 here too (layout3d calls engine=auto: its OTA lost vout and ibias)
+    const autoPins = parsed.pins ? labelSharedOnPage1(entry.doc, split, parsed.pins, model.getPage(entry.doc), { port: true }) : [];
     const extracted = netlist.extractNetlist(model.getPage(entry.doc));
     const report = lvs.compare(extracted, parsed);
     const decision = lvs.gate(report, { force });
@@ -502,7 +526,12 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     // a rail kept against the checker, or not redrawn, is said (lib/rails.js): never a silent fallback
     const railWarn = [...(win.polish?.rails?.warnings || []), ...supplyOrderWarnings(model.allCells(model.getPage(entry.doc)).map(model.cellInfo), parsed)];
     const supplyOut = railWarn.length ? { ...supply, warnings: [...(supply.warnings || []), ...railWarn] } : supply;
-    return res.status(decision.status).json({ ...placed, routed: placed.wires.length, lvs: report, supply: supplyOut, ...fingersOf(parsed) });
+    const autoOut = { ...placed, routed: placed.wires.length, lvs: report, supply: supplyOut, ...fingersOf(full) };
+    if (autoPins.length) autoOut.pinLabels = autoPins;
+    if (decision.warnings) autoOut.warnings = decision.warnings;
+    if (unnamedWarnings(autoPins).length) autoOut.warnings = [...(autoOut.warnings || []), ...unnamedWarnings(autoPins)];
+    await withDummies(entry.doc, autoOut);
+    return res.status(decision.status).json(autoOut);
   } else if (engine === 'manuel') {
     // lib/place-manuel.js: textbook drawing by rules (columns, mirror pairs,
     // bias/CMFB frames, label nets), only when its reading is sure; wires are
@@ -537,6 +566,11 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   // explicit POST /lvs catching it; now the endpoint itself fails closed.
   // The document is kept either way (so it can still be inspected/fixed),
   // but the HTTP response reflects the failure unless ?force=1 downgrades it.
+  // W/L ×m under every transistor name, whatever the engine (lib/size-labels.js; text only, the LVS is unchanged)
+  annotateSizes(m, parsed);
+  // a one-.subckt deck's pins are named on page 1 whatever the engine (review r2, N2: MLOAD's d3 on v2/v4): a
+  // label of that name on a stub from one of its pins, when the engine drew none
+  const pinLabels = parsed.pins ? labelSharedOnPage1(entry.doc, split, parsed.pins, m, { port: true }) : [];
   const extracted = netlist.extractNetlist(m);
   const report = lvs.compare(extracted, parsed);
   const decision = lvs.gate(report, { force });
@@ -544,9 +578,13 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   // the supply order checked on the finished drawing, every engine (review r2): said, never silent
   const orderWarn = supplyOrderWarnings(model.allCells(m).map(model.cellInfo), parsed);
   const supplyOut = orderWarn.length ? { ...supply, warnings: [...(supply.warnings || []), ...orderWarn] } : supply;
-  const payload = { ...placed, routed: routed.ids.length, lvs: report, supply: supplyOut, ...fingersOf(parsed) };
+  const payload = { ...placed, routed: routed.ids.length, lvs: report, supply: supplyOut, ...fingersOf(full) };
   if (decision.warnings) payload.warnings = decision.warnings;
+  await withDummies(entry.doc, payload);
   if (annReport) payload.annotations = annReport;
+  if (pinLabels.length) payload.pinLabels = pinLabels;
+  // a pin that page 1 could not print at all is said (review r4), never silent
+  if (unnamedWarnings(pinLabels).length) payload.warnings = [...(payload.warnings || []), ...unnamedWarnings(pinLabels)];
   res.status(decision.status).json(payload);
 }));
 
@@ -613,8 +651,18 @@ app.post('/documents/:id/lvs', wrap((req, res) => {
   const { model: m } = pageOf(req);
   const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
   if (spice == null || spice === '') throw model.httpError(400, 'reference SPICE netlist required');
-  const golden = netlist.parseSpice(spice);
+  const golden = unwrapSingleSubckt(netlist.parseSpice(spice));
   const extracted = netlist.extractNetlist(m);
+  // a document with a dummies page (lib/dummies.js): page 1 against the netlist without its dummies, and both
+  // pages together against the whole netlist (the import's own check)
+  const entry = documents.getDoc(req.params.id);
+  const hasDummies = model.listPages(entry.doc).some((p) => p.name === DUMMY_PAGE) && m === model.getPage(entry.doc, 0);
+  if (hasDummies) {
+    const full = orientSupplies(mergeFingers(withGroundAlias(golden))).parsed, split = splitDummies(full);
+    const report = lvs.compare(extracted, split.main);
+    const both = lvsTwoPages(entry.doc, split, full);
+    return res.json({ ...report, match: report.match && both.match, page1_match: report.match, dummies: both, extraction_issues: extracted.issues });
+  }
   const report = lvs.compare(extracted, golden);
   res.json({ ...report, extraction_issues: extracted.issues });
 }));

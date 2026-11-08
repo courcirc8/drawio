@@ -57,3 +57,6 @@ references/
 # Cadence local profiles: foundry pin positions (NDA), never committed
 cadence-profile*.json
 *profil*.json
+
+# local test and bench logs
+api-server/logs/

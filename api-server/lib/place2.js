@@ -272,7 +272,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       px < v.x + v.w + 6 && px + 24 > v.x - 6 && py < v.y + v.h + 6 && py + 24 > v.y - 6);
     for (let k = 0; k < 8 && clash2(); k++) px += left ? -50 : 50;
     const rot = left ? 90 : 270;
-    const cellS = addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, rotation: rot, value: net.toUpperCase() });
+    const cellS = addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, rotation: rot, value: net });
     cellS.setAttribute('style', cellS.getAttribute('style') + 'horizontal=1;' +
       (left ? 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=left;align=right;spacing=6;'
             : 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=right;align=left;spacing=6;'));
@@ -295,7 +295,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         localBiasNets.add(net);
         for (const q of proposals) {
           const id='PB_'+(++seq)+'_'+q.t.ref;
-          const cell=addVertex(model,{id,shape:PORT,x:q.x,y:q.y,w:24,h:24,value:net.toUpperCase()});
+          const cell=addVertex(model,{id,shape: PORT,x:q.x,y:q.y,w:24,h:24,value: net});
           cell.setAttribute('style',cell.getAttribute('style')+'verticalLabelPosition=bottom;verticalAlign=top;');
           placed.set(id,{id,x:q.x,y:q.y,w:24,h:24,rotation:0});
           wire(null,{source:id,target:q.t.ref,sourcePin:{x:q.left?1:0,y:0.5},targetPin:q.t.pin});
@@ -322,14 +322,14 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         }
       }
       if (midX && abs.y <= p.y + 2) {
-        const cellUp = addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, value: net.toUpperCase() });
+        const cellUp = addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, value: net });
         cellUp.setAttribute('style', cellUp.getAttribute('style') + 'flipV=1;verticalLabelPosition=top;verticalAlign=bottom;');
         placed.set(id, { id, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, rotation: 0, flipV: true });
         wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
         continue;
       }
       if (midX && abs.y >= p.y + p.h - 2) {
-        addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y + 46, w: 24, h: 24, value: net.toUpperCase() });
+        addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y + 46, w: 24, h: 24, value: net });
         placed.set(id, { id, x: abs.x - 12, y: abs.y + 46, w: 24, h: 24, rotation: 0 });
         wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
         continue;
@@ -340,7 +340,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
         px < v.x + v.w + 8 && px + 24 > v.x - 8 && py < v.y + v.h + 8 && py + 24 > v.y - 8);
       for (let k = 0; k < 6 && clash(); k++) { px += leftish ? -60 : 60; }
       for (let k = 0; k < 6 && clash(); k++) { py += 50; }
-      addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net.toUpperCase() });
+      addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net });
       placed.set(id, { id, x: px, y: py, w: 24, h: 24, rotation: 0 });
       wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
     } else if (terms.length === 2) {
@@ -548,7 +548,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       const clashR = () => [...placed.values()].some((v) =>
         pxR < v.x + v.w + 8 && pxR + 24 > v.x - 8 && pyR < v.y + v.h + 8 && pyR + 24 > v.y - 8);
       for (let k3 = 0; k3 < 8 && clashR(); k3++) pxR += 40;
-      const cellR = addVertex(model, { id: id2, shape: PORT, x: pxR, y: pyR, w: 24, h: 24, value: net.toUpperCase() });
+      const cellR = addVertex(model, { id: id2, shape: PORT, x: pxR, y: pyR, w: 24, h: 24, value: net });
       if (hang) cellR.setAttribute('style', cellR.getAttribute('style') + 'flipV=1;verticalLabelPosition=top;verticalAlign=bottom;');
       placed.set(id2, { id: id2, x: pxR, y: pyR, w: 24, h: 24, rotation: 0, railPort: true, ...(hang ? { flipV: true } : {}) });
       wire(null, { source: id2, target: riNet.endRef, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: riNet.endPin.x, y: riNet.endPin.y } });
@@ -562,7 +562,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
       if (dir1 === 1 && dir2 === -1 && Math.abs(u1.abs.y - u2.abs.y) < 8) {
         const mx2 = (u1.abs.x + u2.abs.x) / 2;
         const id2 = 'PN' + (++seq);
-        addVertex(model, { id: id2, shape: PORT, x: mx2 - 12, y: u1.abs.y + 40, w: 24, h: 24, value: net.toUpperCase() });
+        addVertex(model, { id: id2, shape: PORT, x: mx2 - 12, y: u1.abs.y + 40, w: 24, h: 24, value: net });
         placed.set(id2, { id: id2, x: mx2 - 12, y: u1.abs.y + 40, w: 24, h: 24, rotation: 0 });
         wire(null, { source: id2, target: u1.t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: u1.t.pin.x, y: u1.t.pin.y } });
         continue;
@@ -595,7 +595,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     const { t, abs } = cands2[0];
     const id = 'PN' + (++seq);
     if (ups.length) {
-      const cellUp2 = addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, value: net.toUpperCase() });
+      const cellUp2 = addVertex(model, { id, shape: PORT, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, value: net });
       cellUp2.setAttribute('style', cellUp2.getAttribute('style') + 'flipV=1;verticalLabelPosition=top;verticalAlign=bottom;');
       placed.set(id, { id, x: abs.x - 12, y: abs.y - 70, w: 24, h: 24, rotation: 0, flipV: true });
       wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
@@ -617,7 +617,7 @@ export function wireNets(model, { comps, info, placed, netTerms, vddNet, P }) {
     };
     for (let k2 = 0; k2 < 6 && (clash() || !clearL()); k2++) px += leftish ? -60 : 60;
     for (let k2 = 0; k2 < 6 && (clash() || !clearL()); k2++) py += 50;
-    addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net.toUpperCase() });
+    addVertex(model, { id, shape: PORT, x: px, y: py, w: 24, h: 24, value: net });
     placed.set(id, { id, x: px, y: py, w: 24, h: 24, rotation: 0 });
     wire(null, { source: id, target: t.ref, sourcePin: { x: 0.5, y: 0 }, targetPin: { x: t.pin.x, y: t.pin.y } });
   }
@@ -1721,7 +1721,7 @@ function importNetlist2Impl(model, parsed, opts = {}) {
       const left = net === axisPlan.inNet;
       const px = xN + (left ? -76 : 52), py3 = yN - 12;
       const rotP = left ? 90 : 270;
-      const cellP = addVertex(model, { id, shape: PORT, x: px, y: py3, w: 24, h: 24, rotation: rotP, value: net.toUpperCase() });
+      const cellP = addVertex(model, { id, shape: PORT, x: px, y: py3, w: 24, h: 24, rotation: rotP, value: net });
       cellP.setAttribute('style', cellP.getAttribute('style') + 'horizontal=1;' +
         (left ? 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=left;align=right;spacing=6;'
               : 'verticalLabelPosition=middle;verticalAlign=middle;labelPosition=right;align=left;spacing=6;'));

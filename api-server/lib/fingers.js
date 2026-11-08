@@ -33,7 +33,7 @@ function keyOf(c) {
   const pick = (...ks) => ks.map((k) => p[k] ?? '').join(',');
   if (c.prefix === 'M') {
     if (n.length < 3) return null;
-    return ['M', model, [n[0], n[2]].sort().join('/'), n[1], n[3] ?? '', pick('w', 'l', 'nf', 'ng', 'm', 'mult')].join('|');
+    return ['M', model, [n[0], n[2]].sort().join('/'), n[1], n[3] ?? '', pick('w', 'l', 'nf', 'ng', 'm', 'mult', 'dummy')].join('|');
   }
   // a bare value (R1 a b 1k) is in the model field: it is part of the key either way
   if (c.prefix === 'C' && n.length === 2) return ['C', model, n.join('/'), pick('w', 'l', 'c', 'm', 'mult')].join('|');

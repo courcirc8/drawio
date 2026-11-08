@@ -197,8 +197,11 @@ test('eda-validate plugin via /editor: check against a broken netlist paints ove
 
     await page.evaluate((xml) => {
       const ui = window.__capturedUi;
+      // page 1 decoded on its own, as draw.io decodes each <diagram>: every import now has a page 2 ("factices",
+      // lib/dummies.js) whose root cells are also "0" and "1", and mxCodec looks ids up in the whole DOM
       const node = new DOMParser().parseFromString(xml, 'text/xml').documentElement;
-      ui.editor.setGraphXml(node.getElementsByTagName('mxGraphModel')[0]);
+      const page1 = new XMLSerializer().serializeToString(node.getElementsByTagName('mxGraphModel')[0]);
+      ui.editor.setGraphXml(new DOMParser().parseFromString(page1, 'text/xml').documentElement);
     }, docXml);
 
     await page.evaluate(() => { window.__capturedUi.actions.get('edaValidate').funct(); });
@@ -246,8 +249,11 @@ test('eda-validate plugin via /editor: reroute after a move keeps LVS and follow
     await openEditorAndCapture(page);
     await page.evaluate((xml) => {
       const ui = window.__capturedUi;
+      // page 1 decoded on its own, as draw.io decodes each <diagram>: every import now has a page 2 ("factices",
+      // lib/dummies.js) whose root cells are also "0" and "1", and mxCodec looks ids up in the whole DOM
       const node = new DOMParser().parseFromString(xml, 'text/xml').documentElement;
-      ui.editor.setGraphXml(node.getElementsByTagName('mxGraphModel')[0]);
+      const page1 = new XMLSerializer().serializeToString(node.getElementsByTagName('mxGraphModel')[0]);
+      ui.editor.setGraphXml(new DOMParser().parseFromString(page1, 'text/xml').documentElement);
     }, docXml);
 
     // move R1 by (0, +90) — its wires still carry the OLD geometry
@@ -289,6 +295,30 @@ test('eda-validate plugin via /editor: reroute after a move keeps LVS and follow
     // and the ERC sees no dangling wire on the moved part
     const erc = await (await fetch(`${API_BASE}/documents/${c2.id}/erc`)).json();
     assert.equal(erc.errors, 0, JSON.stringify(erc).slice(0, 400));
+  } finally {
+    await browser.close();
+  }
+});
+
+// every import has a page 2 ("factices", lib/dummies.js, Orchestrator decision 08.11): the whole file opens in the
+// editor with both pages, page 1 complete (the two tests above load page 1 alone, see their note)
+test('a document with its page 2 opens in /editor with both pages', { timeout: 120000 }, async () => {
+  if (!HAS_CHROME) { console.log('  skipped: no chromium found (findChrome() returned null)'); return; }
+  const id = (await (await fetch(`${API_BASE}/documents`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).id;
+  assert.equal((await fetch(`${API_BASE}/documents/${id}/netlist/import?engine=v2`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: RC })).status, 201);
+  const docXml = await (await fetch(`${API_BASE}/documents/${id}`)).text();
+  const puppeteer = (await import('puppeteer-core')).default;
+  const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage'] });
+  try {
+    const page = await browser.newPage();
+    await openEditorAndCapture(page);
+    const r = await page.evaluate((xml) => {
+      const ui = window.__capturedUi;
+      ui.fileLoaded(new LocalFile(ui, xml, 'doc.drawio', true));
+      return { pages: (ui.pages || []).map((p) => p.getName()), ids: Object.keys(ui.editor.graph.model.cells) };
+    }, docXml);
+    assert.deepEqual(r.pages, ['Page-1', 'factices']);
+    for (const ref of ['R1', 'R2', 'C1']) assert.ok(r.ids.includes(ref), `${ref} missing from page 1: ${r.ids}`);
   } finally {
     await browser.close();
   }

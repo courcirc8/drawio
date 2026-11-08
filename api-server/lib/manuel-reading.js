@@ -89,7 +89,7 @@ export function manuelReading(parsed, opts = {}) {
 
 function read(parsed, opts = {}) {
   const comps = parsed.components;
-  if (comps.length < 3 || comps.length > 40) return null;
+  if (comps.length < 2 || comps.length > 40) return null;
   if (comps.some((c) => !isTr(c) && !TWO.has(c.prefix))) return null;
   if (comps.some((c) => isTr(c) && c.nodes.length < 3)) return null;
   const R = railsOf(parsed);
@@ -101,7 +101,8 @@ function read(parsed, opts = {}) {
   const pinSet = new Set((parsed.pins || []).map((n) => String(n).toLowerCase()));
   // a single supply and no ground (LOADMIR of layout3d): nothing in the cell sinks the current of a channel net,
   // it comes from outside -> a port (Eric 07.11: "il faut un port d'entrée pour le courant de polarisation")
-  const fedFromOutside = (n) => !R.bot && (all.get(n)?.chan.length || 0) > 0;
+  // the same with a ground and no supply (an NMOS load cut out of a layout, MLOAD 08.11: d3 and o1)
+  const fedFromOutside = (n) => (!R.bot || !R.top) && (all.get(n)?.chan.length || 0) > 0;
   const isPort = (n) => !isRail(n, R) && (pinSet.has(String(n).toLowerCase()) || fedFromOutside(n) || ((degree(n) === 1 || OUTNAME.test(n)) && !/^o\d/i.test(n)));
   const groups = cccs(comps, R);
   const nTr = (g) => g.filter(isTr).length;

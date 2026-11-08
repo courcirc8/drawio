@@ -56,8 +56,10 @@ export function otaReading(parsed) {
       // resistor from the source net to a rail (a resistor between the pair's
       // sources and a mirror node is not a tail: AnalogGenie 155)
       const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
-      const tail = parsed.components.find((c) => !used.has(c.ref) && (isMos(c) ? D(c) === S(p)
+      // a device held off (gate on its source, layout3d's XM25) is never the tail when a conducting one is there
+      const tails = parsed.components.filter((c) => !used.has(c.ref) && (isMos(c) ? D(c) === S(p)
         : ['I', 'R'].includes(c.prefix) && c.nodes.includes(S(p)) && c.nodes.some((n) => n !== S(p) && RAILN.test(n))));
+      const tail = tails.find((c) => !isMos(c) || G(c) !== S(c)) || tails[0];
       if (tail) used.add(tail.ref);
       // the tail's bias diode: same gate, gate = drain, same polarity
       const bias = tail && isMos(tail) ? parsed.components.find((c) => !used.has(c.ref) && isMos(c) && G(c) === G(tail) && D(c) === G(c) && isPmosLike(c) === isPmosLike(tail)) : null;
@@ -175,7 +177,13 @@ export async function imposeOta(model, O, parsed) {
     // the bias device left of the tail, far enough for its reference column to
     // pass left of the first input's port (its gate at gate(iA), port 40 + 64 px out)
     if (O.bias) {
-      const bb = ctr(O.bias), want = Math.min(gate(O.tail).x - Math.max(1.6 * W, 110), gate(O.iA).x - 150 - (gate(O.bias).x - drain(O.bias).x));
+      // no reference and nothing else on the bias net but the tail and MOS capacitors (Eric's ota5t: ibias a
+      // port): no column to leave room for, the bias right beside the tail. Anything else on that net keeps
+      // the room its wiring needs (refractory, analoggenie/3063 crossed bodies when it closed in, 08.11)
+      const B0 = parsed.components.find((c) => c.ref === O.bias), nb = G(B0);
+      const lone = !O.ref && parsed.components.every((c) => !c.nodes.includes(nb) || c.ref === O.bias || c.ref === O.tail
+        || (isMos(c) && G(c) === nb && D(c) === S(c) && D(c) !== G(c)));
+      const bb = ctr(O.bias), want = Math.min(gate(O.tail).x - Math.max(1.6 * W, 110), lone ? Infinity : gate(O.iA).x - 150 - (gate(O.bias).x - drain(O.bias).x));
       move(O.bias, want - gate(O.bias).x, a.y + s * ROW - bb.y);
     }
     // the reference straight over (under, PMOS input) the bias drain
@@ -183,6 +191,40 @@ export async function imposeOta(model, O, parsed) {
       const R = find(O.ref), ps = activePins(classify(R)).map((q) => pinAbs(R, q));
       const near = ps.reduce((u, v) => (s * v.y > s * u.y ? v : u));   // its end towards the bias device
       move(O.ref, drain(O.bias).x - near.x, (drain(O.bias).y - s * 40) - near.y);
+    }
+  }
+  // a MOS capacitor on the bias node (gate on it, drain and source on one rail: a layout's decoupling, Eric's
+  // ota5t XM85) beside the bias diode, outside, gate towards it: never on the far side of the tail, where its
+  // gate line ran through the tail (08.11)
+  if (O.bias) {
+    const B0 = parsed.components.find((c) => c.ref === O.bias);
+    let xr = find(O.bias).x;
+    for (const c of parsed.components.filter((c) => !O.used.has(c.ref) && isMos(c) && (G(c) === G(B0) || G(c) === D(B0)) && D(c) === S(c) && D(c) !== G(c))) {
+      face(c.ref, 'right');
+      const k = find(c.ref), cc = ctr(c.ref);
+      move(c.ref, (xr - 70 - k.w / 2) - cc.x, ctr(O.bias).y - cc.y);
+      xr = find(c.ref).x;
+      O.used.add(c.ref); (O.caps ||= []).push(c.ref);
+    }
+  }
+  // a device held off (gate on its source) whose drain sits on a template node: a layout's edge device, not a
+  // dummy (review r4: layout3d's XM25 on vtail, XM154 on von). On that node's device row, outside, drain towards
+  // it: its drain a short link away, its gate and source a short drop to their rail (08.11)
+  {
+    const tplX = (ctr(O.iA).x + ctr(O.iB).x) / 2;
+    for (const c of parsed.components.filter((c) => !O.used.has(c.ref) && isMos(c) && G(c) === S(c) && D(c) !== G(c))) {
+      const t = [O.tail, O.mA, O.mB].filter(Boolean).map((r) => parsed.components.find((k) => k.ref === r))
+        .find((k) => D(k) === D(c) && isPmosLike(k) === isPmosLike(c));
+      if (!t) continue;
+      const tc = ctr(t.ref), out = t.ref === O.tail && O.bias ? Math.sign(tc.x - ctr(O.bias).x) || 1 : Math.sign(tc.x - tplX) || 1;
+      face(c.ref, out > 0 ? 'right' : 'left');
+      const k = find(c.ref), cc = ctr(c.ref);
+      // the row's devices on that side, the anchor included: beyond the last one
+      const row = cells().filter((v) => v.kind === 'vertex' && classify(v).role === 'component' && v.id !== k.id
+        && Math.abs(v.y + v.h / 2 - tc.y) < v.h / 2 && out * (v.x + v.w / 2 - tc.x) >= -1);
+      const x = out > 0 ? Math.max(...row.map((v) => v.x + v.w)) + 70 + k.w / 2 : Math.min(...row.map((v) => v.x)) - 70 - k.w / 2;
+      move(c.ref, x - cc.x, tc.y - cc.y);
+      O.used.add(c.ref);
     }
   }
   // the SECOND STAGE (two-stage Miller): the common-source device on the
@@ -236,6 +278,13 @@ export async function imposeOta(model, O, parsed) {
   await routePage(model, ids, {});
   if (O.tail) teeNet(model, find(O.iA), find(O.iB), find(O.tail), s);
   mirrorNet(model, find(O.iA), find(O.mA), find(O.mB), s);
+  // the diode's name off its link (the link runs beside its gate, under / over its body): on its outer side,
+  // by its drain lead (Eric's ota5t: XM155's name and W/L were barred by the link, 08.11)
+  {
+    const c = find(O.mA), L = cells().find((v) => v.kind === 'vertex' && (v.id === 'LBL_' + O.mA || v.id === 'LBL_' + c.id));
+    const pd = drain(O.mA), out = Math.sign(pd.x - gate(O.mA).x) || -1;
+    if (L) updateCell(model, L.id, { x: Math.round(out < 0 ? pd.x - L.w - 6 : pd.x + 6) });
+  }
   outputNet(model, find(O.iB), find(O.mB), s);
   // two-stage Miller: ONE line at the first output's height — first output,
   // Rz, Cc, second output, its port
@@ -254,6 +303,8 @@ export async function imposeOta(model, O, parsed) {
     for (const id of ids) updateCell(model, id, { style: { drawioApiPinned: 1 } });
   }
   if (O.bias && O.tail) biasNet(model, find(O.bias), find(O.tail), O.ref && find(O.ref), s);
+  // each MOS capacitor's gate teed into the bias diode's link, just over its drain
+  for (const r of O.caps || []) capLink(model, find(r), find(O.bias), s);
   await alignPorts(model);
   alignRails(model);
   rebuildLocalDots(model);
@@ -303,7 +354,9 @@ export function mirrorNet(model, IA, MA, MB, s) {
   dropAmong(model, pins);
   addWire(model, { source: IA.id, target: MA.id, sourcePin: dI, targetPin: dA, style: STF, points: [] });
   addWire(model, { source: MA.id, target: MB.id, sourcePin: gA, targetPin: gB, style: STF, points: [] });
-  const xm = Math.round((pgA.x + pgB.x) / 2), yn = Math.round(pdA.y + s * 16);
+  // the diode link SHORT, just beside the diode's gate, like the bias diode's (Eric 08.11: the gate-drain link
+  // dropped from the middle of the bus read as a big loop)
+  const xm = Math.round(pgA.x + Math.sign(pgB.x - pgA.x) * 22), yn = Math.round(pdA.y + s * 16);
   addWire(model, { source: MA.id, target: MB.id, sourcePin: dA, targetPin: gB, style: STF, points: [{ x: pdA.x, y: yn }, { x: xm, y: yn }, { x: xm, y: pgB.y }] });
 }
 
@@ -381,6 +434,18 @@ export function biasNet(model, BI, T, REF, s) {
     const anchor = pinAbs(P, { x: 1, y: 0.5 }).x > pinAbs(P, { x: 0, y: 0.5 }).x ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 };
     addWire(model, { source: port.id, target: BI.id, sourcePin: anchor, targetPin: dB, style: STF, points: [{ x: pdB.x, y }] });
   }
+}
+
+/** A MOS capacitor left of the bias diode, gate towards it: its gate straight right, up to the diode link's
+ *  height, onto the bias drain (the diode link starts there: one T, no loop round the diode). */
+export function capLink(model, C, BI, s) {
+  const gC = relPin(C, 1), dB = relPin(BI, 0);
+  const pgC = pinAbs(C, gC), pdB = pinAbs(BI, dB);
+  if (!(pgC.x < pdB.x)) return;
+  const pins = [[C, gC]];
+  for (const e of allCells(model).map(cellInfo).filter((e) => e.kind === 'edge' && pins.some(([c, r]) => atPin(e, 'exit', c, r) || atPin(e, 'entry', c, r)))) deleteCell(model, e.id);
+  const yn = Math.round(pdB.y - s * 16), xj = Math.round((pgC.x + pdB.x) / 2);
+  addWire(model, { source: C.id, target: BI.id, sourcePin: gC, targetPin: dB, style: STF, points: [{ x: xj, y: pgC.y }, { x: xj, y: yn }, { x: pdB.x, y: yn }] });
 }
 
 /** Each supply / ground symbol wired to ONE top / bottom pin straight over /
