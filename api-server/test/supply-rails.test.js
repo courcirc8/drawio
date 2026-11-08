@@ -171,6 +171,23 @@ test('R1 (r2): supplyOrderWarnings words each pair', async () => {
   assert.deepEqual(w, ['supply order: M2 (positive supply) is not above M1 (negative supply)']);
 });
 
+// REVIEW r3 (A5): manuel can read a netlist and still draw it out of the supply order (NMOS tied by their drain to
+// vdd, drawn level with a diode to ground: bank case dvd-natif/esscirc_2007033, rebuilt here as a synthetic
+// circuit). tryManuel must then refuse its drawing, so auto never returns it unchecked.
+test('A5 (r3): tryManuel refuses a manuel drawing that breaks the supply order', async () => {
+  const { tryManuel } = await import('../lib/auto.js');
+  const { manuelReading } = await import('../lib/manuel-reading.js');
+  const { importNetlistManuel } = await import('../lib/place-manuel.js');
+  const { newDocument } = await import('../lib/model.js');
+  const p = orientSupplies(withGroundAlias(parseSpice('M1 vdd a a 0 nmos W=1u L=1u\nM2 vdd b b 0 nmos W=1u L=1u\nM3 c c 0 0 nmos W=1u L=1u\n.end'))).parsed;
+  assert.ok(manuelReading(p), 'manuel reads it');
+  const m = getPage(newDocument());
+  importNetlistManuel(m, p);
+  assert.ok(compare(extractNetlist(m), p).match, 'manuel draws it LVS-clean');
+  assert.ok(supplyOrderViolations(allCells(m).map(cellInfo), p).length > 0, 'manuel draws it out of order');
+  assert.equal(tryManuel(p), null);
+});
+
 // REVIEW r3 (E3): a jog never runs through a size label; with labels ignored as obstacles, ME and MF's rail
 // wires cross LBL_ME and LBL_MF here. The text box is the quality gate's estimate (lib/quality.js).
 test('E3 (r3): no rail wire runs through a name label', async () => {

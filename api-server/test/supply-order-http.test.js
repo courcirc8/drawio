@@ -40,3 +40,12 @@ test('engine auto: a drawing that still breaks the order is said', async () => {
   const b = await imp(CONFLICT, 'auto');
   assert.ok(order(b).length > 0, JSON.stringify(b.supply));
 });
+// REVIEW r3 (A7c): the ?optimize=N path says the supply order too
+test('?optimize=2: a drawing that breaks the order is said', async () => {
+  const id = (await (await fetch(BASE + '/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).id;
+  const r = await fetch(`${BASE}/documents/${id}/netlist/import?optimize=2&force=1`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: CONFLICT });
+  const b = await r.json();
+  assert.equal(r.status, 201, JSON.stringify(b).slice(0, 300));
+  assert.match(String(b.engine), /optimize/);
+  assert.ok(order(b).length > 0, JSON.stringify(b.supply));
+});
