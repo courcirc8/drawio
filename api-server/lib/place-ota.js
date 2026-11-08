@@ -175,7 +175,7 @@ export async function imposeOta(model, O, parsed) {
     // the bias device left of the tail, far enough for its reference column to
     // pass left of the first input's port (its gate at gate(iA), port 40 + 64 px out)
     if (O.bias) {
-      const bb = ctr(O.bias), want = Math.min(gate(O.tail).x - Math.max(1.6 * W, 110), gate(O.iA).x - 150 - (gate(O.bias).x - drain(O.bias).x));
+      const bb = ctr(O.bias), want = Math.min(gate(O.tail).x - Math.max(1.6 * W, 110), O.ref ? gate(O.iA).x - 150 - (gate(O.bias).x - drain(O.bias).x) : Infinity);   // no reference: no column to leave room for
       move(O.bias, want - gate(O.bias).x, a.y + s * ROW - bb.y);
     }
     // the reference straight over (under, PMOS input) the bias drain
@@ -183,6 +183,20 @@ export async function imposeOta(model, O, parsed) {
       const R = find(O.ref), ps = activePins(classify(R)).map((q) => pinAbs(R, q));
       const near = ps.reduce((u, v) => (s * v.y > s * u.y ? v : u));   // its end towards the bias device
       move(O.ref, drain(O.bias).x - near.x, (drain(O.bias).y - s * 40) - near.y);
+    }
+  }
+  // a MOS capacitor on the bias node (gate on it, drain and source on one rail: a layout's decoupling, Eric's
+  // ota5t XM85) beside the bias diode, outside, gate towards it: never on the far side of the tail, where its
+  // gate line ran through the tail (08.11)
+  if (O.bias) {
+    const B0 = parsed.components.find((c) => c.ref === O.bias);
+    let xr = find(O.bias).x;
+    for (const c of parsed.components.filter((c) => !O.used.has(c.ref) && isMos(c) && (G(c) === G(B0) || G(c) === D(B0)) && D(c) === S(c) && D(c) !== G(c))) {
+      face(c.ref, 'right');
+      const k = find(c.ref), cc = ctr(c.ref);
+      move(c.ref, (xr - 70 - k.w / 2) - cc.x, ctr(O.bias).y - cc.y);
+      xr = find(c.ref).x;
+      O.used.add(c.ref); (O.caps ||= []).push(c.ref);
     }
   }
   // the SECOND STAGE (two-stage Miller): the common-source device on the
@@ -236,6 +250,13 @@ export async function imposeOta(model, O, parsed) {
   await routePage(model, ids, {});
   if (O.tail) teeNet(model, find(O.iA), find(O.iB), find(O.tail), s);
   mirrorNet(model, find(O.iA), find(O.mA), find(O.mB), s);
+  // the diode's name off its link (the link runs beside its gate, under / over its body): on its outer side,
+  // by its drain lead (Eric's ota5t: XM155's name and W/L were barred by the link, 08.11)
+  {
+    const c = find(O.mA), L = cells().find((v) => v.kind === 'vertex' && (v.id === 'LBL_' + O.mA || v.id === 'LBL_' + c.id));
+    const pd = drain(O.mA), out = Math.sign(pd.x - gate(O.mA).x) || -1;
+    if (L) updateCell(model, L.id, { x: Math.round(out < 0 ? pd.x - L.w - 6 : pd.x + 6) });
+  }
   outputNet(model, find(O.iB), find(O.mB), s);
   // two-stage Miller: ONE line at the first output's height — first output,
   // Rz, Cc, second output, its port
@@ -254,6 +275,8 @@ export async function imposeOta(model, O, parsed) {
     for (const id of ids) updateCell(model, id, { style: { drawioApiPinned: 1 } });
   }
   if (O.bias && O.tail) biasNet(model, find(O.bias), find(O.tail), O.ref && find(O.ref), s);
+  // each MOS capacitor's gate teed into the bias diode's link, just over its drain
+  for (const r of O.caps || []) capLink(model, find(r), find(O.bias), s);
   await alignPorts(model);
   alignRails(model);
   rebuildLocalDots(model);
@@ -303,7 +326,9 @@ export function mirrorNet(model, IA, MA, MB, s) {
   dropAmong(model, pins);
   addWire(model, { source: IA.id, target: MA.id, sourcePin: dI, targetPin: dA, style: STF, points: [] });
   addWire(model, { source: MA.id, target: MB.id, sourcePin: gA, targetPin: gB, style: STF, points: [] });
-  const xm = Math.round((pgA.x + pgB.x) / 2), yn = Math.round(pdA.y + s * 16);
+  // the diode link SHORT, just beside the diode's gate, like the bias diode's (Eric 08.11: the gate-drain link
+  // dropped from the middle of the bus read as a big loop)
+  const xm = Math.round(pgA.x + Math.sign(pgB.x - pgA.x) * 22), yn = Math.round(pdA.y + s * 16);
   addWire(model, { source: MA.id, target: MB.id, sourcePin: dA, targetPin: gB, style: STF, points: [{ x: pdA.x, y: yn }, { x: xm, y: yn }, { x: xm, y: pgB.y }] });
 }
 
@@ -381,6 +406,18 @@ export function biasNet(model, BI, T, REF, s) {
     const anchor = pinAbs(P, { x: 1, y: 0.5 }).x > pinAbs(P, { x: 0, y: 0.5 }).x ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 };
     addWire(model, { source: port.id, target: BI.id, sourcePin: anchor, targetPin: dB, style: STF, points: [{ x: pdB.x, y }] });
   }
+}
+
+/** A MOS capacitor left of the bias diode, gate towards it: its gate straight right, up to the diode link's
+ *  height, onto the bias drain (the diode link starts there: one T, no loop round the diode). */
+export function capLink(model, C, BI, s) {
+  const gC = relPin(C, 1), dB = relPin(BI, 0);
+  const pgC = pinAbs(C, gC), pdB = pinAbs(BI, dB);
+  if (!(pgC.x < pdB.x)) return;
+  const pins = [[C, gC]];
+  for (const e of allCells(model).map(cellInfo).filter((e) => e.kind === 'edge' && pins.some(([c, r]) => atPin(e, 'exit', c, r) || atPin(e, 'entry', c, r)))) deleteCell(model, e.id);
+  const yn = Math.round(pdB.y - s * 16), xj = Math.round((pgC.x + pdB.x) / 2);
+  addWire(model, { source: C.id, target: BI.id, sourcePin: gC, targetPin: dB, style: STF, points: [{ x: xj, y: pgC.y }, { x: xj, y: yn }, { x: pdB.x, y: yn }] });
 }
 
 /** Each supply / ground symbol wired to ONE top / bottom pin straight over /

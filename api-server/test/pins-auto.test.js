@@ -33,4 +33,13 @@ test('engine=auto: every pin of a layout3d cell is named on page 1', async () =>
   const named = new Set(cells.map((c) => c.value));
   // the supplies are symbols (power/ground); every other pin is a port or a net label of its name
   for (const pin of ['vout', 'ibias', 'vinp', 'vinn', 'von', 'vtail']) assert.ok(named.has(pin), `${pin} not named on page 1`);
+  // Eric 08.11: each name written once (von and vtail were printed twice)
+  for (const pin of ['vout', 'ibias', 'vinp', 'vinn', 'von', 'vtail']) assert.equal(cells.filter((c) => c.value === pin).length, 1, `${pin} written more than once`);
+  // Eric 08.11: the OTA template draws it (tail centred under the pair: its drain lead on the middle), its MOS capacitor XM85 beside the bias
+  // diode XM88, never past the tail
+  assert.match(String(body.engine), /^ota/);
+  const at = (r) => cells.find((c) => c.refdes === r);
+  const [a, b, t] = ['XM28', 'XM26', 'XM90'].map(at), mid = (a.x + a.w / 2 + b.x + b.w / 2) / 2;
+  assert.ok(t.x <= mid && t.x + t.w >= mid, `tail XM90 not under the pair's middle (${t.x}..${t.x + t.w} vs ${mid})`);
+  assert.ok(at('XM85').x < at('XM88').x, 'XM85 not on the outer side of the bias diode');
 });

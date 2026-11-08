@@ -287,6 +287,9 @@ const segBox = (a, b, m = 0) => ({ x: Math.min(a.x, b.x) - m, y: Math.min(a.y, b
 export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0)) {
   const p1 = extractNetlist(m);
   const named = new Set((p1.namedNets || []).map((n) => String(n).toUpperCase()));
+  // a name already carried by a wire (this pass's own fallback, run once for the pins and once for page 2): the
+  // net is named, a second wire label would print it twice (Eric's ota5t: von and vtail written twice, 08.11)
+  for (const e of allCells(m).map(cellInfo)) if (e.kind === 'edge' && String(e.value || '').trim()) named.add(String(e.value).trim().toUpperCase());
   const missing = [...new Set(names)].filter((n) => n !== '0' && !named.has(String(n).toUpperCase()));
   if (!missing.length) return [];
   // page-1 net names -> netlist names, by terminal set (as lvsTwoPages)
@@ -346,7 +349,13 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0)) {
     }
     if (!cands.length) {
       // no free place for a label: the name goes on one of the net's wires (it names the net, lib/netlist.js)
-      const wire = netWires.find((e) => !e.value);
+      // the wire whose middle (where drawio prints the name) is farthest from a dot or a pin: a name printed on
+      // a junction is unreadable (Eric's ota5t: vtail written over the tail's T, 08.11)
+      const mid = (e) => { const pl = polylineOf(e, byId) || []; let L = 0; for (let i = 1; i < pl.length; i++) L += Math.abs(pl[i].x - pl[i - 1].x) + Math.abs(pl[i].y - pl[i - 1].y);
+        let h = L / 2; for (let i = 1; i < pl.length; i++) { const d = Math.abs(pl[i].x - pl[i - 1].x) + Math.abs(pl[i].y - pl[i - 1].y); if (h <= d) { const t = d ? h / d : 0; return { x: pl[i - 1].x + (pl[i].x - pl[i - 1].x) * t, y: pl[i - 1].y + (pl[i].y - pl[i - 1].y) * t }; } h -= d; } return pl[0]; };
+      const spots = [...cells.filter((c) => c.kind === 'vertex' && c.x != null && classify(c).role === 'junction').map((j) => ({ x: j.x + j.w / 2, y: j.y + j.h / 2 })), ...pinAt];
+      const room = (e) => { const q = mid(e); return q ? Math.min(Infinity, ...spots.map((u) => Math.hypot(u.x - q.x, u.y - q.y))) : -1; };
+      const wire = netWires.filter((e) => !e.value).sort((a, b) => room(b) - room(a))[0];
       if (wire) { updateCell(m, wire.id, { value: net }); out.push({ net, at: wire.id, clear: false, on: 'wire' }); }
       else out.push({ net, at: null, clear: false, on: 'none' });
       continue;
