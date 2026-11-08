@@ -6,10 +6,13 @@
  */
 
 import { groundMapper } from './ground-alias.js';
+import { mergeFingers } from './fingers.js';
 
 /** @param extracted {components:[{ref,prefix,nodes,value}]} — from extractNetlist
  *  @param golden {components:[…]} — from parseSpice */
 export function compare(extracted, golden) {
+  // parallel identical devices are one device of multiplier m=N on both sides (lib/fingers.js)
+  extracted = mergeFingers(extracted); golden = mergeFingers(golden);
   const errors = [...(golden.warnings || []), ...(extracted.issues || []).filter(x => x.code !== 'anchor-name-stale')];
   const duplicates = cs => cs.filter((c,i) => cs.findIndex(d => d.ref.toUpperCase() === c.ref.toUpperCase()) !== i).map(c => c.ref);
   if (!golden.components.length) errors.push({code:'empty-reference'});
