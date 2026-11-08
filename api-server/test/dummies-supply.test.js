@@ -21,18 +21,28 @@ import { splitDummies, labelSharedOnPage1, supplyNetsOf } from '../lib/dummies.j
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const fx = (n) => fs.readFileSync(new URL(`./fixtures/dummies/${n}.sp`, import.meta.url), 'utf8');
+const freePort = () => new Promise((ok) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
+// a port the system says is free (a random one could be another test server's: its /health answered, the import
+// went to a server without this test's DRAWIO_TEST_FAULT); taken meanwhile (EADDRINUSE: our server exits), another
 const start = async (env) => {
-  // a port the system says is free (a random one could be another test server's: its /health answered, the
-  // import went to a server without this test's DRAWIO_TEST_FAULT), and our own process still alive
-  const port = await new Promise((ok) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
-  const base = `http://127.0.0.1:${port}`;
-  const proc = spawn(process.execPath, [path.join(HERE, '../server.js'), '--port', String(port)], { stdio: 'pipe', env: { ...process.env, ...env } });
-  for (let i = 0; i < 100; i++) {
-    if (proc.exitCode != null) throw new Error(`server exited (${proc.exitCode})`);
-    try { if ((await fetch(base + '/health')).ok && proc.exitCode == null) return { proc, base }; } catch { /* not up yet */ }
-    await new Promise((r) => setTimeout(r, 100));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const port = await freePort(), base = `http://127.0.0.1:${port}`;
+    const proc = spawn(process.execPath, [path.join(HERE, '../server.js'), '--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } });
+    let err = '';
+    proc.stdout.resume(); proc.stderr.on('data', (d) => { err += d; });
+    for (let i = 0; i < 100 && proc.exitCode == null; i++) {
+      try {
+        if ((await fetch(base + '/health')).ok) {
+          await new Promise((r) => setTimeout(r, 50));   // ours, not one that answered while ours was failing to bind
+          if (proc.exitCode == null) return { proc, base };
+        }
+      } catch { /* not up yet */ }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (proc.exitCode == null) { proc.kill('SIGTERM'); throw new Error('server did not start'); }
+    if (!/EADDRINUSE/.test(err)) throw new Error(`server exited (${proc.exitCode}): ${err.slice(0, 300)}`);
   }
-  proc.kill('SIGTERM'); throw new Error('server did not start');
+  throw new Error('no free port in 5 attempts');
 };
 const imp = async (base, text, query) => {
   const id = (await (await fetch(base + '/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).id;
@@ -163,17 +173,42 @@ test('#81 (1) no dummy: a supply pin page 1 does not name (vdd, bulk only) keeps
   } finally { proc.kill('SIGTERM'); }
 });
 
-test('#81 (3) (b) is for pins page 1 does not use: vbody (bulk on page 1) no port, a warning; vbd its port', async () => {
-  const { proc, base } = await start({});
+// review #81 pass 3: (b) the same with a dummy or without: a pin with no pin or dot on page 1 (bulks only) is a port
+for (const [f, pin] of [['bodypin', 'vbody'], ['bulkpin_nodum', 'vp']]) {
+  test(`#81 pass 3 (b) ${f}: ${pin}, a .subckt pin on page 1 only as hidden bulks, gets its port`, async () => {
+    const { proc, base } = await start({});
+    try {
+      for (const eng of ['auto', 'v2']) {
+        const r = await imp(base, fx(f), `engine=${eng}`);
+        assert.equal(r.status, 201, `${eng}: ${JSON.stringify(r.body).slice(0, 300)}`);
+        assert.ok(ports(r.cells).includes(pin), `${eng}: ${pin}'s port: ${ports(r.cells)}`);
+        assert.ok(!warned(r, pin), `${eng}: ${JSON.stringify(r.body.warnings)}`);
+        if (f === 'bodypin') assert.ok(ports(r.cells).includes('vbd'), `${eng}: vbd's port`);
+      }
+    } finally { proc.kill('SIGTERM'); }
+  });
+}
+
+// review #81 pass 3: vdd_fb (a divider tap, a supply NAME) is drawn on page 1: named there as on a68a522
+test('#81 pass 3 vddfb: a supply-named net page 1 draws (vdd_fb) is named on page 1; erased from it, a 422', async () => {
+  const split = splitOf(fx('vddfb'));
+  assert.equal(supplyNetsOf(split)('vdd_fb'), false, 'drawn on page 1: not exempt');
+  assert.equal(supplyNetsOf(split)('vdd'), true, 'vdd, only on the dummy: exempt');
+  const ok = await start({});
   try {
-    for (const eng of ['auto', 'v2']) {
-      const r = await imp(base, fx('bodypin'), `engine=${eng}`);
+    for (const eng of ['auto', 'v2', 'v4']) {
+      const r = await imp(ok.base, fx('vddfb'), `engine=${eng}`);
       assert.equal(r.status, 201, `${eng}: ${JSON.stringify(r.body).slice(0, 300)}`);
-      assert.ok(!ports(r.cells).includes('vbody'), `${eng}: no port for vbody`);
-      assert.ok(warned(r, 'vbody'), `${eng}: ${JSON.stringify(r.body.warnings)}`);
-      assert.ok(ports(r.cells).includes('vbd'), `${eng}: vbd's port`);
+      assert.equal(r.body.dummies?.lvs?.match, true, eng);
+      assert.ok(r.cells.some((c) => String(c.value) === 'vdd_fb'), `${eng}: vdd_fb named on page 1`);
     }
-  } finally { proc.kill('SIGTERM'); }
+  } finally { ok.proc.kill('SIGTERM'); }
+  const bad = await start({ DRAWIO_TEST_FAULT: 'page1-name' });
+  try {
+    const no = await imp(bad.base, fx('vddfb'), 'engine=v2');
+    assert.equal(no.status, 422);
+    assert.match(JSON.stringify(no.body), /named on page 2, not on page 1: vdd_fb/);
+  } finally { bad.proc.kill('SIGTERM'); }
 });
 
 test('#81 (3) a standalone port only for a .subckt pin (opts.port): never for a page-2 name', async () => {

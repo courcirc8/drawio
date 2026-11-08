@@ -422,10 +422,11 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0), opts 
       // stays unnamed ('none'), and the two-page LVS then refuses the drawing
       const o = origins[0];
       if (!o) {
-        // Orchestrator decision 08.11 (b): a .subckt pin page 1 does not name, used by no page-1 device or named on
-        // page 2 (diffcc_bulk_pin's vp: bulks only on page 1, on the dummy XM1), is still a real pin: its port, on
-        // its own, under page 1's drawing (no pin is added). A name-recognised supply page 2 draws is exempt above
-        if (opts.port && (!page1NetsOf(split).has(net) || on2.has(net))) {
+        // Orchestrator decision 08.11 (b): a .subckt pin with no pin or dot on page 1 (used by no page-1 device, or
+        // as hidden bulks only: diffcc_bulk_pin's vp, bodypin's vbody; with or without a dummy, review #81 pass 3)
+        // is still a real pin: its port, on its own, under page 1's drawing (no pin is added). A supply by its name
+        // is drawn as a rail, never a port: page 2's is exempt above, page 1's keeps its warning (pair_nodum)
+        if (opts.port && !supplyPolOf(split).has(net)) {
           const vs = cells.filter((c) => c.kind === 'vertex' && c.x != null && c.w);
           const x0 = vs.length ? Math.min(...vs.map((c) => c.x)) : 40, y0 = vs.length ? Math.max(...vs.map((c) => c.y + c.h)) : 40;
           const y = y0 + 40 + 36 * out.filter((l) => l.on === 'port' && l.alone).length;
@@ -480,11 +481,13 @@ export const unnamedWarnings = (labelled) => labelled.filter((l) => l.on === 'no
 /** Orchestrator decision 08.11 (a): a SUPPLY net is global: drawn as a rail on each page, it never has to appear
  *  on page 1 for the pages to join (DIFFCC: vdd only on the dummy XM1 and on the pair's bulks). -> (net) => boolean
  *  Review #81 pass 2: a supply by its NAME only (supply-orient.js POS_NAME / NEG_NAME), node 0 and the ground
- *  alias. A device vote never exempts a net: a PMOS follower's source tied to its bulk (an internal o) is a signal;
- *  missing from page 1, it is a .subckt pin's port (b) or a 422 (c). */
+ *  alias; a device vote never exempts a net (a PMOS follower's source-bulk node o is a signal).
+ *  Review #81 pass 3: and only a net with no drawn terminal on page 1 (a drain, gate, source or passive end; a
+ *  MOS bulk is hidden): a net page 1 draws is named there as any other, whatever its name (vdd_fb, a divider tap). */
 export function supplyNetsOf(split) {
   const pol = supplyPolOf(split), gnd = String(split.main?.groundAlias || '').toUpperCase();
-  return (n) => n === '0' || pol.has(n) || (!!gnd && String(n).toUpperCase() === gnd);
+  const drawn1 = new Set(split.main.components.flatMap((c) => c.nodes || []));
+  return (n) => n === '0' || (!!gnd && String(n).toUpperCase() === gnd) || (pol.has(n) && !drawn1.has(n));
 }
 
 /** split -> Map net -> 'pos'|'neg', by name (and the ground alias): the rails page 2 draws and the supplies
