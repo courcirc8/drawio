@@ -170,3 +170,26 @@ test('R1 (r2): supplyOrderWarnings words each pair', async () => {
   const w = supplyOrderWarnings(allCells(getPage(r.doc)).map(cellInfo), o.parsed);
   assert.deepEqual(w, ['supply order: M2 (positive supply) is not above M1 (negative supply)']);
 });
+
+// REVIEW r3 (E3): a jog never runs through a size label; with labels ignored as obstacles, ME and MF's rail
+// wires cross LBL_ME and LBL_MF here. The text box is the quality gate's estimate (lib/quality.js).
+test('E3 (r3): no rail wire runs through a name label', async () => {
+  const { trial } = await import('../lib/auto.js');
+  const { polylineOf } = await import('../lib/route.js');
+  const t = await trial(raw('./fixtures/supply-rails/ota5t_tied.sp'), 'ota', null, {}, {});
+  const cs = allCells(getPage(t.doc)).map(cellInfo), by = new Map(cs.map((c) => [c.id, c]));
+  const texts = cs.filter((c) => c.kind === 'vertex' && String(c.id).startsWith('LBL_') && String(c.value || '').trim()).map((c) => {
+    const tw = Math.max(c.w, 7 * String(c.value).length), al = c.style.map.get('align') || 'center';
+    return { id: c.id, x: al === 'right' ? c.x + c.w - tw : al === 'left' ? c.x : c.x + c.w / 2 - tw / 2, y: c.y + 1, w: tw, h: c.h - 2 };
+  });
+  assert.ok(texts.length >= 2);
+  const hits = [];
+  for (const e of cs.filter((c) => c.kind === 'edge' && /drawioApiTemplate=1/.test(c.styleRaw || ''))) {
+    const pl = polylineOf(e, by) || [];
+    for (let i = 1; i < pl.length; i++) {
+      const a = pl[i - 1], b = pl[i];
+      for (const x of texts) if (Math.max(a.x, b.x) > x.x + 1 && Math.min(a.x, b.x) < x.x + x.w - 1 && Math.max(a.y, b.y) > x.y + 1 && Math.min(a.y, b.y) < x.y + x.h - 1) hits.push(`${e.id} / ${x.id}`);
+    }
+  }
+  assert.deepEqual(hits, []);
+});

@@ -162,11 +162,17 @@ function jogPath(p, y, parts, texts = []) {
   const own = parts.find((c) => c.id === p.part);
   const side = !own ? 0 : Math.abs(p.at.x - own.x) < 1.5 ? -1 : Math.abs(p.at.x - own.x - own.w) < 1.5 ? 1 : 0;
   if (!side) return null;
-  const x = Math.round(p.at.x + 20 * side), y0 = Math.round(p.at.y);
+  const y0 = Math.round(p.at.y);
   const hits = (a, b) => [...parts, ...texts].some((c) => Math.max(a.x, b.x) > c.x + 1 && Math.min(a.x, b.x) < c.x + c.w - 1
     && Math.max(a.y, b.y) > c.y + 1 && Math.min(a.y, b.y) < c.y + c.h - 1);
-  const q0 = { x: Math.round(p.at.x), y: y0 }, q1 = { x, y: y0 }, q2 = { x, y };
-  return hits(q0, q1) || hits(q1, q2) ? null : [q1, q2];
+  // 20 px out; else just past a size label on that side (Jianxun ota_5t: M7's drain beside its "M7"), up to 160 px
+  const outs = [20, ...texts.map((t) => side > 0 ? t.x + t.w + 10 - p.at.x : p.at.x - t.x + 10)
+    .filter((d) => d > 20 && d <= 160).sort((a, b) => a - b)];
+  for (const d of outs) {
+    const x = Math.round(p.at.x + d * side), q0 = { x: Math.round(p.at.x), y: y0 }, q1 = { x, y: y0 }, q2 = { x, y };
+    if (!hits(q0, q1) && !hits(q1, q2)) return [q1, q2];
+  }
+  return null;
 }
 
 /** One symbol per pin, straight over / under it. */
