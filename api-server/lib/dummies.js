@@ -8,13 +8,10 @@
  *   - between the pages the link is by NAME only: a dummy terminal on a net of page 1 (the protected device's
  *     drain, a signal node) gets a net label with that exact net name; no wire crosses pages.
  *
- * A dummy is
- *   - a MOS marked `dummy=1` on its line (the layout3d format, agreed 08.11: `XM7 vss vss vss vss sg13_lv_nmos
- *     w=1u l=0.13u dummy=1`), or
- *   - a MOS whose drain, gate and source are one net, or
- *   - a MOS that is always off: its gate tied to its own off rail (NMOS gate on a negative supply / ground,
- *     PMOS gate on a positive supply).
- * A MOS capacitor (gate on a signal, drain and source on a rail) is not a dummy.
+ * A dummy is a MOS marked `dummy=1` on its line (the layout3d format, agreed 08.11: `XM7 vss vss vss vss
+ * sg13_lv_nmos w=1u l=0.13u dummy=1`), and nothing else (review r4: a device held off with its drain on a
+ * signal, layout3d's XM25 on vtail, loads that node: it stays on page 1, as does any d=g=s device or MOS
+ * capacitor without the mark).
  * The device a dummy protects: the non-dummy MOS that shares a channel net with it, else the non-dummy MOS of
  * the same model and size (the array it ends), else none ("factices").
  *
@@ -22,11 +19,12 @@
  * back into the netlist) goes to page 2 as well, never page 1, under the heading "Parasites estimés (LVS ignore)",
  * each with its value; wired there to its rails, joined to page-1 nets by name like the dummies.
  */
-import { addPage, addVertex, addWire, allCells, cellInfo, freshId, getPage, updateCell } from './model.js';
+import { addPage, addVertex, addWire, allCells, cellInfo, deleteCell, freshId, getPage, updateCell } from './model.js';
 import { SPICE_MAP, classify } from './components.js';
 import { netGroups, pinAbs, polylineOf } from './route.js';
 import { getShape } from './stencils.js';
 import { supplyPolarity } from './supply-orient.js';
+import { portDirection } from './port-style.js';
 import { connectivity, extractNetlist } from './netlist.js';
 import { compare } from './lvs.js';
 import { groundMapper } from './ground-alias.js';
@@ -34,7 +32,6 @@ import { annotation, Sheet, emit as emitSheets, placeTr, placeTwo, portVert, tap
 
 export const DUMMY_PAGE = 'factices';
 const isMos = (c) => c.prefix === 'M' && (c.nodes || []).length >= 3;
-const isP = (c) => /pmos|pfet|pch/i.test(String(c.model || c.value || ''));
 export const PARASITIC_TITLE = 'Parasites estimés (LVS ignore)';
 const parasitic = (c) => c.prefix === 'C' && (String(c.params?.lvs_ignore ?? '') === '1' || /(^|\s)lvs_ignore\s*=\s*1(\s|$)/i.test(String(c.value || '')));
 const flagged = (c) => String(c.params?.dummy ?? '') === '1' || /(^|\s)dummy\s*=\s*1(\s|$)/i.test(String(c.value || ''));
@@ -46,10 +43,7 @@ export function splitDummies(parsed) {
   const dummies = [];
   for (const c of parsed.components) {
     if (!isMos(c)) continue;
-    const [d, g, s] = c.nodes;
-    const why = flagged(c) ? 'dummy=1' : d === g && g === s ? 'bornes sur un seul net'
-      : (isP(c) ? pos(g) : neg(g)) ? 'grille au rail (toujours bloqué)' : null;
-    if (why) dummies.push({ c, why });
+    if (flagged(c)) dummies.push({ c, why: 'dummy=1' });
   }
   const pars = parsed.components.filter(parasitic);
   const dSet = new Set([...dummies.map((x) => x.c.ref), ...pars.map((c) => c.ref)]);
@@ -271,7 +265,15 @@ export function lvsTwoPages(doc, split, full) {
   const fix = (c, f) => ({ ...c, nodes: c.nodes.map(f), fullNodes: (c.fullNodes || c.nodes).map(f) });
   const merged = { components: [...p1.components.map((c) => fix(c, r1)), ...p2.components.map((c) => fix(c, r2))],
     issues: [...(p1.issues || []), ...(p2.issues || [])], namedNets: [...named2] };
-  return compare(merged, full);
+  const report = compare(merged, full);
+  // review r4 (1): the pages are joined by NAME only, but the match above goes by terminals: a page-2 name that
+  // page 1 does not print (as a port, a label, a rail or on a wire) is a drawing whose pages do not join
+  const shown = new Set([...(p1.namedNets || []), ...allCells(getPage(doc, 0)).map(cellInfo).filter((e) => e.kind === 'edge').map((e) => String(e.value || '').trim())]
+    .filter(Boolean).map((n) => String(n).toUpperCase()));
+  const gnd = String(split.main?.groundAlias || '').toUpperCase(), p1n = page1NetsOf(split);
+  const unnamed = [...named2].filter((n) => g2(n) !== '0' && String(n).toUpperCase() !== gnd && p1n.has(n) && !shown.has(String(n).toUpperCase()));
+  if (unnamed.length) { report.match = false; report.unnamed = unnamed; }
+  return report;
 }
 
 const PORT_TEXT = (align) => `text;html=1;apiShape=port;align=${align};verticalAlign=middle;fontSize=12;fontStyle=2;spacing=2;`;
@@ -284,13 +286,24 @@ const segBox = (a, b, m = 0) => ({ x: Math.min(a.x, b.x) - m, y: Math.min(a.y, b
  * on page 2 (a label or a rail) that page 1 does not name already gets, on page 1, a net label of that exact
  * name on a short stub from one of its device pins (the freest of them). -> [{net, at, clear}]
  */
-export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0)) {
+// a .subckt pin's port arrow (as the template's vinp / vinn), its direction from its name (lib/port-style.js)
+const portBox = (net) => ({ w: Math.max(64, 7 * net.length + 28), h: 24 });
+function portStyleFor(net, side) {
+  const dir = portDirection(net), west = (dir === 'input') === (side > 0);
+  return { west, style: `shape=${dir === 'inout' ? 'doubleArrow' : 'singleArrow'};arrowWidth=1;arrowSize=0.18;apiShape=port;portDirection=${dir};direction=${west ? 'west' : 'east'};html=0;fillColor=#ffffff;strokeColor=default;align=center;verticalAlign=middle;fontSize=12;` };
+}
+
+/** opts.port: the names are a .subckt's pins (review r4: every pin a port symbol, as Cadence's pins): an arrow
+ *  port on a horizontal stub; no horizontal room, the italic label as for page-2 names. */
+export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0), opts = {}) {
   const p1 = extractNetlist(m);
   const named = new Set((p1.namedNets || []).map((n) => String(n).toUpperCase()));
   // a name already carried by a wire (this pass's own fallback, run once for the pins and once for page 2): the
   // net is named, a second wire label would print it twice (Eric's ota5t: von and vtail written twice, 08.11)
   for (const e of allCells(m).map(cellInfo)) if (e.kind === 'edge' && String(e.value || '').trim()) named.add(String(e.value).trim().toUpperCase());
-  const missing = [...new Set(names)].filter((n) => n !== '0' && !named.has(String(n).toUpperCase()));
+  // ground (and the name it goes by, ground_ana: drawn as the ground symbol, which names it) is never missing
+  const gnd = String(split.main?.groundAlias || '').toUpperCase();
+  const missing = [...new Set(names)].filter((n) => n !== '0' && String(n).toUpperCase() !== gnd && !named.has(String(n).toUpperCase()));
   if (!missing.length) return [];
   // page-1 net names -> netlist names, by terminal set (as lvsTwoPages)
   const g1 = groundMapper(p1.components), gm = groundMapper(split.main.components);
@@ -307,7 +320,7 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0)) {
   const out = [];
   for (const net of missing) {
     const keys = [...conn.nets].filter(([k]) => ren.get(g1(k)) === net).flatMap(([, ks]) => ks);
-    const cands = [], w = Math.max(30, 8 * net.length), h = 18;
+    const cands = [], tw = Math.max(30, 8 * net.length), th = 18, pb = portBox(net);
     // where a stub may start: a device pin of the net, straight out of the device; or a junction dot of the net
     // (where its wires already meet), any of four ways
     const pinTerms = keys.map((k) => conn.termInfo.get(k)).filter((t) => t && classify(t.cell).role === 'component');
@@ -323,7 +336,11 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0)) {
     const gids = new Set(netWires.map((e) => groups.get(e.id)));
     for (const j of cells.filter((c) => c.kind === 'vertex' && c.x != null && classify(c).role === 'junction')) {
       const p = { x: j.x + j.w / 2, y: j.y + j.h / 2 };
-      if (!cells.some((e) => e.kind === 'edge' && gids.has(groups.get(e.id)) && (e.source === j.id || e.target === j.id))) continue;
+      // a dot on the net: a wire ends on it, or (a template's drawn dot, GDOT_*, not attached) one runs through it
+      const through = (e) => { const pl = polylineOf(e, byId) || []; for (let i = 1; i < pl.length; i++) { const [u, v] = [pl[i - 1], pl[i]];
+        if (Math.abs(u.x - v.x) < 1 && Math.abs(p.x - u.x) < 1 && p.y >= Math.min(u.y, v.y) - 1 && p.y <= Math.max(u.y, v.y) + 1) return true;
+        if (Math.abs(u.y - v.y) < 1 && Math.abs(p.y - u.y) < 1 && p.x >= Math.min(u.x, v.x) - 1 && p.x <= Math.max(u.x, v.x) + 1) return true; } return false; };
+      if (!cells.some((e) => e.kind === 'edge' && gids.has(groups.get(e.id)) && (e.source === j.id || e.target === j.id || through(e)))) continue;
       origins.push({ id: j.id, pin: { x: 0.5, y: 0.5 }, own: j.id, p, dirs: [{ x: 0, y: 1 }, { x: 0, y: -1 }, { x: 1, y: 0 }, { x: -1, y: 0 }] });
     }
     for (const o of origins) for (const d of o.dirs) {
@@ -331,8 +348,11 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0)) {
       // straight out, or out then sideways (an L) when the straight way is taken
       const shapes = [25, 45, 70].map((a) => [a, null, 0]);
       for (const a of [15, 30]) for (const sg of [1, -1]) shapes.push([a, { x: d.y * sg, y: d.x * sg }, 30]);
+      // a port arrow is wide: the L out further, and longer sideways, before giving up on it
+      if (opts.port) for (const a of [15, 30, 45, 60]) for (const b of [30, 60]) for (const sg of [1, -1]) if (d.x === 0) shapes.push([a, { x: sg, y: 0 }, b]);
       for (const [a, q0, b] of shapes) {
         const k = { x: p.x + d.x * a, y: p.y + d.y * a }, q = q0 || d, e = q0 ? { x: k.x + q.x * b, y: k.y + q.y * b } : k;
+        const port = !!opts.port && !!q.x, w = port ? pb.w : tw, h = port ? pb.h : th;
         const r = q.x ? { x: q.x < 0 ? e.x - w : e.x, y: e.y - h / 2, w, h } : { x: e.x - w / 2, y: q.y < 0 ? e.y - h : e.y, w, h };
         const pin = q.x ? (q.x < 0 ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 }) : (q.y < 0 ? { x: 0.5, y: 1 } : { x: 0.5, y: 0 });
         const rr = { x: r.x - 3, y: r.y - 3, w: r.w + 6, h: r.h + 6 };
@@ -344,7 +364,7 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0)) {
         let bad = 0;
         for (const bx of boxes) if (hit(rr, bx) || along.some((u) => hit(dot(u), bx))) bad++;
         for (const [u, v] of segs) if (hit(rr, segBox(u, v, 0.5)) || along.some((x) => hit(dot(x), segBox(u, v, 0.5)))) bad++;
-        if (!bad) cands.push({ len: a + b, o, p, k, e, r, pin, bent: !!q0, align: q.x ? (q.x < 0 ? 'right' : 'left') : 'center' });
+        if (!bad) cands.push({ len: a + b + (opts.port && !port ? 1000 : 0), port, side: q.x, o, p, k, e, r, pin, bent: !!q0, align: q.x ? (q.x < 0 ? 'right' : 'left') : 'center' });
       }
     }
     if (!cands.length) {
@@ -356,24 +376,35 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0)) {
       const spots = [...cells.filter((c) => c.kind === 'vertex' && c.x != null && classify(c).role === 'junction').map((j) => ({ x: j.x + j.w / 2, y: j.y + j.h / 2 })), ...pinAt];
       const room = (e) => { const q = mid(e); return q ? Math.min(Infinity, ...spots.map((u) => Math.hypot(u.x - q.x, u.y - q.y))) : -1; };
       const wire = netWires.filter((e) => !e.value).sort((a, b) => room(b) - room(a))[0];
-      if (wire) { updateCell(m, wire.id, { value: net }); out.push({ net, at: wire.id, clear: false, on: 'wire' }); }
-      else out.push({ net, at: null, clear: false, on: 'none' });
-      continue;
+      if (wire) { updateCell(m, wire.id, { value: net }); out.push({ net, at: wire.id, clear: false, on: 'wire' }); continue; }
+      // review r4 (1): no free spot, no free wire: the label is POSED all the same, straight out of the net's
+      // first pin (or dot), over whatever is there (clear: false); only a net with no pin and no dot on page 1
+      // stays unnamed ('none'), and the two-page LVS then refuses the drawing
+      const o = origins[0];
+      if (!o) { out.push({ net, at: null, clear: false, on: 'none' }); continue; }
+      const d = o.dirs[0], k = { x: o.p.x + d.x * 25, y: o.p.y + d.y * 25 };
+      cands.push({ len: 25, port: false, side: d.x, o, p: o.p, k, e: k, bent: false, forced: true,
+        r: d.x ? { x: d.x < 0 ? k.x - tw : k.x, y: k.y - th / 2, w: tw, h: th } : { x: k.x - tw / 2, y: d.y < 0 ? k.y - th : k.y, w: tw, h: th },
+        pin: d.x ? (d.x < 0 ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 }) : (d.y < 0 ? { x: 0.5, y: 1 } : { x: 0.5, y: 0 }),
+        align: d.x ? (d.x < 0 ? 'right' : 'left') : 'center' });
     }
     cands.sort((a, b) => a.len - b.len);
     const c = cands[0];
-    const lbl = addVertex(m, { id: freshId(m, 'NL_'), style: PORT_TEXT(c.align), x: c.r.x, y: c.r.y, w: c.r.w, h: c.r.h, value: net });
-    addWire(m, { source: c.o.id, target: lbl.getAttribute('id'), sourcePin: c.o.pin, targetPin: c.pin, style: STUB, ...(c.bent ? { points: [c.k] } : {}) });
+    let style = PORT_TEXT(c.align), tpin = c.pin;
+    // drawio turns the anchors with direction=west: the pin named in the unturned frame (lib/place-manuel.js)
+    if (c.port) { const ps = portStyleFor(net, c.side); style = ps.style; if (ps.west) tpin = { x: 1 - c.pin.x, y: c.pin.y }; }
+    const lbl = addVertex(m, { id: freshId(m, c.port ? 'P_' : 'NL_'), style, x: c.r.x, y: c.r.y, w: c.r.w, h: c.r.h, value: net });
+    addWire(m, { source: c.o.id, target: lbl.getAttribute('id'), sourcePin: c.o.pin, targetPin: tpin, style: STUB, ...(c.bent ? { points: [c.k] } : {}) });
     boxes.push({ id: lbl.getAttribute('id'), ...c.r }); segs.push([c.p, c.k], [c.k, c.e]);
-    out.push({ net, at: c.o.id, clear: true, on: 'label' });
+    out.push({ net, at: c.o.id, clear: !c.forced, on: c.port ? 'port' : 'label' });
   }
   return out;
 }
 
-/** review r3: a page-2 net that page 1 could not name (no free place for a label, no wire to carry the name) is
- *  said, never silent: the link between the pages is that name. -> warning lines */
+/** a name page 1 could not print at all (no pin, no dot of that net to hang it on), said, never silent. For a
+ *  page-2 name the two-page LVS also refuses the drawing (review r4); for a .subckt pin it is a warning. */
 export const unnamedWarnings = (labelled) => labelled.filter((l) => l.on === 'none')
-  .map((l) => `net ${l.net}: named on page 2 but not on page 1 (no free place for its label, no wire to carry it)`);
+  .map((l) => `net ${l.net}: not named on page 1 (no pin or dot of that net to hang its name on)`);
 
 /** the nets of page 1 (the netlist without its dummies) */
 export const page1NetsOf = (split) => new Set(split.main.components.flatMap((c) => c.fullNodes || c.nodes));
@@ -395,12 +426,26 @@ export async function dummiesForImport(doc, split, full) {
     const w = allCells(getPage(doc, DUMMY_PAGE)).find((el) => el.getAttribute('edge') === '1');
     if (w) w.parentNode.removeChild(w);
   }
+  // test hook (review r4, W1/W2): every print of one shared name erased from page 1 (its labels, ports, wire
+  // texts), so the name check of the two-page LVS, the 422 and the warning line are exercised end to end
+  if (process.env.DRAWIO_TEST_FAULT === 'page1-name') {
+    const n = named2.find((x) => page1NetsOf(split).has(x) && x !== '0'), m1 = getPage(doc, 0);
+    for (const el of allCells(m1)) {
+      const c = cellInfo(el);
+      if (String(c.value || '').trim() !== n) continue;
+      if (c.kind === 'edge') updateCell(m1, c.id, { value: '' });
+      else if (classify(c).role === 'port') {
+        for (const e of allCells(m1).map(cellInfo).filter((e) => e.kind === 'edge' && (e.source === c.id || e.target === c.id))) deleteCell(m1, e.id);
+        deleteCell(m1, c.id);
+      }
+    }
+  }
   const lvs = lvsTwoPages(doc, split, full);
   const count = split.dummies.reduce((n, x) => n + (Number(x.c.params?.m ?? 1) || 1), 0);
   const np = split.parasitics?.length || 0;
   return { page: DUMMY_PAGE, count, parasitics: (split.parasitics || []).map((c) => c.ref),
     groups: [...split.groups.map((g) => g.title), ...(np ? [PARASITIC_TITLE] : [])],
     detected: split.dummies.map((x) => ({ ref: x.c.ref, why: x.why })), labelled, lvs,
-    ...(unnamedWarnings(labelled).length ? { warnings: unnamedWarnings(labelled) } : {}),
+    ...(lvs.unnamed?.length ? { warnings: lvs.unnamed.map((n) => `net ${n}: named on page 2 but not on page 1 (the pages join by name)`) } : {}),
     warning: [count ? `${count} factices` : '', np ? `${np} capacité${np > 1 ? 's' : ''} parasite${np > 1 ? 's' : ''}` : ''].filter(Boolean).join(' et ') + ' sur la page 2' };
 }

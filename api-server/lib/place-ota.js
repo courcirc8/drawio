@@ -56,8 +56,10 @@ export function otaReading(parsed) {
       // resistor from the source net to a rail (a resistor between the pair's
       // sources and a mirror node is not a tail: AnalogGenie 155)
       const RAILN = /^(0|gnd\w*|vss\w*|vdd\w*|vcc\w*|vee\w*|avdd|avss|dvdd|dvss|power(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?|ground(?:_(?!(?:down|dn|pd|good|pg|ok|on|off|en|enable|sense|sns|fail|fault|up|rst|reset|sel|det|detect|valid|ready|rdy|sw|ctrl|ctl|req|ack|mon|level)(?:_|$))\w+)?)$/i;
-      const tail = parsed.components.find((c) => !used.has(c.ref) && (isMos(c) ? D(c) === S(p)
+      // a device held off (gate on its source, layout3d's XM25) is never the tail when a conducting one is there
+      const tails = parsed.components.filter((c) => !used.has(c.ref) && (isMos(c) ? D(c) === S(p)
         : ['I', 'R'].includes(c.prefix) && c.nodes.includes(S(p)) && c.nodes.some((n) => n !== S(p) && RAILN.test(n))));
+      const tail = tails.find((c) => !isMos(c) || G(c) !== S(c)) || tails[0];
       if (tail) used.add(tail.ref);
       // the tail's bias diode: same gate, gate = drain, same polarity
       const bias = tail && isMos(tail) ? parsed.components.find((c) => !used.has(c.ref) && isMos(c) && G(c) === G(tail) && D(c) === G(c) && isPmosLike(c) === isPmosLike(tail)) : null;
@@ -203,6 +205,26 @@ export async function imposeOta(model, O, parsed) {
       move(c.ref, (xr - 70 - k.w / 2) - cc.x, ctr(O.bias).y - cc.y);
       xr = find(c.ref).x;
       O.used.add(c.ref); (O.caps ||= []).push(c.ref);
+    }
+  }
+  // a device held off (gate on its source) whose drain sits on a template node: a layout's edge device, not a
+  // dummy (review r4: layout3d's XM25 on vtail, XM154 on von). On that node's device row, outside, drain towards
+  // it: its drain a short link away, its gate and source a short drop to their rail (08.11)
+  {
+    const tplX = (ctr(O.iA).x + ctr(O.iB).x) / 2;
+    for (const c of parsed.components.filter((c) => !O.used.has(c.ref) && isMos(c) && G(c) === S(c) && D(c) !== G(c))) {
+      const t = [O.tail, O.mA, O.mB].filter(Boolean).map((r) => parsed.components.find((k) => k.ref === r))
+        .find((k) => D(k) === D(c) && isPmosLike(k) === isPmosLike(c));
+      if (!t) continue;
+      const tc = ctr(t.ref), out = t.ref === O.tail && O.bias ? Math.sign(tc.x - ctr(O.bias).x) || 1 : Math.sign(tc.x - tplX) || 1;
+      face(c.ref, out > 0 ? 'right' : 'left');
+      const k = find(c.ref), cc = ctr(c.ref);
+      // the row's devices on that side, the anchor included: beyond the last one
+      const row = cells().filter((v) => v.kind === 'vertex' && classify(v).role === 'component' && v.id !== k.id
+        && Math.abs(v.y + v.h / 2 - tc.y) < v.h / 2 && out * (v.x + v.w / 2 - tc.x) >= -1);
+      const x = out > 0 ? Math.max(...row.map((v) => v.x + v.w)) + 70 + k.w / 2 : Math.min(...row.map((v) => v.x)) - 70 - k.w / 2;
+      move(c.ref, x - cc.x, tc.y - cc.y);
+      O.used.add(c.ref);
     }
   }
   // the SECOND STAGE (two-stage Miller): the common-source device on the

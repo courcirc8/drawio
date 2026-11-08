@@ -1,0 +1,825 @@
+
+> drawio-api-server@0.1.0 test
+> node --test test/*.test.js
+
+TAP version 13
+# Subtest: output-port bend audit detects a dogleg beyond the gate-only metric
+ok 1 - output-port bend audit detects a dogleg beyond the gate-only metric
+  ---
+  duration_ms: 350.02655
+  ...
+# Subtest: annotation MOS mirror keeps D/S fixed and reference netlist unchanged
+ok 2 - annotation MOS mirror keeps D/S fixed and reference netlist unchanged
+  ---
+  duration_ms: 264.539682
+  ...
+# Subtest: explicit passive relocation does not turn RF into a ground
+ok 3 - explicit passive relocation does not turn RF into a ground
+  ---
+  duration_ms: 158.662444
+  ...
+# Subtest: asc2spice: parseAsc reads wires, flags and symbol attributes
+ok 4 - asc2spice: parseAsc reads wires, flags and symbol attributes
+  ---
+  duration_ms: 1.212147
+  ...
+# Subtest: asc2spice: connectivity is rebuilt by coordinate and named by flags
+ok 5 - asc2spice: connectivity is rebuilt by coordinate and named by flags
+  ---
+  duration_ms: 2.20661
+  ...
+# Subtest: asc2spice: unsupported elements are written but flagged as partial
+ok 6 - asc2spice: unsupported elements are written but flagged as partial
+  ---
+  duration_ms: 1.060224
+  ...
+# Subtest: asc2spice: an unknown symbol (no pin table) is reported, never guessed
+ok 7 - asc2spice: an unknown symbol (no pin table) is reported, never guessed
+  ---
+  duration_ms: 0.330704
+  ...
+# Subtest: bandgap: three mirror-fed columns are read, the plain diode first
+ok 8 - bandgap: three mirror-fed columns are read, the plain diode first
+  ---
+  duration_ms: 2.9089
+  ...
+# Subtest: bandgap: resistor-fed columns and their Banba resistors are read
+ok 9 - bandgap: resistor-fed columns and their Banba resistors are read
+  ---
+  duration_ms: 0.539878
+  ...
+# Subtest: bandgap: two plain diodes with no series resistor are not read
+ok 10 - bandgap: two plain diodes with no series resistor are not read
+  ---
+  duration_ms: 0.114242
+  ...
+# Subtest: bandgap: the mirror-fed core is drawn by the template, LVS-clean, through the quality gate
+ok 11 - bandgap: the mirror-fed core is drawn by the template, LVS-clean, through the quality gate
+  ---
+  duration_ms: 32079.694987
+  ...
+# Subtest: bandgap: the resistor-fed core is drawn by the template, LVS-clean, through the quality gate
+ok 12 - bandgap: the resistor-fed core is drawn by the template, LVS-clean, through the quality gate
+  ---
+  duration_ms: 11700.55728
+  ...
+# Subtest: bandgap: AUTO_BANDGAP=0 disables the template
+ok 13 - bandgap: AUTO_BANDGAP=0 disables the template
+  ---
+  duration_ms: 3512.536481
+  ...
+# Subtest: bandgap: a self-biased reference (several diode-connected devices in the columns) is not read
+ok 14 - bandgap: a self-biased reference (several diode-connected devices in the columns) is not read
+  ---
+  duration_ms: 1.793764
+  ...
+# Subtest: manuel: PMOS bias mirror drawn as one wire with a bias input port (ota_miller_pbias)
+ok 15 - manuel: PMOS bias mirror drawn as one wire with a bias input port (ota_miller_pbias)
+  ---
+  duration_ms: 558.015374
+  ...
+# Subtest: brokaw reading by roles (brokaw_verifier)
+ok 16 - brokaw reading by roles (brokaw_verifier)
+  ---
+  duration_ms: 4.491502
+  ...
+# Subtest: brokaw drawn: LVS and geometric LVS green, frames (brokaw_verifier)
+ok 17 - brokaw drawn: LVS and geometric LVS green, frames (brokaw_verifier)
+  ---
+  duration_ms: 462.555439
+  ...
+# Subtest: brokaw reads like the textbook (brokaw_verifier)
+ok 18 - brokaw reads like the textbook (brokaw_verifier)
+  ---
+  duration_ms: 77.388315
+  ...
+# Subtest: brokaw reading by roles (brokaw_bloc)
+ok 19 - brokaw reading by roles (brokaw_bloc)
+  ---
+  duration_ms: 5.584717
+  ...
+# Subtest: brokaw drawn: LVS and geometric LVS green, frames (brokaw_bloc)
+ok 20 - brokaw drawn: LVS and geometric LVS green, frames (brokaw_bloc)
+  ---
+  duration_ms: 93.517738
+  ...
+# Subtest: brokaw reads like the textbook (brokaw_bloc)
+ok 21 - brokaw reads like the textbook (brokaw_bloc)
+  ---
+  duration_ms: 72.318466
+  ...
+# Subtest: brokaw: not sure when a role is missing (no R2) or doubled (two outputs)
+ok 22 - brokaw: not sure when a role is missing (no R2) or doubled (two outputs)
+  ---
+  duration_ms: 0.852412
+  ...
+# Subtest: brokaw: tryManuel returns the textbook drawing
+ok 23 - brokaw: tryManuel returns the textbook drawing
+  ---
+  duration_ms: 101.444027
+  ...
+# Subtest: cascode OTA reading: core, replica bias, CMFB and the power-on kick apart (ota1)
+ok 24 - cascode OTA reading: core, replica bias, CMFB and the power-on kick apart (ota1)
+  ---
+  duration_ms: 30.032684
+  ...
+# Subtest: cascode OTA reading: no start-up frame without the kick (ota2)
+ok 25 - cascode OTA reading: no start-up frame without the kick (ota2)
+  ---
+  duration_ms: 8.095202
+  ...
+# Subtest: OTA drawn: LVS, geometric LVS and the quality gate green (ota1)
+ok 26 - OTA drawn: LVS, geometric LVS and the quality gate green (ota1)
+  ---
+  duration_ms: 757.252597
+  ...
+# Subtest: OTA drawn: LVS, geometric LVS and the quality gate green (ota2)
+ok 27 - OTA drawn: LVS, geometric LVS and the quality gate green (ota2)
+  ---
+  duration_ms: 398.484657
+  ...
+# Subtest: OTA drawn: LVS, geometric LVS and the quality gate green (plain)
+ok 28 - OTA drawn: LVS, geometric LVS and the quality gate green (plain)
+  ---
+  duration_ms: 236.462685
+  ...
+# Subtest: cascode OTA reads like the textbook (ota1)
+ok 29 - cascode OTA reads like the textbook (ota1)
+  ---
+  duration_ms: 169.96556
+  ...
+# Subtest: cascode OTA: the kick stays in the core when its gate node is driven by a transistor
+ok 30 - cascode OTA: the kick stays in the core when its gate node is driven by a transistor
+  ---
+  duration_ms: 0.839312
+  ...
+# Subtest: a tail biased by a plain divider is not a start-up (no capacitor: a bias)
+ok 31 - a tail biased by a plain divider is not a start-up (no capacitor: a bias)
+  ---
+  duration_ms: 0.567077
+  ...
+# Subtest: cascode OTA: tryManuel returns the manual drawing
+ok 32 - cascode OTA: tryManuel returns the manual drawing
+  ---
+  duration_ms: 498.631245
+  ...
+# Subtest: cascode: a telescopic OTA is read in two columns, the diode on the left
+ok 33 - cascode: a telescopic OTA is read in two columns, the diode on the left
+  ---
+  duration_ms: 222.745097
+  ...
+# Subtest: cascode: a folded-cascode OTA is read, the pair beside the columns
+ok 34 - cascode: a folded-cascode OTA is read, the pair beside the columns
+  ---
+  duration_ms: 1.046664
+  ...
+# Subtest: cascode: the side stages of a two-stage telescopic OTA are read
+ok 35 - cascode: the side stages of a two-stage telescopic OTA are read
+  ---
+  duration_ms: 214.471773
+  ...
+# Subtest: cascode: a plain 5T OTA (no cascode) is not read
+ok 36 - cascode: a plain 5T OTA (no cascode) is not read
+  ---
+  duration_ms: 0.482067
+  ...
+# Subtest: cascode: auto draws the telescopic OTA with the template, LVS-clean, through the quality gate
+ok 37 - cascode: auto draws the telescopic OTA with the template, LVS-clean, through the quality gate
+  ---
+  duration_ms: 20166.586342
+  ...
+# Subtest: cascode: auto draws the folded OTA with the template, LVS-clean, through the quality gate
+ok 38 - cascode: auto draws the folded OTA with the template, LVS-clean, through the quality gate
+  ---
+  duration_ms: 19601.005471
+  ...
+# Subtest: cascode: auto draws the two-stage OTA with the template, LVS-clean, through the quality gate
+ok 39 - cascode: auto draws the two-stage OTA with the template, LVS-clean, through the quality gate
+  ---
+  duration_ms: 11027.708077
+  ...
+# Subtest: cascode: AUTO_CASCODE=0 disables the template
+ok 40 - cascode: AUTO_CASCODE=0 disables the template
+  ---
+  duration_ms: 5871.595182
+  ...
+# Subtest: checker python : harnais d'exigences complet
+ok 41 - checker python : harnais d'exigences complet
+  ---
+  duration_ms: 1732.496726
+  ...
+# Subtest: classab: a common-source stage with a floating current source is read
+ok 42 - classab: a common-source stage with a floating current source is read
+  ---
+  duration_ms: 3.358266
+  ...
+# Subtest: classab: a follower stage biased by two diode-connected devices is read
+ok 43 - classab: a follower stage biased by two diode-connected devices is read
+  ---
+  duration_ms: 0.613099
+  ...
+# Subtest: classab: a Miller second stage (current-source load) is not read
+ok 44 - classab: a Miller second stage (current-source load) is not read
+  ---
+  duration_ms: 0.368185
+  ...
+# Subtest: classab: an LNA whose "string" runs through its input is not read
+ok 45 - classab: an LNA whose "string" runs through its input is not read
+  ---
+  duration_ms: 0.150562
+  ...
+# Subtest: classab: auto draws the common-source stage with the template, LVS-clean, through the quality gate
+ok 46 - classab: auto draws the common-source stage with the template, LVS-clean, through the quality gate
+  ---
+  duration_ms: 18734.39821
+  ...
+# Subtest: classab: auto draws the follower stage with the template, LVS-clean, through the quality gate
+ok 47 - classab: auto draws the follower stage with the template, LVS-clean, through the quality gate
+  ---
+  duration_ms: 13902.890651
+  ...
+# Subtest: classab: AUTO_CLASSAB=0 disables the template
+ok 48 - classab: AUTO_CLASSAB=0 disables the template
+  ---
+  duration_ms: 7742.365942
+  ...
+# Subtest: ground-row cleanup preserves electrical terminals
+ok 49 - ground-row cleanup preserves electrical terminals
+  ---
+  duration_ms: 1110.218507
+  ...
+# Subtest: conduction projection preserves every vertex and external feedback branch terminals
+ok 50 - conduction projection preserves every vertex and external feedback branch terminals
+  ---
+  duration_ms: 326.88115
+  ...
+# Subtest: six cleanup stages depend on topology rather than net identifiers
+ok 51 - six cleanup stages depend on topology rather than net identifiers
+  ---
+  duration_ms: 302.421894
+  ...
+# Subtest: visible copper is independent of duplicate and subdivided paths
+ok 52 - visible copper is independent of duplicate and subdivided paths
+  ---
+  duration_ms: 3.60824
+  ...
+# Subtest: same-net tee does not become three artificial corners
+ok 53 - same-net tee does not become three artificial corners
+  ---
+  duration_ms: 0.200213
+  ...
+# Subtest: diagonal geometry is never mistaken for an improvement
+ok 54 - diagonal geometry is never mistaken for an improvement
+  ---
+  duration_ms: 0.113821
+  ...
+# Subtest: translation and path order do not alter visible complexity
+ok 55 - translation and path order do not alter visible complexity
+  ---
+  duration_ms: 0.135702
+  ...
+# Subtest: an improvement on one net cannot buy a regression on another
+ok 56 - an improvement on one net cannot buy a regression on another
+  ---
+  duration_ms: 17.380349
+  ...
+# Subtest: routing cannot move an approved component or modify a protected bus
+ok 57 - routing cannot move an approved component or modify a protected bus
+  ---
+  duration_ms: 17.225267
+  ...
+# Subtest: critic: prompt lists every component with its refdes and the conventions
+ok 58 - critic: prompt lists every component with its refdes and the conventions
+  ---
+  duration_ms: 1077.846091
+  ...
+# Subtest: critic: parseFindings survives fences, prose and junk fields
+ok 59 - critic: parseFindings survives fences, prose and junk fields
+  ---
+  duration_ms: 1.127646
+  ...
+# Subtest: critic: end-to-end with an injected backend — renders, prompts, validates cell ids
+ok 60 - critic: end-to-end with an injected backend — renders, prompts, validates cell ids
+  ---
+  duration_ms: 6145.808013
+  ...
+# Subtest: two diagonals of different nets cross once
+ok 61 - two diagonals of different nets cross once
+  ---
+  duration_ms: 193.777508
+  ...
+# Subtest: parallel wires do not cross
+ok 62 - parallel wires do not cross
+  ---
+  duration_ms: 2.588586
+  ...
+# Subtest: wires sharing an end vertex (touching) do not count
+ok 63 - wires sharing an end vertex (touching) do not count
+  ---
+  duration_ms: 0.768671
+  ...
+# Subtest: a bend point that makes a wire cross another is counted
+ok 64 - a bend point that makes a wire cross another is counted
+  ---
+  duration_ms: 0.657459
+  ...
+# Subtest: empty drawing has no crossings
+ok 65 - empty drawing has no crossings
+  ---
+  duration_ms: 0.242463
+  ...
+# Subtest: page 2 failing its LVS: 422 without force, drawn and said with force=1
+ok 66 - page 2 failing its LVS: 422 without force, drawn and said with force=1
+  ---
+  duration_ms: 2352.067915
+  ...
+# Subtest: the same import without the fault: 201, both pages LVS-clean
+ok 67 - the same import without the fault: 201, both pages LVS-clean
+  ---
+  duration_ms: 3293.782899
+  ...
+# Subtest: detection: dummy=1 honoured as written, d=g=s, gate on its off rail; a MOS capacitor is not a dummy
+ok 68 - detection: dummy=1 honoured as written, d=g=s, gate on its off rail; a MOS capacitor is not a dummy
+  ---
+  duration_ms: 851.88047
+  ...
+# Subtest: import auto: two pages, dummies on page 2 only, joined by name, local nets wired
+ok 69 - import auto: two pages, dummies on page 2 only, joined by name, local nets wired
+  ---
+  duration_ms: 22269.884294
+  ...
+# Subtest: import v2: two pages, dummies on page 2 only, joined by name, local nets wired
+ok 70 - import v2: two pages, dummies on page 2 only, joined by name, local nets wired
+  ---
+  duration_ms: 1405.714563
+  ...
+# Subtest: POST /lvs on a document with dummies: page 1 without them, both pages with the whole netlist
+ok 71 - POST /lvs on a document with dummies: page 1 without them, both pages with the whole netlist
+  ---
+  duration_ms: 88.990783
+  ...
+# Subtest: re-import replaces the dummies page; a netlist without dummies still has its page 2, "Aucun factice"
+ok 72 - re-import replaces the dummies page; a netlist without dummies still has its page 2, "Aucun factice"
+  ---
+  duration_ms: 215.220687
+  ...
+# Subtest: the two-page LVS fails when a label is renamed or a page-2 wire is cut
+ok 73 - the two-page LVS fails when a label is renamed or a page-2 wire is cut
+  ---
+  duration_ms: 38.355277
+  ...
+# Subtest: N1 ota_dum: every name page 2 shows is shown on page 1 too, on every engine
+ok 74 - N1 ota_dum: every name page 2 shows is shown on page 1 too, on every engine
+  ---
+  duration_ms: 13637.343539
+  ...
+# Subtest: N1 eric_mload_dum: every name page 2 shows is shown on page 1 too, on every engine
+ok 75 - N1 eric_mload_dum: every name page 2 shows is shown on page 1 too, on every engine
+  ---
+  duration_ms: 161.09932
+  ...
+# Subtest: N1 eric_mload_flat_dum: every name page 2 shows is shown on page 1 too, on every engine
+ok 76 - N1 eric_mload_flat_dum: every name page 2 shows is shown on page 1 too, on every engine
+  ---
+  duration_ms: 236.434674
+  ...
+# Subtest: N1 eric_mload_par: every name page 2 shows is shown on page 1 too, on every engine
+ok 77 - N1 eric_mload_par: every name page 2 shows is shown on page 1 too, on every engine
+  ---
+  duration_ms: 185.528665
+  ...
+# Subtest: N1 eric_mload_par_only: every name page 2 shows is shown on page 1 too, on every engine
+ok 78 - N1 eric_mload_par_only: every name page 2 shows is shown on page 1 too, on every engine
+  ---
+  duration_ms: 233.464482
+  ...
+# Subtest: N4 eric_mload_dum: d3 on XM6 drain and source is ONE label and a wire
+ok 79 - N4 eric_mload_dum: d3 on XM6 drain and source is ONE label and a wire
+  ---
+  duration_ms: 128.062477
+  ...
+# Subtest: N2/N3 eric_mload_sub (Eric's exact netlist): W/L ng under each name and the pins named, on every engine
+ok 80 - N2/N3 eric_mload_sub (Eric's exact netlist): W/L ng under each name and the pins named, on every engine
+  ---
+  duration_ms: 121.271744
+  ...
+# Subtest: N2/N3 eric_mload_flat (Eric's exact netlist): W/L ng under each name and the pins named, on every engine
+ok 81 - N2/N3 eric_mload_flat (Eric's exact netlist): W/L ng under each name and the pins named, on every engine
+  ---
+  duration_ms: 144.609564
+  ...
+# Subtest: parasitics: an lvs_ignore=1 capacitor is split off page 1; a plain capacitor stays
+ok 82 - parasitics: an lvs_ignore=1 capacitor is split off page 1; a plain capacitor stays
+  ---
+  duration_ms: 1.44172
+  ...
+# Subtest: parasitics eric_mload_par: none on page 1, all on page 2 under their heading with their value, on every engine
+ok 83 - parasitics eric_mload_par: none on page 1, all on page 2 under their heading with their value, on every engine
+  ---
+  duration_ms: 189.254917
+  ...
+# Subtest: parasitics eric_mload_par_only: none on page 1, all on page 2 under their heading with their value, on every engine
+ok 84 - parasitics eric_mload_par_only: none on page 1, all on page 2 under their heading with their value, on every engine
+  ---
+  duration_ms: 334.722322
+  ...
+# Subtest: review r3: a page-2 net left unnamed on page 1 is said in the warnings, never silent
+ok 85 - review r3: a page-2 net left unnamed on page 1 is said in the warnings, never silent
+  ---
+  duration_ms: 0.261734
+  ...
+# Subtest: e2e: import -> route -> netlist -> lvs -> erc -> bom
+ok 86 - e2e: import -> route -> netlist -> lvs -> erc -> bom
+  ---
+  duration_ms: 2026.005722
+  ...
+# Subtest: e2e: png export via headless chromium
+ok 87 - e2e: png export via headless chromium
+  ---
+  duration_ms: 7266.92488
+  ...
+# Subtest: export-asc: every generated benchmark topology round-trips to LTspice and back (strict LVS)
+ok 88 - export-asc: every generated benchmark topology round-trips to LTspice and back (strict LVS)
+  ---
+  duration_ms: 5218.453851
+  ...
+# Subtest: export-asc: symbols, orientation and flags are what the drawing says
+ok 89 - export-asc: symbols, orientation and flags are what the drawing says
+  ---
+  duration_ms: 29.557867
+  ...
+# Subtest: export-asc: the new element classes (E F B S J X) export and verify
+ok 90 - export-asc: the new element classes (E F B S J X) export and verify
+  ---
+  duration_ms: 138.74811
+  ...
+# Subtest: kicad transform: 10 units per 1.27 mm, symbol y up → schematic y down, the 8 cases distinct
+ok 91 - kicad transform: 10 units per 1.27 mm, symbol y up → schematic y down, the 8 cases distinct
+  ---
+  duration_ms: 1.155836
+  ...
+# Subtest: kicad export: a CS stage gives a .kicad_sch with KiCad symbols on the 1.27 mm grid
+ok 92 - kicad export: a CS stage gives a .kicad_sch with KiCad symbols on the 1.27 mm grid
+  ---
+  duration_ms: 11129.183562
+  ...
+# Subtest: kicad export checked by KiCad itself (kicad-cli netlist + LVS)
+ok 93 - kicad export checked by KiCad itself (kicad-cli netlist + LVS) # SKIP KICAD_CHECK=1 to run kicad-cli
+  ---
+  duration_ms: 0.259924
+  ...
+# Subtest: qucs transform: mirror (y → −y) then rotations (x, y) → (y, −x), 8 distinct cases
+ok 94 - qucs transform: mirror (y → −y) then rotations (x, y) → (y, −x), 8 distinct cases
+  ---
+  duration_ms: 2.032248
+  ...
+# Subtest: ltspice transform: 16 LTspice units = 10, mirror then R90 (x, y) → (−y, x)
+ok 95 - ltspice transform: 16 LTspice units = 10, mirror then R90 (x, y) → (−y, x)
+  ---
+  duration_ms: 0.253173
+  ...
+# Subtest: ltspice export: real wires (no flag per pin), re-read by the .asc reader with LVS matching
+ok 96 - ltspice export: real wires (no flag per pin), re-read by the .asc reader with LVS matching
+  ---
+  duration_ms: 11534.795015
+  ...
+# Subtest: xschem transform: mirror then rotation, the 8 cases distinct
+ok 97 - xschem transform: mirror then rotation, the 8 cases distinct
+  ---
+  duration_ms: 0.984774
+  ...
+# Subtest: xschem export: a CS stage gives a .sch whose instances sit on their drawn pins
+ok 98 - xschem export: a CS stage gives a .sch whose instances sit on their drawn pins
+  ---
+  duration_ms: 11164.570484
+  ...
+# Subtest: xschem export checked by xschem itself (netlister + LVS)
+ok 99 - xschem export checked by xschem itself (netlister + LVS) # SKIP XSCHEM_CHECK=1 to run xschem
+  ---
+  duration_ms: 0.266364
+  ...
+# Subtest: structured inverter feedback preserves every component terminal and value
+ok 100 - structured inverter feedback preserves every component terminal and value
+  ---
+  duration_ms: 1362.52082
+  ...
+# Subtest: inverter recognition rejects simple amplifiers and does not use net names
+ok 101 - inverter recognition rejects simple amplifiers and does not use net names
+  ---
+  duration_ms: 577.064094
+  ...
+# Subtest: feedback proposals are invariant under net renaming
+ok 102 - feedback proposals are invariant under net renaming
+  ---
+  duration_ms: 324.539848
+  ...
+# Subtest: same-net tee candidates preserve LVS without changing endpoint identity
+ok 103 - same-net tee candidates preserve LVS without changing endpoint identity
+  ---
+  duration_ms: 152.880534
+  ...
+# Subtest: fingers: the merge key (drain/source unordered, gate, bulk, w, l, nf, ng, m; R unordered, C ordered)
+ok 104 - fingers: the merge key (drain/source unordered, gate, bulk, w, l, nf, ng, m; R unordered, C ordered)
+  ---
+  duration_ms: 192.177586
+  ...
+# Subtest: fingers: an extracted OTA (one device per finger, drain/source swapped) draws in manuel, LVS against the fingers
+ok 105 - fingers: an extracted OTA (one device per finger, drain/source swapped) draws in manuel, LVS against the fingers
+  ---
+  duration_ms: 987.548697
+  ...
+# Subtest: channel demand ignores MOS bulk and rails, preserves row/column alignment
+ok 106 - channel demand ignores MOS bulk and rails, preserves row/column alignment
+  ---
+  duration_ms: 49.639014
+  ...
+# Subtest: folded-cascode candidate floorplans preserve saved electrical data
+ok 107 - folded-cascode candidate floorplans preserve saved electrical data
+  ---
+  duration_ms: 1540.371039
+  ...
+# Subtest: ota-5t candidate floorplans preserve saved electrical data
+ok 108 - ota-5t candidate floorplans preserve saved electrical data
+  ---
+  duration_ms: 129.699746
+  ...
+# Subtest: bandgap-core candidate floorplans preserve saved electrical data
+ok 109 - bandgap-core candidate floorplans preserve saved electrical data
+  ---
+  duration_ms: 105.602834
+  ...
+# Subtest: vco-lc candidate floorplans preserve saved electrical data
+ok 110 - vco-lc candidate floorplans preserve saved electrical data
+  ---
+  duration_ms: 78.278548
+  ...
+# Subtest: lna-diff-cascode candidate floorplans preserve saved electrical data
+ok 111 - lna-diff-cascode candidate floorplans preserve saved electrical data
+  ---
+  duration_ms: 64.330195
+  ...
+# Subtest: pa-class-a candidate floorplans preserve saved electrical data
+ok 112 - pa-class-a candidate floorplans preserve saved electrical data
+  ---
+  duration_ms: 64.576119
+  ...
+# Subtest: summary cannot redirect a sealed reference XML or source
+ok 113 - summary cannot redirect a sealed reference XML or source
+  ---
+  duration_ms: 3.306136
+  ...
+# Subtest: any changed frozen source file invalidates the corpus
+ok 114 - any changed frozen source file invalidates the corpus
+  ---
+  duration_ms: 13.756239
+  ...
+# Subtest: duplicate or unsafe case identifiers fail closed
+ok 115 - duplicate or unsafe case identifiers fail closed
+  ---
+  duration_ms: 3.104843
+  ...
+# Subtest: recognizeFunction: archive statistics name the obvious functions
+ok 116 - recognizeFunction: archive statistics name the obvious functions
+  ---
+  duration_ms: 77.200983
+  ...
+# Subtest: netRoles and blockRoles
+ok 117 - netRoles and blockRoles
+  ---
+  duration_ms: 1.177606
+  ...
+# Subtest: recognize without LLM: Bayes + neighbours, never throws without the index
+ok 118 - recognize without LLM: Bayes + neighbours, never throws without the index
+  ---
+  duration_ms: 255.358236
+  ...
+# Subtest: conventionReport: the LNA drawn by place2 follows its conventions
+ok 119 - conventionReport: the LNA drawn by place2 follows its conventions
+  ---
+  duration_ms: 1318.757066
+  ...
+# Subtest: ranker features: candidate identity, check.js counts, conventions, geometry
+ok 120 - ranker features: candidate identity, check.js counts, conventions, geometry
+  ---
+  duration_ms: 309.035384
+  ...
+# Subtest: recognizeFromLabels: a vision reading (motifs + component kinds) gets a type ranking
+ok 121 - recognizeFromLabels: a vision reading (motifs + component kinds) gets a type ranking
+  ---
+  duration_ms: 1.262537
+  ...
+# Subtest: sealed guard: the sealed set is hashes only in the repository; known tuning circuits pass
+ok 122 - sealed guard: the sealed set is hashes only in the repository; known tuning circuits pass
+  ---
+  duration_ms: 18.034168
+  ...
+# Subtest: recognizes tapped bridge as structural hypothesis, not a degree-two chain
+ok 123 - recognizes tapped bridge as structural hypothesis, not a degree-two chain
+  ---
+  duration_ms: 808.047876
+  ...
+# Subtest: bridge candidates preserve exact terminal identity and all unrelated vertices
+ok 124 - bridge candidates preserve exact terminal identity and all unrelated vertices
+  ---
+  duration_ms: 907.832149
+  ...
+# Subtest: net renaming and part values do not change geometric proposals
+ok 125 - net renaming and part values do not change geometric proposals
+  ---
+  duration_ms: 10.073948
+  ...
+# Subtest: does not infer passive bridge from an open series chain
+ok 126 - does not infer passive bridge from an open series chain
+  ---
+  duration_ms: 12.851097
+  ...
+# Subtest: protected incident routes fail closed
+ok 127 - protected incident routes fail closed
+  ---
+  duration_ms: 100.664716
+  ...
+# Subtest: mirror groups follow topology and candidates respect NMOS/PMOS bus side
+ok 128 - mirror groups follow topology and candidates respect NMOS/PMOS bus side
+  ---
+  duration_ms: 2100.424779
+  ...
+# Subtest: single bus preserves LVS, device placement, unrelated wires and orthogonality including diode self edges
+ok 129 - single bus preserves LVS, device placement, unrelated wires and orthogonality including diode self edges
+  ---
+  duration_ms: 262.829658
+  ...
+# Subtest: generic MOS flips do not break shared gate groups
+ok 130 - generic MOS flips do not break shared gate groups
+  ---
+  duration_ms: 86.708814
+  ...
+# Subtest: simple mirrors are excluded: reference transistor does not count as an output
+ok 131 - simple mirrors are excluded: reference transistor does not count as an output
+  ---
+  duration_ms: 100.130299
+  ...
+# Subtest: reference gate faces outputs and drain/source coordinates stay fixed
+ok 132 - reference gate faces outputs and drain/source coordinates stay fixed
+  ---
+  duration_ms: 77.541467
+  ...
+# Subtest: générateur: rc-filter -> LVS conforme et 0 erreur checker JS
+ok 133 - générateur: rc-filter -> LVS conforme et 0 erreur checker JS
+  ---
+  duration_ms: 1342.590375
+  ...
+# Subtest: générateur: vco-lc -> LVS conforme et 0 erreur checker JS
+ok 134 - générateur: vco-lc -> LVS conforme et 0 erreur checker JS
+  ---
+  duration_ms: 140.376673
+  ...
+# Subtest: générateur: ota-cmos -> LVS conforme et 0 erreur checker JS
+ok 135 - générateur: ota-cmos -> LVS conforme et 0 erreur checker JS
+  ---
+  duration_ms: 244.157072
+  ...
+# Subtest: générateur: lc-match -> LVS conforme et 0 erreur checker JS
+ok 136 - générateur: lc-match -> LVS conforme et 0 erreur checker JS
+  ---
+  duration_ms: 42.821539
+  ...
+# Subtest: générateur: pi-attenuator -> LVS conforme et 0 erreur checker JS
+ok 137 - générateur: pi-attenuator -> LVS conforme et 0 erreur checker JS
+  ---
+  duration_ms: 9.684893
+  ...
+# Subtest: générateur: source-follower -> LVS conforme et 0 erreur checker JS
+ok 138 - générateur: source-follower -> LVS conforme et 0 erreur checker JS
+  ---
+  duration_ms: 57.924858
+  ...
+# Subtest: générateur: diffpair-resistive -> LVS conforme et 0 erreur checker JS
+ok 139 - générateur: diffpair-resistive -> LVS conforme et 0 erreur checker JS
+  ---
+  duration_ms: 340.273664
+  ...
+# Subtest: générateur: ring-vco3 -> LVS conforme et 0 erreur checker JS
+ok 140 - générateur: ring-vco3 -> LVS conforme et 0 erreur checker JS
+  ---
+  duration_ms: 187.723314
+  ...
+# Subtest: générateur: class-ab-out -> LVS conforme et 0 erreur checker JS
+ok 141 - générateur: class-ab-out -> LVS conforme et 0 erreur checker JS
+  ---
+  duration_ms: 443.429064
+  ...
+# Subtest: générateur: ota-2stage-pmos -> LVS conforme et 0 erreur checker JS
+ok 142 - générateur: ota-2stage-pmos -> LVS conforme et 0 erreur checker JS
+  ---
+  duration_ms: 182.593273
+  ...
+# Subtest: no-movement request preserves every byte of an already routed drawing
+ok 143 - no-movement request preserves every byte of an already routed drawing
+  ---
+  duration_ms: 1773.765062
+  ...
+# Subtest: local port move preserves unrelated routes and reference connectivity
+ok 144 - local port move preserves unrelated routes and reference connectivity
+  ---
+  duration_ms: 304.465762
+  ...
+# Subtest: proposal geometry does not depend on circuit identifiers or XML declaration order
+ok 145 - proposal geometry does not depend on circuit identifiers or XML declaration order
+  ---
+  duration_ms: 201.557625
+  ...
+# Subtest: same-net T junction gets a contact dot and rebuilding is stable
+ok 146 - same-net T junction gets a contact dot and rebuilding is stable
+  ---
+  duration_ms: 8.214403
+  ...
+# Subtest: foreign-net crossing never receives a connecting dot
+ok 147 - foreign-net crossing never receives a connecting dot
+  ---
+  duration_ms: 0.74444
+  ...
+# Subtest: quality budget rejects a large detour even with fewer crossings
+ok 148 - quality budget rejects a large detour even with fewer crossings
+  ---
+  duration_ms: 1.069344
+  ...
+# Subtest: renaming nets and their port labels preserves signal-branch proposals
+ok 149 - renaming nets and their port labels preserves signal-branch proposals
+  ---
+  duration_ms: 111.006588
+  ...
+# Subtest: series branch proposal carries an entire degree-two chain
+ok 150 - series branch proposal carries an entire degree-two chain
+  ---
+  duration_ms: 9.606483
+  ...
+# Subtest: subpixel-rounded T branch still receives its same-net junction dot
+ok 151 - subpixel-rounded T branch still receives its same-net junction dot
+  ---
+  duration_ms: 0.978303
+  ...
+# Subtest: a lone ground spelling is the ground; never with 0 or a second spelling
+ok 152 - a lone ground spelling is the ground; never with 0 or a second spelling
+  ---
+  duration_ms: 3.846533
+  ...
+# Subtest: placers see the alias renamed 0; the deck is untouched
+ok 153 - placers see the alias renamed 0; the deck is untouched
+  ---
+  duration_ms: 10.253242
+  ...
+# Subtest: LVS: a ground symbol (net 0) matches the deck that says VSS, on either side
+ok 154 - LVS: a ground symbol (net 0) matches the deck that says VSS, on either side
+  ---
+  duration_ms: 22.574741
+  ...
+# Subtest: a wire cut on page inv (multi.sp) fails the page LVS AND the global LVS
+ok 155 - a wire cut on page inv (multi.sp) fails the page LVS AND the global LVS
+  ---
+  duration_ms: 1565.038887
+  ...
+# Subtest: a wire cut on page buf (multi.sp) fails the page LVS AND the global LVS
+ok 156 - a wire cut on page buf (multi.sp) fails the page LVS AND the global LVS
+  ---
+  duration_ms: 519.863916
+  ...
+# Subtest: a wire cut on page top (multi.sp) fails the page LVS AND the global LVS
+ok 157 - a wire cut on page top (multi.sp) fails the page LVS AND the global LVS
+  ---
+  duration_ms: 193.261241
+  ...
+# Subtest: a wire cut on page ota1 (tia_op.cir) fails the page LVS AND the global LVS
+ok 158 - a wire cut on page ota1 (tia_op.cir) fails the page LVS AND the global LVS
+  ---
+  duration_ms: 749.333765
+  ...
+# Subtest: a wire cut on page bank_o1n_inp (tia_op.cir) fails the page LVS AND the global LVS
+ok 159 - a wire cut on page bank_o1n_inp (tia_op.cir) fails the page LVS AND the global LVS
+  ---
+  duration_ms: 783.069619
+  ...
+# Subtest: a wire cut on page top (tia_op.cir) fails the page LVS AND the global LVS
+ok 160 - a wire cut on page top (tia_op.cir) fails the page LVS AND the global LVS
+  ---
+  duration_ms: 805.815031
+  ...
+# Subtest: untouched drawings: global LVS green
+ok 161 - untouched drawings: global LVS green
+  ---
+  duration_ms: 1513.413657
+  ...
+# Subtest: viewer.html: served right after a ?hier=1 import, with a CSP; /hier/pages does not add routes
+ok 162 - viewer.html: served right after a ?hier=1 import, with a CSP; /hier/pages does not add routes
+  ---
+  duration_ms: 46232.589696
+  ...
+# Subtest: a V/I source inside a block .subckt fails the import, even with ?force=1
+ok 163 - a V/I source inside a block .subckt fails the import, even with ?force=1
+  ---
+  duration_ms: 19821.546241
+  ...
+# Subtest: the exceptions: a VSONDE_ probe, a .subckt marked macro=1
+ok 164 - the exceptions: a VSONDE_ probe, a .subckt marked macro=1
+  ---
+  duration_ms: 13710.642342
+  ...

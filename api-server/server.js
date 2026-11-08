@@ -34,7 +34,7 @@ import { rewire } from './lib/rewire.js';
 import { annotateSizes } from './lib/size-labels.js';
 import { unwrapSingleSubckt } from './lib/unwrap-subckt.js';
 import { orientSupplies, supplyOrderWarnings } from './lib/supply-orient.js';
-import { splitDummies, dummiesForImport, labelSharedOnPage1, lvsTwoPages, DUMMY_PAGE } from './lib/dummies.js';
+import { splitDummies, dummiesForImport, labelSharedOnPage1, lvsTwoPages, unnamedWarnings, DUMMY_PAGE } from './lib/dummies.js';
 import { withGroundAlias } from './lib/ground-alias.js';
 import { mergeFingers } from './lib/fingers.js';
 
@@ -435,7 +435,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   const withDummies = async (doc, payload) => {
     const d = await dummiesForImport(doc, split, full);
     if (!d) return null;
-    if (!d.lvs.match && !force) throw model.httpError(422, `dummies page: LVS of both pages failed`);
+    if (!d.lvs.match && !force) throw model.httpError(422, `dummies page: LVS of both pages failed${d.lvs.unnamed?.length ? ` (named on page 2, not on page 1: ${d.lvs.unnamed.join(', ')})` : ''}`);
     payload.dummies = d;
     if (d.warning) payload.warnings = [...(payload.warnings || []), d.warning];
     if (d.warnings?.length) payload.warnings = [...(payload.warnings || []), ...d.warnings];
@@ -518,7 +518,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     entry.doc = win.doc;
     placed = { ...win.placed, engine: win.label + ' (auto)', auto: win.trials };
     // a one-.subckt deck's pins named on page 1 here too (layout3d calls engine=auto: its OTA lost vout and ibias)
-    const autoPins = parsed.pins ? labelSharedOnPage1(entry.doc, split, parsed.pins, model.getPage(entry.doc)) : [];
+    const autoPins = parsed.pins ? labelSharedOnPage1(entry.doc, split, parsed.pins, model.getPage(entry.doc), { port: true }) : [];
     const extracted = netlist.extractNetlist(model.getPage(entry.doc));
     const report = lvs.compare(extracted, parsed);
     const decision = lvs.gate(report, { force });
@@ -529,6 +529,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     const autoOut = { ...placed, routed: placed.wires.length, lvs: report, supply: supplyOut, ...fingersOf(full) };
     if (autoPins.length) autoOut.pinLabels = autoPins;
     if (decision.warnings) autoOut.warnings = decision.warnings;
+    if (unnamedWarnings(autoPins).length) autoOut.warnings = [...(autoOut.warnings || []), ...unnamedWarnings(autoPins)];
     await withDummies(entry.doc, autoOut);
     return res.status(decision.status).json(autoOut);
   } else if (engine === 'manuel') {
@@ -569,7 +570,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   annotateSizes(m, parsed);
   // a one-.subckt deck's pins are named on page 1 whatever the engine (review r2, N2: MLOAD's d3 on v2/v4): a
   // label of that name on a stub from one of its pins, when the engine drew none
-  const pinLabels = parsed.pins ? labelSharedOnPage1(entry.doc, split, parsed.pins, m) : [];
+  const pinLabels = parsed.pins ? labelSharedOnPage1(entry.doc, split, parsed.pins, m, { port: true }) : [];
   const extracted = netlist.extractNetlist(m);
   const report = lvs.compare(extracted, parsed);
   const decision = lvs.gate(report, { force });
@@ -582,6 +583,8 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   await withDummies(entry.doc, payload);
   if (annReport) payload.annotations = annReport;
   if (pinLabels.length) payload.pinLabels = pinLabels;
+  // a pin that page 1 could not print at all is said (review r4), never silent
+  if (unnamedWarnings(pinLabels).length) payload.warnings = [...(payload.warnings || []), ...unnamedWarnings(pinLabels)];
   res.status(decision.status).json(payload);
 }));
 

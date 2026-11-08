@@ -8,7 +8,7 @@ export function portDirection(name, overrides={}) {
  const explicit=Object.entries(overrides).find(([k])=>k.toUpperCase()===key)?.[1];
  if(explicit!=null){if(!['input','output','inout'].includes(explicit))throw new Error('Invalid port direction: '+explicit);return explicit;}
  if(/^(OUT|VOUT|DOUT|OUTPUT|OSC)(?:[PMN]|\d|_|$)/.test(key))return 'output';
- if(/^(IN|VIN|DIN|INPUT|VB|VBIAS|BIAS|CLK|LO)(?:[PMN]|\d|_|$)/.test(key))return 'input';
+ if(/^(IN|VIN|DIN|INPUT|VB|VBIAS|BIAS|IBIAS|IREF|CLK|LO)(?:[PMN]|\d|_|$)/.test(key))return 'input';
  return 'inout';
 }
 export function applyPortStyle(model,{portStyle='A',portDirections={}}={}) {
