@@ -15,7 +15,7 @@ import { mergeFingers } from '../lib/fingers.js';
 import { orientSupplies } from '../lib/supply-orient.js';
 import { unwrapSingleSubckt } from '../lib/unwrap-subckt.js';
 import { geoLvs } from '../lib/geo-lvs.js';
-import { splitDummies, drawDummiesPage, lvsTwoPages, page1NetsOf, unnamedWarnings, DUMMY_PAGE } from '../lib/dummies.js';
+import { splitDummies, drawDummiesPage, lvsTwoPages, page1NetsOf, supplyNetsOf, unnamedWarnings, DUMMY_PAGE } from '../lib/dummies.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OTA = fs.readFileSync(new URL('./fixtures/dummies/ota_dum.sp', import.meta.url), 'utf8');
@@ -156,13 +156,15 @@ const importDoc = async (text, engine) => {
 };
 
 for (const fx of ['ota_dum', 'eric_mload_dum', 'eric_mload_flat_dum', 'eric_mload_par', 'eric_mload_par_only']) {
-  test(`N1 ${fx}: every name page 2 shows is shown on page 1 too, on every engine`, async () => {
+  test(`N1 ${fx}: every name page 2 shows is shown on page 1 too (supplies excepted: global), on every engine`, async () => {
+    // Orchestrator 08.11 (DIFFCC): a supply net is global; its rail on page 2 is enough
+    const supply = supplyNetsOf(splitDummies(orientSupplies(mergeFingers(withGroundAlias(unwrapSingleSubckt(parseSpice(FIX(fx)))))).parsed));
     for (const engine of fx === 'ota_dum' ? ENGINES.filter((e) => e !== 'manuel') : ENGINES) {
       const { status, body, doc } = await importDoc(FIX(fx), engine);
       assert.equal(status, 201, `${engine}: ${JSON.stringify(body).slice(0, 300)}`);
       assert.equal(body.dummies.lvs.match, true, `${engine}: two-page LVS`);
       const on1 = namesOn(getPage(doc, 0));
-      const on2 = [...namesOn(getPage(doc, DUMMY_PAGE))].filter((n) => n !== '0');
+      const on2 = [...namesOn(getPage(doc, DUMMY_PAGE))].filter((n) => n !== '0' && !supply(n));
       assert.ok(on2.length > 0);
       for (const n of on2) assert.ok(on1.has(n), `${engine}: "${n}" is named on page 2, not on page 1 (${[...on1]})`);
     }
