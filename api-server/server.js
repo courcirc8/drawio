@@ -438,6 +438,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     if (!d.lvs.match && !force) throw model.httpError(422, `dummies page: LVS of both pages failed`);
     payload.dummies = d;
     if (d.warning) payload.warnings = [...(payload.warnings || []), d.warning];
+    if (d.warnings?.length) payload.warnings = [...(payload.warnings || []), ...d.warnings];
     return d;
   };
   // what the supply rule did, in every import response: polarity read, MOS turned, name/polarity disagreements

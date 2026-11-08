@@ -361,6 +361,11 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0)) {
   return out;
 }
 
+/** review r3: a page-2 net that page 1 could not name (no free place for a label, no wire to carry the name) is
+ *  said, never silent: the link between the pages is that name. -> warning lines */
+export const unnamedWarnings = (labelled) => labelled.filter((l) => l.on === 'none')
+  .map((l) => `net ${l.net}: named on page 2 but not on page 1 (no free place for its label, no wire to carry it)`);
+
 /** the nets of page 1 (the netlist without its dummies) */
 export const page1NetsOf = (split) => new Set(split.main.components.flatMap((c) => c.fullNodes || c.nodes));
 
@@ -387,5 +392,6 @@ export async function dummiesForImport(doc, split, full) {
   return { page: DUMMY_PAGE, count, parasitics: (split.parasitics || []).map((c) => c.ref),
     groups: [...split.groups.map((g) => g.title), ...(np ? [PARASITIC_TITLE] : [])],
     detected: split.dummies.map((x) => ({ ref: x.c.ref, why: x.why })), labelled, lvs,
+    ...(unnamedWarnings(labelled).length ? { warnings: unnamedWarnings(labelled) } : {}),
     warning: [count ? `${count} factices` : '', np ? `${np} capacité${np > 1 ? 's' : ''} parasite${np > 1 ? 's' : ''}` : ''].filter(Boolean).join(' et ') + ' sur la page 2' };
 }

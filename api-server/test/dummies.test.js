@@ -14,7 +14,7 @@ import { withGroundAlias } from '../lib/ground-alias.js';
 import { mergeFingers } from '../lib/fingers.js';
 import { orientSupplies } from '../lib/supply-orient.js';
 import { geoLvs } from '../lib/geo-lvs.js';
-import { splitDummies, drawDummiesPage, lvsTwoPages, page1NetsOf, DUMMY_PAGE } from '../lib/dummies.js';
+import { splitDummies, drawDummiesPage, lvsTwoPages, page1NetsOf, unnamedWarnings, DUMMY_PAGE } from '../lib/dummies.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OTA = fs.readFileSync(new URL('./fixtures/dummies/ota_dum.sp', import.meta.url), 'utf8');
@@ -219,3 +219,9 @@ for (const fx of ['eric_mload_par', 'eric_mload_par_only']) {
     }
   });
 }
+
+test('review r3: a page-2 net left unnamed on page 1 is said in the warnings, never silent', () => {
+  const w = unnamedWarnings([{ net: 'd3', on: 'label' }, { net: 'o1', on: 'wire' }, { net: 'bias', on: 'none' }]);
+  assert.deepEqual(w, ['net bias: named on page 2 but not on page 1 (no free place for its label, no wire to carry it)']);
+  assert.deepEqual(unnamedWarnings([{ net: 'd3', on: 'label' }]), []);
+});
