@@ -40,7 +40,7 @@ export function ihpPrimitive(model) {
 export function ihpParams(tokens) {
   const p = {};
   for (const t of tokens) {
-    const m = /^(w|l|ng|m|nx|b)=(.+)$/i.exec(t);
+    const m = /^(w|l|ng|m|nx|b|dummy)=(.+)$/i.exec(t);   // dummy=1: a dummy (layout3d 08.11, lib/dummies.js)
     if (m) p[m[1].toLowerCase()] = m[2];
   }
   return p;

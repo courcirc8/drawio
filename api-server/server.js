@@ -34,6 +34,7 @@ import { rewire } from './lib/rewire.js';
 import { annotateSizes } from './lib/size-labels.js';
 import { unwrapSingleSubckt } from './lib/unwrap-subckt.js';
 import { orientSupplies, supplyOrderWarnings } from './lib/supply-orient.js';
+import { splitDummies, dummiesForImport, lvsTwoPages, DUMMY_PAGE } from './lib/dummies.js';
 import { withGroundAlias } from './lib/ground-alias.js';
 import { mergeFingers } from './lib/fingers.js';
 
@@ -425,7 +426,20 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   // turned to face their supply: positive on top, negative at the bottom (Eric 08.11, lib/supply-orient.js)
   // a deck that is one .subckt only (a layout3d cell): its body, pins as ports (lib/unwrap-subckt.js)
   const oriented = orientSupplies(mergeFingers(withGroundAlias(unwrapSingleSubckt(netlist.parseSpice(spice)))));
-  const parsed = oriented.parsed;
+  // Eric 08.11: the dummies (dummy=1 or detected) leave page 1 for a page 2 of their own, wired to their rails,
+  // joined to page 1 by net labels of the same name (lib/dummies.js); page 1 is drawn and checked without them
+  const full = oriented.parsed;
+  const split = splitDummies(full);
+  const parsed = split.main;
+  // page 2 drawn, then both pages checked together against the whole netlist (fails closed like the page-1 LVS)
+  const withDummies = async (doc, payload) => {
+    const d = await dummiesForImport(doc, split, full);
+    if (!d) return null;
+    if (!d.lvs.match && !force) throw model.httpError(422, `dummies page: LVS of both pages failed`);
+    payload.dummies = d;
+    payload.warnings = [...(payload.warnings || []), d.warning];
+    return d;
+  };
   // what the supply rule did, in every import response: polarity read, MOS turned, name/polarity disagreements
   const supply = { polarity: oriented.polarity, ...(oriented.swapped.length ? { swapped: oriented.swapped } : {}),
     ...(oriented.warnings.length ? { warnings: oriented.warnings } : {}) };
@@ -473,7 +487,9 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     }
     const lvsReport = lvs.compare(netlist.extractNetlist(model.getPage(entry.doc)), parsed);
     if (!lvsReport.match) throw model.httpError(422, 'final optimized document failed strict LVS');
-    return res.status(201).json({ engine: (usedEngine === 'v3' ? 'place3+optimize' : String(usedEngine).startsWith('v4') ? 'place4+optimize' : 'place2+optimize') + (engine === 'auto' ? ' (auto)' : ''), score: best.score,
+    const optOut = {};
+    await withDummies(entry.doc, optOut);
+    return res.status(201).json({ ...optOut, engine: (usedEngine === 'v3' ? 'place3+optimize' : String(usedEngine).startsWith('v4') ? 'place4+optimize' : 'place2+optimize') + (engine === 'auto' ? ' (auto)' : ''), score: best.score,
       metrics: best.metrics, params: best.params, history, lvs: lvsReport,
       components: best.placed.components, wires: best.placed.wires, supply: (() => {
         const w = supplyOrderWarnings(model.allCells(model.getPage(entry.doc)).map(model.cellInfo), parsed);
@@ -505,7 +521,10 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     // a rail kept against the checker, or not redrawn, is said (lib/rails.js): never a silent fallback
     const railWarn = [...(win.polish?.rails?.warnings || []), ...supplyOrderWarnings(model.allCells(model.getPage(entry.doc)).map(model.cellInfo), parsed)];
     const supplyOut = railWarn.length ? { ...supply, warnings: [...(supply.warnings || []), ...railWarn] } : supply;
-    return res.status(decision.status).json({ ...placed, routed: placed.wires.length, lvs: report, supply: supplyOut, ...fingersOf(parsed) });
+    const autoOut = { ...placed, routed: placed.wires.length, lvs: report, supply: supplyOut, ...fingersOf(full) };
+    if (decision.warnings) autoOut.warnings = decision.warnings;
+    await withDummies(entry.doc, autoOut);
+    return res.status(decision.status).json(autoOut);
   } else if (engine === 'manuel') {
     // lib/place-manuel.js: textbook drawing by rules (columns, mirror pairs,
     // bias/CMFB frames, label nets), only when its reading is sure; wires are
@@ -549,8 +568,9 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   // the supply order checked on the finished drawing, every engine (review r2): said, never silent
   const orderWarn = supplyOrderWarnings(model.allCells(m).map(model.cellInfo), parsed);
   const supplyOut = orderWarn.length ? { ...supply, warnings: [...(supply.warnings || []), ...orderWarn] } : supply;
-  const payload = { ...placed, routed: routed.ids.length, lvs: report, supply: supplyOut, ...fingersOf(parsed) };
+  const payload = { ...placed, routed: routed.ids.length, lvs: report, supply: supplyOut, ...fingersOf(full) };
   if (decision.warnings) payload.warnings = decision.warnings;
+  await withDummies(entry.doc, payload);
   if (annReport) payload.annotations = annReport;
   res.status(decision.status).json(payload);
 }));
@@ -620,6 +640,16 @@ app.post('/documents/:id/lvs', wrap((req, res) => {
   if (spice == null || spice === '') throw model.httpError(400, 'reference SPICE netlist required');
   const golden = unwrapSingleSubckt(netlist.parseSpice(spice));
   const extracted = netlist.extractNetlist(m);
+  // a document with a dummies page (lib/dummies.js): page 1 against the netlist without its dummies, and both
+  // pages together against the whole netlist (the import's own check)
+  const entry = documents.getDoc(req.params.id);
+  const hasDummies = model.listPages(entry.doc).some((p) => p.name === DUMMY_PAGE) && m === model.getPage(entry.doc, 0);
+  if (hasDummies) {
+    const full = orientSupplies(mergeFingers(withGroundAlias(golden))).parsed, split = splitDummies(full);
+    const report = lvs.compare(extracted, split.main);
+    const both = lvsTwoPages(entry.doc, split, full);
+    return res.json({ ...report, match: report.match && both.match, page1_match: report.match, dummies: both, extraction_issues: extracted.issues });
+  }
   const report = lvs.compare(extracted, golden);
   res.json({ ...report, extraction_issues: extracted.issues });
 }));
