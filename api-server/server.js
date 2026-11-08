@@ -517,6 +517,8 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     try { win = await autoPlace(parsed); } catch (e) { throw model.httpError(e.status || 500, e.message); }
     entry.doc = win.doc;
     placed = { ...win.placed, engine: win.label + ' (auto)', auto: win.trials };
+    // a one-.subckt deck's pins named on page 1 here too (layout3d calls engine=auto: its OTA lost vout and ibias)
+    const autoPins = parsed.pins ? labelSharedOnPage1(entry.doc, split, parsed.pins, model.getPage(entry.doc)) : [];
     const extracted = netlist.extractNetlist(model.getPage(entry.doc));
     const report = lvs.compare(extracted, parsed);
     const decision = lvs.gate(report, { force });
@@ -525,6 +527,7 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     const railWarn = [...(win.polish?.rails?.warnings || []), ...supplyOrderWarnings(model.allCells(model.getPage(entry.doc)).map(model.cellInfo), parsed)];
     const supplyOut = railWarn.length ? { ...supply, warnings: [...(supply.warnings || []), ...railWarn] } : supply;
     const autoOut = { ...placed, routed: placed.wires.length, lvs: report, supply: supplyOut, ...fingersOf(full) };
+    if (autoPins.length) autoOut.pinLabels = autoPins;
     if (decision.warnings) autoOut.warnings = decision.warnings;
     await withDummies(entry.doc, autoOut);
     return res.status(decision.status).json(autoOut);
