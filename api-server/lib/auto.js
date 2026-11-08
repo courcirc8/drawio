@@ -35,6 +35,7 @@ import { importNetlistStages, stagesConfident } from './place-stages.js';
 import { importNetlistLatch, latchReading } from './place-latch.js';
 import { alignPorts } from './align-ports.js';
 import { drawRails } from './rails.js';
+import { supplyOrderViolations } from './supply-orient.js';
 import { qualityGate } from './quality.js';
 import { importNetlistOta, otaReading, importNetlistMiller, millerReading } from './place-ota.js';
 import { importNetlistLna, lnaReading } from './place-lna.js';
@@ -103,7 +104,11 @@ export async function trial(parsed, eng, restMode, sp = {}, extra = {}) {
   // quality gate: number of checks failed (lib/quality.js), every candidate
   let gateFails = null;
   try { const q = qualityGate(m, parsed); gateFails = Object.values(q.checks).filter((c) => !c.ok).length; } catch { gateFails = 99; }
-  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, gateFails, aspect: sheetAspect(m), wire: wirePerPart(m, parsed), bends: bendsPerWire(m), cross: crossingCount(m), byName: namedLinks(m) };
+  // Eric 08.11, a RUNTIME rule (review R1): a candidate with a device of the positive supply below one of the
+  // negative supply loses to every candidate that keeps the order (better() below)
+  let supplyOrder = 0;
+  try { supplyOrder = supplyOrderViolations(allCells(m).map(cellInfo), parsed).length; } catch { /* no geometry */ }
+  return { eng, restMode, sp, extra, doc, placed, errs, conv, rules, basics, gateFails, supplyOrder, aspect: sheetAspect(m), wire: wirePerPart(m, parsed), bends: bendsPerWire(m), cross: crossingCount(m), byName: namedLinks(m) };
 }
 
 /** Total wire length per part, as the bench measures it (Manhattan length of
@@ -230,8 +235,10 @@ const betterEric = (b, a) => {
   if (crossBefore('last', b, a)) return b.cross < a.cross;
   return b.errs < a.errs;
 };
-const better = (b, a) => {
+export const better = (b, a) => {
   if (b.errs === Infinity || a.errs === Infinity) return b.errs < a.errs;
+  // the supply order first (Eric 08.11: positive rail at the top, never traded for placement cost)
+  if ((b.supplyOrder > 0) !== (a.supplyOrder > 0)) return !(b.supplyOrder > 0);
   if (process.env.AUTO_CRITERION !== 'checker') return betterEric(b, a);
   if (b.errs !== a.errs) return b.errs < a.errs;
   if (wide(b) !== wide(a)) return !wide(b);
@@ -275,6 +282,7 @@ export function tryManuel(parsed) {
     const doc = newDocument(), m = getPage(doc);
     const placed = importNetlistManuel(m, parsed);      // throws on a geometric LVS failure
     if (!compare(extractNetlist(m), parsed).match) return null;
+    if (supplyOrderViolations(allCells(m).map(cellInfo), parsed).length) return null;   // Eric 08.11 (review R1)
     return { doc, placed, label: 'manuel', trials: { manuel: { lvs: true, geo: placed.geo.ok, frames: placed.frames } } };
   } catch { return null; }
 }
@@ -284,15 +292,19 @@ export async function autoPlace(parsed) {
   // a ground_<dom> drawn as the ground keeps its domain name next to the symbol
   // (analog-design convention, Orchestrator 2026-10-26): a text value only, the
   // extracted net stays `0`
-  const a = r?.ground?.alias ?? groundAlias(parsed.components.flatMap((c) => c.fullNodes || c.nodes || []));
+  const a = r?.ground?.alias ?? parsed.groundAlias ?? groundAlias(parsed.components.flatMap((c) => c.fullNodes || c.nodes || []));
   if (process.env.AUTO_GND !== '0' && r?.doc) labelGroundDomain(getPage(r.doc), a);
+  // the drawing returned still breaks the supply order (every candidate did, or the finishing moved a part): said,
+  // never silent (review R1); no special case is declared yet
+  if (r?.doc) { try { const v = supplyOrderViolations(allCells(getPage(r.doc)).map(cellInfo), parsed); if (v.length) r.supplyOrder = v; } catch { /* no geometry */ } }
   return r;
 }
 
 /** a ground_<dom> drawn as the ground symbol keeps its domain name under it (a text value: the
- *  extracted net stays `0`); other aliases (vss, gnd) are drawn as the plain ground */
+ *  extracted net stays `0`); so does a negative supply vee / avee (review R3 08.11: the alias gives its polarity,
+ *  never its name); other aliases (vss, gnd) are drawn as the plain ground */
 export function labelGroundDomain(model, alias) {
-  if (!alias || !/^ground_/i.test(alias)) return;
+  if (!alias || !/^(ground_|a?vee)/i.test(alias)) return;
   for (const n of allCells(model)) {
     const info = cellInfo(n);
     if (!/signal_ground/.test(info.styleRaw || '') || info.value) continue;
@@ -520,5 +532,5 @@ async function autoPlaceOnce(parsed, only = null) {
     }
   }
   if (polish == null) polish = await finish(win.doc);
-  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, polish, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire, cross: t.cross, gateFails: t.gateFails }])) };
+  return { doc: win.doc, placed: win.placed, label: candidateLabel(win), timedOut, polish, trials: Object.fromEntries(trials.map((t) => [candidateLabel(t), { errors: t.errs, conventions: t.conv, lvs: !t.lvsFailed, rules: t.rules, basics: t.basics, severe: t.severe, byName: t.byName, aspect: t.aspect, bends: t.bends, wire: t.wire, cross: t.cross, gateFails: t.gateFails, supplyOrder: t.supplyOrder }])) };
 }

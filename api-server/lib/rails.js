@@ -18,6 +18,7 @@
 import { allCells, cellInfo, updateCell, addWire, deleteCell, getCell, freshId } from './model.js';
 import { classify } from './components.js';
 import { pinAbs, routePage, netGroups, polylineOf, rotatedAabb } from './route.js';
+import { wiresOnBody } from './quality.js';
 
 const STR = 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiTemplate=1;';
 
@@ -31,6 +32,11 @@ export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail'
     const undo = () => { while (model.firstChild) model.removeChild(model.firstChild); for (const n of snap) model.appendChild(n); };
     const ok = mode === 'branch' ? await perBranch(model, g) : await oneRail(model, g);
     if (!ok) { undo(); warnings.push(`rail ${g.name || g.kind}: not redrawn (no line fits its pins), drawn as the placer left it`); continue; }
+    // a rail wire through a part's body is a real defect, not a checker count: that rail stays as the placer drew it
+    const before = new Set(snap.map((n) => n.getAttribute && n.getAttribute('id')));
+    const fresh = new Set(allCells(model).map(cellInfo).filter((c) => c.kind === 'edge' && !before.has(c.id)).map((c) => c.id));
+    const onBody = wiresOnBody(model, fresh);
+    if (onBody.length) { undo(); warnings.push(`rail ${g.name || g.kind}: not redrawn (its wire would cross ${onBody.map((x) => x.split(' / ')[1]).join(', ')}), drawn as the placer left it`); continue; }
     if (fixDots) await fixDots(model);
     // Eric 08.11: the rail is the rule. A checker that counts more errors does not undo it; it is reported.
     if (errorCount) {
@@ -112,7 +118,8 @@ async function oneRail(model, g) {
   updateCell(model, symId, { dx: Math.round(xL - sp.x), dy: Math.round(y - sp.y) });
   // each pin: straight to the line when the way is free, else routed to the symbol
   const routed = [];
-  const blocked = (p) => parts.some((c) => c.id !== p.part && c.x < p.at.x + 2 && c.x + c.w > p.at.x - 2
+  // its own part too: a pin that is not on the rail side of its part would run through its own body (bench41)
+  const blocked = (p) => parts.some((c) => c.x < p.at.x + 2 && c.x + c.w > p.at.x - 2
     && (down ? c.y + c.h > p.at.y + 1 && c.y < y : c.y < p.at.y - 1 && c.y + c.h > y));
   const seen = new Set();
   for (const p of g.pins) {

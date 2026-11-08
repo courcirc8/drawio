@@ -73,3 +73,67 @@ for (const rel of SWEEP) {
     assert.equal(compare(extractNetlist(getPage(r.doc)), raw(rel)).match, true);
   });
 }
+
+// REVIEW 08.11 (R1): the rule checked WITHOUT lib/supply-orient.js — a mutant that swaps the polarities there must
+// fail here. Supplies by literal name; MOS kind by model; the top supply symbol above every ground symbol, every
+// PMOS on vdd above every NMOS on the ground.
+const POS = new Set(['vdd', 'power_ana']), NEG = new Set(['0', 'vee', 'vss']);
+for (const rel of SWEEP) {
+  test(`supply order, independent of supply-orient: ${rel.split('/').pop()}`, async () => {
+    const p = raw(rel), r = await autoPlace(orientSupplies(p).parsed);
+    const cs = allCells(getPage(r.doc)).map(cellInfo), v = cs.filter((c) => c.kind === 'vertex' && c.y != null);
+    const yc = (c) => c.y + (c.h || 0) / 2, at = new Map(v.filter((c) => c.refdes).map((c) => [c.refdes, yc(c)]));
+    const sup = v.filter((c) => /signal_sources\.vss2|apiShape=supply|vdd/i.test(c.styleRaw || '') && POS.has(String(c.value || '').toLowerCase()));
+    const gnd = v.filter((c) => /signal_ground|signal_sources\.gnd|ground/i.test(c.styleRaw || ''));
+    // top to bottom the symbols alternate supply, ground (a frame of its own — manuel's Polarisation — has its own
+    // supply at its top and ground at its bottom); a supply symbol first, a ground symbol last
+    const seq = [...sup.map((c) => ['S', yc(c)]), ...gnd.map((c) => ['G', yc(c)])].sort((a, b) => a[1] - b[1]).map((x) => x[0]).join('').replace(/(.)\1+/g, '$1');
+    if (sup.length && gnd.length) assert.match(seq, /^(SG)+$/, `${r.label}: supply / ground order ${seq}`);
+    const pos = [], neg = [];
+    for (const c of p.components.filter((x) => x.prefix === 'M' || (x.prefix === 'X' && /mos/i.test(x.model || '')))) {
+      const n = c.fullNodes || c.nodes, ch = [n[0], n[2]].map((x) => String(x).toLowerCase()), m = String(c.model || '').toLowerCase();
+      if (/pmos|pfet/.test(m) && ch.some((x) => POS.has(x))) pos.push(c.ref);
+      if (/nmos|nfet/.test(m) && ch.some((x) => NEG.has(x))) neg.push(c.ref);
+    }
+    for (const a of pos) for (const b of neg) if (at.has(a) && at.has(b)) assert.ok(at.get(a) < at.get(b), `${r.label}: ${a} (PMOS on the supply) above ${b}`);
+    assert.equal(r.supplyOrder, undefined, 'no runtime supply-order warning');
+  });
+}
+
+test('R1: a candidate that breaks the supply order loses to one that keeps it, template or not', async () => {
+  const { better } = await import('../lib/auto.js');
+  const tmpl = { eng: 'ota', errs: 0, gateFails: 0, supplyOrder: 2 }, gen = { eng: 'v2', errs: 5, gateFails: 6, supplyOrder: 0 };
+  assert.equal(better(gen, tmpl), true); assert.equal(better(tmpl, gen), false);
+});
+
+test('R1: a drawing flipped upside down is caught by the runtime check', async () => {
+  const o = orientSupplies(raw('./fixtures/tail-axis/ota_miller.sp')), r = await autoPlace(o.parsed), m = getPage(r.doc);
+  for (const n of allCells(m)) { const g = n.getElementsByTagName ? n.getElementsByTagName('mxGeometry')[0] : null; if (g && g.getAttribute('y') != null && g.getAttribute('relative') !== '1') g.setAttribute('y', String(-Number(g.getAttribute('y')) - Number(g.getAttribute('height') || 0))); }
+  assert.ok(supplyOrderViolations(allCells(m).map(cellInfo), o.parsed).length > 0);
+});
+
+// REVIEW 08.11 (R2): the rail is kept when the checker counts more errors (Eric 08.11); undoing it again must fail here
+test('R2: a rail is redrawn although the checker counts more errors, with a warning', async () => {
+  const { drawRails } = await import('../lib/rails.js');
+  const r = await autoPlace(orientSupplies(raw('./fixtures/tail-axis/ota_5t.sp')).parsed), m = getPage(r.doc);
+  let n = 0; const worse = async () => n++;   // every count higher than the last
+  const out = await drawRails(m, { errorCount: worse });
+  assert.ok(out.rails >= 1);
+  assert.equal(out.redrawn, out.rails, JSON.stringify(out));
+  assert.ok((out.warnings || []).some((w) => /more error/.test(w)), JSON.stringify(out));
+});
+
+// REVIEW 08.11 (R3): vee is the bottom rail by polarity and keeps its name on the drawing; a fixture whose device
+// parameters are not numbers (L=vee.5u, a non-token substitution) is caught
+test('R3: vee keeps its name on the bottom rail', async () => {
+  const r = await autoPlace(orientSupplies(raw('./fixtures/supply-rails/miller_vee.sp')).parsed);
+  const cs = allCells(getPage(r.doc)).map(cellInfo);
+  assert.ok(cs.some((c) => c.kind === 'vertex' && String(c.value || '') === 'vee'), `${r.label}: a vee label`);
+});
+test('R3: every MOS of the sweep fixtures has numeric W and L', () => {
+  for (const rel of SWEEP) {
+    for (const line of fs.readFileSync(new URL(rel, import.meta.url), 'utf8').split('\n').filter((l) => /^\s*[MX]/i.test(l) && /\b[WL]=/i.test(l))) {
+      for (const m of line.matchAll(/\b([WL])=(\S+)/gi)) assert.match(m[2], /^[\d.]+(e-?\d+)?[a-z]*$/i, `${rel}: ${line.trim()}`);
+    }
+  }
+});

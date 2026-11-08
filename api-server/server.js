@@ -498,7 +498,8 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
     const decision = lvs.gate(report, { force });
     if (!decision.ok) return res.status(decision.status).json({ error: decision.error, report });
     // a rail kept against the checker, or not redrawn, is said (lib/rails.js): never a silent fallback
-    const railWarn = win.polish?.rails?.warnings || [];
+    const railWarn = [...(win.polish?.rails?.warnings || []),
+      ...(win.supplyOrder || []).map((v) => `supply order: ${v.pos} (positive supply) is not above ${v.neg} (negative supply)`)];
     const supplyOut = railWarn.length ? { ...supply, warnings: [...(supply.warnings || []), ...railWarn] } : supply;
     return res.status(decision.status).json({ ...placed, routed: placed.wires.length, lvs: report, supply: supplyOut, ...fingersOf(parsed) });
   } else if (engine === 'manuel') {
