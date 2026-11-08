@@ -22,7 +22,7 @@ import { wiresOnBody } from './quality.js';
 
 const STR = 'edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;endFill=0;drawioApiFixedRoute=1;drawioApiTemplate=1;';
 
-export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail', errorCount, fixDots } = {}) {
+export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail', errorCount, fixDots, reroute } = {}) {
   if (mode === 'off') return { mode, rails: 0, redrawn: 0 };   // as the placer drew them
   const groups = railGroups(model);
   let errs = errorCount ? await errorCount(model) : null, done = 0;
@@ -60,7 +60,9 @@ export async function drawRails(model, { mode = process.env.AUTO_RAILS || 'rail'
     }
     done++;
   }
-  return { mode, rails: groups.length, redrawn: done, ...(warnings.length ? { warnings } : {}) };
+  // the placer's wires that two nets now share (they were laid apart by the old rail's routing): re-routed
+  const rerouted = done && reroute ? await reroute(model) : 0;
+  return { mode, rails: groups.length, redrawn: done, ...(rerouted ? { rerouted } : {}), ...(warnings.length ? { warnings } : {}) };
 }
 
 /** Rails: {kind: 'power'|'ground', name, symbols: [ids], pins: [{part, rel, at, edges}]}

@@ -388,6 +388,32 @@ export function glueLabels(model, gap = 3) {
 /** Error count of the bench checker (tools/check.py) on a page, null on failure. */
 export async function checkerErrors(m) { return (await errorCount(m))?.n ?? null; }
 
+/** Two nets drawn on top of each other (rule 22, 22-contact) left by the placer's router, re-routed after the
+ *  rails are redrawn (refractory, 08.11: the old routed rail wire used to make the router lay them apart by
+ *  chance; a straight or jogged rail no longer does). Kept only when the checker counts fewer errors.
+ *  Fixed routes (rails, templates) are never touched. -> number of wires re-routed (0 = drawing unchanged) */
+export async function rerouteClashes(model, fix = fixDots) {
+  const r = await errorCount(model);
+  if (!r) return 0;
+  const edges = new Map(allCells(model).map(cellInfo).filter((c) => c.kind === 'edge').map((c) => [c.id, c]));
+  const ids = new Set();
+  for (const v of r.v.filter((x) => x.rule === '22' || x.rule === '22-contact')) {
+    for (const m of String(v.message || '').matchAll(/(?:fil|vs) (\S+)/g)) {
+      const e = edges.get(m[1]);
+      if (e && e.style.map.get('drawioApiFixedRoute') !== '1') ids.add(e.id);
+    }
+  }
+  if (!ids.size) return 0;
+  const snap = Array.from(model.childNodes).map((n) => n.cloneNode(true));
+  await routePage(model, [...ids], {});
+  if (fix) await fix(model);
+  const r2 = await errorCount(model);
+  if (r2 && r2.n < r.n) return ids.size;
+  while (model.firstChild) model.removeChild(model.firstChild);
+  for (const n of snap) model.appendChild(n.cloneNode(true));
+  return 0;
+}
+
 /** Contact dots as the bench checker wants them: rebuilt from the wires, then
  *  added where check.py finds a branch without one (rule 30) and removed where
  *  it finds one on a mere bend (dot-2way). */
