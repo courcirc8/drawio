@@ -31,6 +31,8 @@ import * as annotate from './lib/annotate.js';
 import * as critic from './lib/critic.js';
 import * as exportAsc from './lib/export-asc.js';
 import { rewire } from './lib/rewire.js';
+import { annotateSizes } from './lib/size-labels.js';
+import { unwrapSingleSubckt } from './lib/unwrap-subckt.js';
 import { orientSupplies, supplyOrderWarnings } from './lib/supply-orient.js';
 import { withGroundAlias } from './lib/ground-alias.js';
 import { mergeFingers } from './lib/fingers.js';
@@ -421,7 +423,8 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   // a ground spelled vss / gnd (alone) is drawn as ground: one GND rail (lib/ground-alias.js)
   // parallel fingers of a layout extraction merged into m=N before any drawing (lib/fingers.js), then the MOS
   // turned to face their supply: positive on top, negative at the bottom (Eric 08.11, lib/supply-orient.js)
-  const oriented = orientSupplies(mergeFingers(withGroundAlias(netlist.parseSpice(spice))));
+  // a deck that is one .subckt only (a layout3d cell): its body, pins as ports (lib/unwrap-subckt.js)
+  const oriented = orientSupplies(mergeFingers(withGroundAlias(unwrapSingleSubckt(netlist.parseSpice(spice)))));
   const parsed = oriented.parsed;
   // what the supply rule did, in every import response: polarity read, MOS turned, name/polarity disagreements
   const supply = { polarity: oriented.polarity, ...(oriented.swapped.length ? { swapped: oriented.swapped } : {}),
@@ -537,6 +540,8 @@ app.post('/documents/:id/netlist/import', wrap(async (req, res) => {
   // explicit POST /lvs catching it; now the endpoint itself fails closed.
   // The document is kept either way (so it can still be inspected/fixed),
   // but the HTTP response reflects the failure unless ?force=1 downgrades it.
+  // W/L ×m under every transistor name, whatever the engine (lib/size-labels.js; text only, the LVS is unchanged)
+  annotateSizes(m, parsed);
   const extracted = netlist.extractNetlist(m);
   const report = lvs.compare(extracted, parsed);
   const decision = lvs.gate(report, { force });
@@ -613,7 +618,7 @@ app.post('/documents/:id/lvs', wrap((req, res) => {
   const { model: m } = pageOf(req);
   const spice = typeof req.body === 'string' ? req.body : (req.body || {}).spice;
   if (spice == null || spice === '') throw model.httpError(400, 'reference SPICE netlist required');
-  const golden = netlist.parseSpice(spice);
+  const golden = unwrapSingleSubckt(netlist.parseSpice(spice));
   const extracted = netlist.extractNetlist(m);
   const report = lvs.compare(extracted, golden);
   res.json({ ...report, extraction_issues: extracted.issues });

@@ -36,6 +36,7 @@ import { importNetlistLatch, latchReading } from './place-latch.js';
 import { alignPorts } from './align-ports.js';
 import { drawRails } from './rails.js';
 import { supplyOrderViolations } from './supply-orient.js';
+import { annotateSizes } from './size-labels.js';
 import { qualityGate } from './quality.js';
 import { importNetlistOta, otaReading, importNetlistMiller, millerReading } from './place-ota.js';
 import { importNetlistLna, lnaReading } from './place-lna.js';
@@ -294,6 +295,8 @@ export async function autoPlace(parsed) {
   // extracted net stays `0`
   const a = r?.ground?.alias ?? parsed.groundAlias ?? groundAlias(parsed.components.flatMap((c) => c.fullNodes || c.nodes || []));
   if (process.env.AUTO_GND !== '0' && r?.doc) labelGroundDomain(getPage(r.doc), a);
+  // W/L ×m under every transistor name, whatever engine won (Orchestrator 08.11, MLOAD; lib/size-labels.js)
+  if (r?.doc) { try { annotateSizes(getPage(r.doc), parsed); } catch { /* names only */ } }
   // the drawing returned still breaks the supply order (every candidate did, or the finishing moved a part): said,
   // never silent (review R1); no special case is declared yet
   if (r?.doc) { try { const v = supplyOrderViolations(allCells(getPage(r.doc)).map(cellInfo), parsed); if (v.length) r.supplyOrder = v; } catch { /* no geometry */ } }
