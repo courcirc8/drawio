@@ -376,6 +376,11 @@ export async function dummiesForImport(doc, split, full) {
   await drawDummiesPage(doc, split, page1NetsOf(split));
   const named2 = extractNetlist(getPage(doc, DUMMY_PAGE)).namedNets || [];
   const labelled = labelSharedOnPage1(doc, split, named2.filter((n) => page1NetsOf(split).has(n)));
+  // test hook (review r3, D10): one wire of page 2 taken away, so the import's page-2 gate is exercised for real
+  if (process.env.DRAWIO_TEST_FAULT === 'dummies-page') {
+    const w = allCells(getPage(doc, DUMMY_PAGE)).find((el) => el.getAttribute('edge') === '1');
+    if (w) w.parentNode.removeChild(w);
+  }
   const lvs = lvsTwoPages(doc, split, full);
   const count = split.dummies.reduce((n, x) => n + (Number(x.c.params?.m ?? 1) || 1), 0);
   const np = split.parasitics?.length || 0;
