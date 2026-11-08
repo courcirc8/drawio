@@ -61,3 +61,15 @@ test('v2 keeps the case of port names and shows W/L ×m under the names', async 
   assert.ok(lbl && plain(lbl.value).includes('2/0.5 ×2'), plain(lbl?.value));
   assert.equal(compare(extractNetlist(m), p).match, true);
 });
+
+test('quality gate: a two-line W/L label is measured by its longest drawn line, not its html', async () => {
+  const { qualityGate } = await import('../lib/quality.js');
+  const { addVertex } = await import('../lib/model.js');
+  const p = prep('R1 a b 1k\nR2 c d 1k\n.end');
+  const m = getPage(newDocument());
+  // two labels side by side, 70 px apart: "XM1" over "2/0.5 ×2" is ~56 px wide; its html is ~70 characters
+  addVertex(m, { id: 'LBL_XM1', style: 'text;html=1;align=left;', x: 0, y: 0, w: 40, h: 30, value: '<b>XM1</b><br><font style="font-size:10px">2/0.5 ×2</font>' });
+  addVertex(m, { id: 'LBL_XM2', style: 'text;html=1;align=left;', x: 70, y: 0, w: 40, h: 30, value: '<b>XM2</b><br><font style="font-size:10px">2/0.5 ×2</font>' });
+  const q = qualityGate(m, p);
+  assert.ok(!(q.checks.labels.detail || []).some((d) => /LBL_XM1 \/ étiquette/.test(d)), JSON.stringify(q.checks.labels));
+});

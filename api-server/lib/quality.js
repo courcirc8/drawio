@@ -95,7 +95,9 @@ export function qualityGate(model, parsed, opts = {}) {
   // 20 px: "M128" spilled over a capacitor unseen); no label on another
   // label, on a foreign part or across a wire
   const textBox = (c) => {
-    const tw = Math.max(c.w, 7 * String(c.value || '').length), al = c.style.map.get('align') || 'center';
+    // the longest DRAWN line: html tags are not text (a W/L line under the name was counted ~70 characters wide)
+    const lines = String(c.value || '').split(/<br\s*\/?>/i).map((t) => t.replace(/<[^>]+>/g, '').replace(/&[a-z]+;|&#\d+;/gi, 'x'));
+    const tw = Math.max(c.w, 7 * Math.max(...lines.map((t) => t.length))), al = c.style.map.get('align') || 'center';
     const x = al === 'right' ? c.x + c.w - tw : al === 'left' ? c.x : c.x + c.w / 2 - tw / 2;
     return { id: c.id, x, y: c.y + 1, w: tw, h: c.h - 2 };
   };
