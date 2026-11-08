@@ -31,6 +31,18 @@ Décision de l'Orchestrateur (24.10.2026, autonomie déléguée par Eric) : un m
 - Un rail et un symbole par cadre ; points de jonction seulement aux T.
 - Polarisation et CMFB : cadres « Polarisation » / « CMFB » sous le cœur. Les nets de **polarisation**
   (`vb*`, `vbias*`, `vc[mnp]*`, `vref*`, `vg*`) sont reliés par **étiquettes** ; les nets de **signal** restent des fils.
+- **Miroir de polarisation en un fil** (règle d'Eric, 07.11, remplace les étiquettes pour ce cas) : quand la
+  référence d'un miroir (transistor en diode, ex. XM11 de l'OTA Miller PMOS) est dans le même cadre que la queue
+  qu'elle recopie et que son net de grille ne sort pas du cadre :
+  1. la référence est **à gauche**, à côté de la queue de l'axe, même si une colonne d'étage de sortie partage la
+     grille ; sa grille regarde celle de la queue, une seule barre de grille entre les deux ;
+  2. toutes les grilles du net sont reliées **par un fil**, sans étiquette : la descente depuis la barre de grille et
+     le bus vers les autres grilles (ex. XM9) sont **au niveau de la connexion grille-drain** de la référence, un pas
+     sous les drains de la rangée (un bus au niveau des broches passerait sur le drain de la queue) ;
+  3. un **port d'entrée** sur le drain de la référence (le courant de polarisation entre là), **par le bas**, flèche
+     verticale vers le haut (par le haut, flèche vers le bas, pour une référence NMOS).
+  Si le net de grille est utilisé dans un autre cadre, les étiquettes restent. Test :
+  `test/bias-mirror.test.js` (`fixtures/bias-mirror/ota_miller_pbias.sp`).
 - **OTA cascodé télescopique** (OTA du TIA proj5, 26.10, `test/cascode-ota.test.js`) :
   - **Répliques de polarisation** : une branche en série avec une diode, un seul bout sur un rail et l'autre sur un
     nœud de colonne du cœur, va dans « Polarisation ». Cela vaut pour MBN + RBN vers `tail` ou MPD/MQ1, à condition

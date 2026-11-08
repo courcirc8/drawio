@@ -242,6 +242,20 @@ function portVert(S, net, p, side, arrow, direction = 'input') {
   return v;
 }
 
+/** an upright I/O arrow whose tip is p: below p pointing up (dn = 1), above p pointing down (dn = -1); an input
+ *  enters the circuit at the tip (the bias current into a mirror reference, Eric 07.11) */
+function portUpright(S, net, p, dn, direction = 'input') {
+  const w = 28, h = 60;
+  // drawio turns the anchors with direction=: north maps (x, y) -> (y, 1 - x), south (x, y) -> (1 - y, x)
+  const dir = (direction === 'input') === (dn > 0) ? 'north' : 'south';
+  const pin = dir === 'north' ? 'E' : 'W';
+  const st = `shape=singleArrow;arrowWidth=1;arrowSize=0.18;apiShape=port;portDirection=${direction};direction=${dir};html=0;fillColor=#ffffff;strokeColor=default;align=center;verticalAlign=middle;fontSize=12;`;
+  const v = S.vert({ id: null, kind: 'port', style: st, x: p.x - w / 2, y: dn > 0 ? p.y : p.y - h, w, h, value: net, pins: { [pin]: pin === 'E' ? { x: 1, y: 0.5 } : { x: 0, y: 0.5 } } });
+  v.pinAbs[pin] = { x: p.x, y: p.y };
+  v.portPin = pin;
+  return v;
+}
+
 /* ------------------------------------------------------------ the frames */
 /** lay out one frame of the reading in local coordinates on its own sheet */
 function layoutFrame(F, R, ctx) {
@@ -277,10 +291,13 @@ function layoutFrame(F, R, ctx) {
     // a lone diode-connected device whose gate drives a device of another column: the column of that device
     const mirrorRefOf = (i) => {
       const ps = cols[i].parts;
-      if (ps.length !== 1 || !isTr(ps[0].c) || gateOf(ps[0].c) !== ps[0].up) return null;
+      // diode-connected: the gate is the drain, above (N) or below (P, hanging from the top rail)
+      if (ps.length !== 1 || !isTr(ps[0].c) || (gateOf(ps[0].c) !== ps[0].up && gateOf(ps[0].c) !== ps[0].down)) return null;
       const g = gateOf(ps[0].c);
-      const j = cols.findIndex((col, k) => k !== i && col.parts.some((p) => isTr(p.c) && gateOf(p.c) === g));
-      return j >= 0 ? j : null;
+      const js = cols.map((col, k) => (k !== i && col.parts.some((p) => isTr(p.c) && gateOf(p.c) === g) ? k : -1)).filter((k) => k >= 0);
+      // the tail on the axis first (Eric 07.11: the PMOS bias reference sits left, beside the tail it mirrors,
+      // even when an output-stage column drives the same gate net)
+      return js.find((k) => order.axis.includes(k)) ?? js[0] ?? null;
     };
     const seq = (s) => [...sideOf].filter(([, x]) => x === s).map(([i]) => i).sort((a, b) => rank[a] - rank[b] || a - b);
     order.L = seq(-1); order.R = seq(1);
@@ -407,7 +424,7 @@ function layoutFrame(F, R, ctx) {
       let dir;
       const partner = col.pair != null ? cols[col.pair].parts[k]?.c : null;
       const adjacentPair = col.pair != null && rank[i] === 0 && Math.abs(posIdx.get(i)) === 1 && !order.axis.some((a) => lv[a].rows.some((r) => r.top === lv[i].rows[k].top && r.r === lv[i].rows[k].r));
-      if (mirrorRef.has(i) && g === p.up) {                              // toward the tail it mirrors, one gate bar
+      if (mirrorRef.has(i) && (g === p.up || g === p.down)) {           // toward the tail it mirrors, one gate bar
         dir = -sg;
         const t = F.parts.find((q) => q !== c && isTr(q) && gateOf(q) === g && order.axis.includes(colOfRef.get(q.ref)));
         if (t) { sharedBar.set(c.ref, t.ref); sharedBar.set(t.ref, c.ref); mirrorBar.add(c.ref); mirrorBar.add(t.ref); }
@@ -426,6 +443,23 @@ function layoutFrame(F, R, ctx) {
       else dir = sg ? -sg : -1;
       gateDir.set(c.ref, dir);
     });
+  }
+
+  // THE BIAS MIRROR AS ONE WIRE (Eric 07.11, replaces the 24.10 labels for this case): the reference diode
+  // (left, gate bar to the tail), every other gate on its net in this frame dropped onto one horizontal bus at
+  // the level of the reference's gate-drain connection, and an input port entering that drain from below (the
+  // bias current). Only when the net stays in this frame (else the label joins the frames).
+  const biasBus = new Map();       // net -> refs of the other gates on the bus
+  const biasRef = new Map();       // net -> x of the reference's drain (the bias input enters there, from below)
+  if (ctx.textbook !== false) {
+    for (const r of mirrorBar) {
+      const c = F.parts.find((q) => q.ref === r);
+      if (!c || !mirrorRef.has(colOfRef.get(r))) continue;
+      const g = gateOf(c);
+      if (!ctx.labelNets.has(g) || !nodeCols.has(g)) continue;
+      if ((ctx.allParts || F.parts).some((q) => !F.parts.includes(q) && q.nodes.includes(g))) continue;
+      biasBus.set(g, F.parts.filter((q) => isTr(q) && gateOf(q) === g && !mirrorBar.has(q.ref)).map((q) => q.ref));
+    }
   }
 
   /* 4. x of the columns --------------------------------------------- */
@@ -517,6 +551,12 @@ function layoutFrame(F, R, ctx) {
     const n = cols[i].top;
     if (n !== R.top && n !== R.bot && !yNode.has(n)) yNode.set(n, rowY(lv[i].rows[0]) - 30);
   }
+  // a bias mirror net: one step past the drain pins of its row, so the bus joining the gates at the level of
+  // the diode's gate-drain connection does not run over the drains of the other columns
+  for (const g of biasBus.keys()) {
+    const t = F.parts.find((q) => mirrorBar.has(q.ref) && gateOf(q) === g), gy = pinP(t.ref, 'gate').y;
+    yNode.set(g, yNode.get(g) + (gy < yNode.get(g) ? 30 : -30));
+  }
   // per net: points on its spine (x -> point), and drops already drawn
   const spine = new Map();   // net -> Map(x -> true)
   const addSpine = (n, x) => { if (!spine.has(n)) spine.set(n, new Set()); spine.get(n).add(Math.round(x * 10) / 10); };
@@ -549,7 +589,7 @@ function layoutFrame(F, R, ctx) {
   const satAt = new Map();     // net -> {x, y, dir} gate stub end (satellite networks)
   const labelAt = [];          // {net, p, side}
   const portAt = [];           // {net, p, side, direction}
-  const done = new Set();
+  const done = new Set([...biasBus.values()].flat());   // the bias gates are drawn with their reference's bar
   for (const i of cols.keys()) {
     for (const p of cols[i].parts) {
       const c = p.c; if (!isTr(c) || done.has(c.ref)) continue;
@@ -560,7 +600,19 @@ function layoutFrame(F, R, ctx) {
         const op = term(g, o, 'gate');
         const mid = { x: paired && !mirrorBar.has(c.ref) && !mirrorBar.has(o) ? 0 : (gp.x + op.x) / 2, y: gp.y };
         S.path(g, gp, mid, op);
-        if (nodeCols.has(g) && !ctx.labelNets.has(g)) {
+        if (biasBus.has(g)) {
+          // the reference's drain: a drop from the bar beside its gate down (up) to the bus, then the other gates
+          const rf = mirrorRef.has(colOfRef.get(c.ref)) ? c.ref : o, rp = term(g, rf, 'gate');
+          const xr = rp.x + gateDir.get(rf) * 20;
+          S.path(g, { x: xr, y: gp.y }, { x: xr, y: yNode.get(g) }); addSpine(g, xr);
+          // the bus at the level of the reference's gate-drain connection (Eric 07.11): one horizontal from the
+          // diode to every other gate on the net
+          for (const t of biasBus.get(g)) {
+            const tp = term(g, t, 'gate'), xe = tp.x + gateDir.get(t) * 30;
+            S.path(g, tp, { x: xe, y: tp.y }, { x: xe, y: yNode.get(g) }); addSpine(g, xe);
+          }
+          biasRef.set(g, pinP(rf, gp.y < yNode.get(g) ? 'bot' : 'top').x);
+        } else if (nodeCols.has(g) && !ctx.labelNets.has(g)) {
           // the diode / driving node: a drop from the bar to its spine, beside the driving column
           const j = [...nodeCols.get(g)][0];
           const xr = paired ? xs[j] + (xs[j] <= 0 ? 90 : -90) : mid.x + Math.sign(xs[j] - mid.x) * 15;
@@ -781,7 +833,7 @@ function layoutFrame(F, R, ctx) {
   for (const [n, set] of spine) {
     const y = yNode.get(n), pts = [...set].sort((a, b) => a - b);
     for (let k = 1; k < pts.length; k++) S.path(n, { x: pts[k - 1], y }, { x: pts[k], y });
-    const isPort = ctx.ports.has(n) && ctx.home.get(n) === F.kind;   // the I/O arrow in its home frame
+    const isPort = (ctx.ports.has(n) && ctx.home.get(n) === F.kind) || biasBus.has(n);   // the I/O arrow in its home frame; the bias input
     const isLab = !isPort && (ctx.labelNets.has(n) || ctx.ports.has(n));
     if (!isLab && !isPort) continue;
     // the name at the outer end of the spine (toward the frame's edge)
@@ -792,6 +844,12 @@ function layoutFrame(F, R, ctx) {
     // the outer end carries a bridge (a Miller R-C): the name goes on the inner end
     if (pts.length > 1 && bridgeEnd.has(`${n}@${xe}`)) { s = -s; xe = s > 0 ? pts[pts.length - 1] : pts[0]; }
     if (joinEnd.has(n) && pts.length > 1) { const xj = joinEnd.get(n); s = Math.abs(pts[pts.length - 1] - xj) >= Math.abs(pts[0] - xj) ? 1 : -1; xe = s > 0 ? pts[pts.length - 1] : pts[0]; }
+    if (biasRef.has(n)) {         // the bias current enters the reference's drain from below (above, for N)
+      const xd = biasRef.get(n), dn = y > yR + (yG - yR) / 2 ? -1 : 1, q = { x: xd, y: y + dn * 30 };
+      S.path(n, { x: xd, y }, q);
+      portAt.push({ net: n, p: q, side: 1, upright: dn, direction: 'input' });
+      continue;
+    }
     const q = { x: xe + s * 40, y };
     S.path(n, { x: xe, y }, q);
     if (isPort) portAt.push({ net: n, p: q, side: s, direction: OUTISH.test(n) ? 'output' : 'input' });
@@ -804,8 +862,8 @@ function layoutFrame(F, R, ctx) {
     S.term(L.net, v, v.portPin);
   }
   for (const P of portAt) {
-    const v = P.vertical ? portVert(S, P.net, { x: P.p.x, y: P.p.y + (P.vertical === 'up' ? -12 : 12) }, 1, true, P.direction) : portVert(S, P.net, P.p, P.side, true, P.direction);
-    if (P.vertical) S.path(P.net, P.p, v.pinAbs[v.portPin]);
+    const v = P.upright ? portUpright(S, P.net, P.p, P.upright, P.direction) : P.vertical ? portVert(S, P.net, { x: P.p.x, y: P.p.y + (P.vertical === 'up' ? -12 : 12) }, 1, true, P.direction) : portVert(S, P.net, P.p, P.side, true, P.direction);
+    if (P.vertical && !P.upright) S.path(P.net, P.p, v.pinAbs[v.portPin]);
     S.term(P.net, v, v.portPin);
   }
   // rails: the column ends already reach y = yR / yG; one line, one symbol
@@ -1121,7 +1179,7 @@ function drawManuel(model, parsed, opts) {
   const home = new Map();
   for (const f of r.frames) for (const c of f.parts) for (const n of chan(c)) if (!home.has(n)) home.set(n, f.kind);
   for (const f of r.frames) for (const c of f.parts) { const g = gateOf(c); if (g && !home.has(g)) home.set(g, f.kind); }
-  const ctx = { ports: r.ports, labelNets: r.labelNets, home, localTaps: [], textbook: opts.textbook };
+  const ctx = { ports: r.ports, labelNets: r.labelNets, home, localTaps: [], textbook: opts.textbook, allParts: r.frames.flatMap((f) => f.parts) };
   const sheets = r.frames.map((f) => layoutFrame(f, r.rails, ctx));
   // core on top, auxiliary frames side by side below it, in dashed boxes
   const core = sheets.find((s) => s.kind === 'core') || sheets[0];
