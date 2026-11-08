@@ -425,7 +425,7 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0), opts 
     let style = PORT_TEXT(c.align), tpin = c.pin;
     // drawio turns the anchors with direction=west: the pin named in the unturned frame (lib/place-manuel.js)
     if (c.port) { const ps = portStyleFor(net, c.side); style = ps.style; if (ps.west) tpin = { x: 1 - c.pin.x, y: c.pin.y }; }
-    if (c.tap) { c.o = tapWire(m, c.tap, c.p); boxes.push({ id: c.o.id, x: c.p.x - 4, y: c.p.y - 4, w: 8, h: 8 }); }
+    if (c.tap) { c.o = tapWire(m, c.tap, c.p); boxes.push({ id: c.o.id, x: c.p.x - 3, y: c.p.y - 3, w: 6, h: 6 }); }
     const lbl = addVertex(m, { id: freshId(m, c.port ? 'P_' : 'NL_'), style, x: c.r.x, y: c.r.y, w: c.r.w, h: c.r.h, value: net });
     addWire(m, { source: c.o.id, target: lbl.getAttribute('id'), sourcePin: c.o.pin, targetPin: tpin, style: STUB, ...(c.bent ? { points: [c.k] } : {}) });
     boxes.push({ id: lbl.getAttribute('id'), ...c.r }); segs.push([c.p, c.k], [c.k, c.e]);
@@ -436,7 +436,7 @@ export function labelSharedOnPage1(doc, split, names, m = getPage(doc, 0), opts 
 
 /** split edge `e` at point `p` of its segment `i` (polyline `pl`) with a contact dot -> the dot as a stub origin */
 function tapWire(m, { e, i, pl }, p) {
-  const J = addVertex(m, { id: freshId(m, 'JT_'), style: 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;', x: p.x - 4, y: p.y - 4, w: 8, h: 8, value: '' });
+  const J = addVertex(m, { id: freshId(m, 'JT_'), style: 'ellipse;fillColor=#000000;strokeColor=#000000;drawioApiJunction=1;contactDot=1;', x: p.x - 3, y: p.y - 3, w: 6, h: 6, value: '' });
   const jid = J.getAttribute('id'), mid = { x: 0.5, y: 0.5 };
   const bare = String(e.styleRaw || '').split(';').filter((kv) => kv && !/^(exit|entry)(X|Y|Dx|Dy|Perimeter|Name)=/.test(kv)).join(';') + ';';
   const pinOf = (pre) => { const x = e.style.map.get(pre + 'X'), y = e.style.map.get(pre + 'Y'); if (x == null || y == null) return undefined;
