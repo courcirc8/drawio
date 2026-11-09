@@ -5,18 +5,33 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MLOAD = fs.readFileSync(new URL('./fixtures/dummies/eric_mload_par.sp', import.meta.url), 'utf8');
+const freePort = () => new Promise((ok) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
+// a port the system says is free (a random one could be another test server's: its /health answered, the import
+// went to a server without this test's DRAWIO_TEST_FAULT); taken meanwhile (EADDRINUSE: our server exits), another
 const start = async (env) => {
-  const port = 9000 + Math.floor(Math.random() * 900), base = `http://127.0.0.1:${port}`;
-  const proc = spawn(process.execPath, [path.join(HERE, '../server.js'), '--port', String(port)], { stdio: 'pipe', env: { ...process.env, ...env } });
-  for (let i = 0; i < 100; i++) {
-    try { if ((await fetch(base + '/health')).ok) return { proc, base }; } catch { /* not up yet */ }
-    await new Promise((r) => setTimeout(r, 100));
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const port = await freePort(), base = `http://127.0.0.1:${port}`;
+    const proc = spawn(process.execPath, [path.join(HERE, '../server.js'), '--port', String(port)], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } });
+    let err = '';
+    proc.stdout.resume(); proc.stderr.on('data', (d) => { err += d; });
+    for (let i = 0; i < 100 && proc.exitCode == null; i++) {
+      try {
+        if ((await fetch(base + '/health')).ok) {
+          await new Promise((r) => setTimeout(r, 50));   // ours, not one that answered while ours was failing to bind
+          if (proc.exitCode == null) return { proc, base };
+        }
+      } catch { /* not up yet */ }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (proc.exitCode == null) { proc.kill('SIGTERM'); throw new Error('server did not start'); }
+    if (!/EADDRINUSE/.test(err)) throw new Error(`server exited (${proc.exitCode}): ${err.slice(0, 300)}`);
   }
-  proc.kill('SIGTERM'); throw new Error('server did not start');
+  throw new Error('no free port in 5 attempts');
 };
 const imp = async (base, query) => {
   const id = (await (await fetch(base + '/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).id;
